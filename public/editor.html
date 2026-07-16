@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>Редактор файлов</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="overlay">
+    <div id="nav"></div>
+    <div id="project_selector"></div>
+
+    <div class="page-wrap">
+      <div class="block">
+        <h3>Редактор hosts.yml</h3>
+        <textarea id="hosts_editor"></textarea>
+      </div>
+
+      <div class="block">
+        <h3>Редактор defaults.yml</h3>
+        <textarea id="defaults_editor"></textarea>
+      </div>
+
+      <div class="block">
+        <div class="btn-row">
+          <button onclick="saveEditors()">Сохранить изменения</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/common.js"></script>
+  <script src="/editor.js"></script>
+</body>
+</html>

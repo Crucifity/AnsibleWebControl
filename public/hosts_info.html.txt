@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Информация о хостах</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="overlay">
+    <div id="nav"></div>
+    <div id="project_selector"></div>
+
+    <div class="page-wrap">
+      <div class="block">
+        <h3>Servers</h3>
+        <table width="100%" id="servers_table" class="hosts-table">
+          <tr>
+            <th>Название ФК</th>
+            <th>Имя АПК</th>
+            <th>IP</th>
+            <th>Маска</th>
+            <th>Действия</th>
+          </tr>
+        </table>
+      </div>
+
+      <div class="block">
+        <div class="btn-row">
+          <button onclick="openAddHostModal()">Добавить хост</button>
+        </div>
+      </div>
+
+      <div class="block">
+        <h3>ARM</h3>
+        <table width="100%" id="arms_table" class="hosts-table">
+          <tr>
+            <th>Название ФК</th>
+            <th>Имя АПК</th>
+            <th>IP</th>
+            <th>Маска</th>
+            <th>Действия</th>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="hostModal" class="modal" style="display:none">
+    <div class="modal-backdrop" onclick="closeHostModal()"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modalTitle">Настройка хоста</h3>
+        <button class="modal-close" onclick="closeHostModal()">✕</button>
+      </div>
+
+      <div class="editor-grid">
+        <div>
+          <label>IP-адрес</label>
+          <input id="modal_ip">
+        </div>
+
+        <div>
+          <label>Описание хоста</label>
+          <input id="modal_description">
+        </div>
+
+        <div>
+          <label>MAC-адрес</label>
+          <input id="modal_mac">
+        </div>
+
+        <div>
+          <label>Gateway</label>
+          <input id="modal_gate">
+        </div>
+
+        <div>
+          <label>Маска подсети</label>
+          <input id="modal_mask">
+        </div>
+
+        <div>
+          <label>Разбивка диска</label>
+          <select id="modal_hwtype"></select>
+        </div>
+
+        <div>
+          <label>Имя</label>
+          <input id="modal_name">
+        </div>
+      </div>
+
+      <div>
+        <label>Группа</label>
+        <select id="modal_group">
+          <option value="servers">Servers</option>
+          <option value="arm">ARM</option>
+        </select>
+      </div>
+
+      <div class="btn-row" style="margin-top:18px">
+        <button onclick="saveHost()">Сохранить</button>
+        <button onclick="closeHostModal()">Отменить</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/common.js"></script>
+  <script src="/hosts_info.js"></script>
+</body>
+</html>
