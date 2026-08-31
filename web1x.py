@@ -180,14 +180,11 @@ def scalar(value):
     if lowered in ("null", "~"):
         return None
 
-    try:
-        if stripped and (
-            stripped.isdigit()
-            or stripped.startswith("-") and stripped[1:].isdigit()
-        ):
+    if stripped:
+        try:
             return int(stripped)
-    except ValueError:
-        pass
+        except ValueError:
+            pass
 
     return value
 
@@ -429,13 +426,9 @@ class Handler(BaseHTTPRequestHandler):
             self.file(os.path.join(PUBLIC_DIR, filename), content_type)
             return
 
-        # The original application serves the background through this endpoint.
         if url.path == "/background":
-            background = os.path.join(PUBLIC_DIR, "background")
-            if os.path.isfile(background):
-                self.file(background, "image/jpeg")
-            else:
-                self.send_error(404)
+            background = os.path.join(BASE_DIR, "logo.png")
+            self.file(background, "image/png")
             return
 
         if url.path == "/data":
@@ -532,10 +525,7 @@ class Handler(BaseHTTPRequestHandler):
                     project,
                     obj,
                     data.get("hostname", ""),
-                    data.get(
-                        "new_hostname",
-                        data.get("hostname", ""),
-                    ),
+                    data.get("new_hostname", data.get("hostname", "")),
                     data.get("values", {}),
                 )
                 self.json({"ok": True})
