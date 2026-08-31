@@ -1,54 +1,8 @@
-function getProjectFromURL() {
-  const params = new URLSearchParams(window.location.search);
-  return params.get("project") || "";
-}
-
-function projectSelectorHTML(projects, selectedProject) {
-  return `
-    <div class="project-bar">
-      <label class="project-label">Проект:</label>
-      <select id="project_select" onchange="changeProject()">
-        <option value="">-- выберите проект --</option>
-        ${projects.map(p => `
-          <option value="${p}" ${p === selectedProject ? "selected" : ""}>${p}</option>
-        `).join("")}
-      </select>
-    </div>
-  `;
-}
-
-function navHTML(active, project) {
-  const q = project ? `?project=${encodeURIComponent(project)}` : "";
-
-  return `
-    <div class="tabs">
-      <a href="/main${q}" class="tab ${active === 'main' ? 'active' : ''}">Запуск</a>
-      <a href="/hosts_info${q}" class="tab ${active === 'hosts' ? 'active' : ''}">Информация о хостах</a>
-      <a href="/editor${q}" class="tab ${active === 'editor' ? 'active' : ''}">Редактор</a>
-    </div>
-  `;
-}
-
-function injectNav(active, projects = [], selectedProject = "") {
-  const nav = document.getElementById("nav");
-  const projectBox = document.getElementById("project_selector");
-
-  if (nav) {
-    nav.innerHTML = navHTML(active, selectedProject);
-  }
-
-  if (projectBox) {
-    projectBox.innerHTML = projectSelectorHTML(projects, selectedProject);
-  }
-}
-
-function changeProject() {
-  const project = document.getElementById("project_select").value;
-  const path = window.location.pathname;
-
-  if (project) {
-    window.location.href = `${path}?project=${encodeURIComponent(project)}`;
-  } else {
-    window.location.href = path;
-  }
-}
+function getParams(){return new URLSearchParams(window.location.search)}
+function getProjectFromURL(){return getParams().get("project")||""}
+function getObjectFromURL(){return getParams().get("object")||""}
+function projectSelectorHTML(projects,selected){return `<div class="project-bar"><b>Проект:</b><select id="project_select" onchange="changeProject()"><option value="">-- выберите проект --</option>${projects.map(p=>`<option value="${p}" ${p===selected?'selected':''}>${p}</option>`).join('')}</select></div>`}
+function navHTML(active,project,object){const q=`?project=${encodeURIComponent(project||'')}${object?`&object=${encodeURIComponent(object)}`:''}`;return `<div class="tabs"><a href="/main${q}" class="tab ${active==='main'?'active':''}">Запуск</a><a href="/hosts_info${q}" class="tab ${active==='hosts'?'active':''}">Информация о хостах</a><a href="/editor${q}" class="tab ${active==='editor'?'active':''}">Редактор</a></div>`}
+function injectNav(active,projects=[],selectedProject='',selectedObject=''){const n=document.getElementById('nav'),p=document.getElementById('project_selector');if(n)n.innerHTML=navHTML(active,selectedProject,selectedObject);if(p)p.innerHTML=projectSelectorHTML(projects,selectedProject)}
+function changeProject(){const p=document.getElementById('project_select').value;if(p)window.location.href=`${window.location.pathname}?project=${encodeURIComponent(p)}`;else window.location.href=window.location.pathname}
+function changeObject(){const o=document.getElementById('object_select').value,p=getProjectFromURL();window.location.href=`${window.location.pathname}?project=${encodeURIComponent(p)}&object=${encodeURIComponent(o)}`}
