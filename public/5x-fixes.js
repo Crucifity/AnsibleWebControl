@@ -152,10 +152,59 @@
         </div>`;
     };
 
+    /* Availability polling: one request immediately, then every 10 seconds. */
+    let statusTimer = null;
+    let statusRequest = null;
+
+    async function pollNodeStatus() {
+        if (!CURRENT_PROJECT) return;
+        if (statusRequest) return;
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 4500);
+        statusRequest = fetch(
+            `/status?project=${encodeURIComponent(CURRENT_PROJECT)}`
+                + `${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}`,
+            { cache: 'no-store', signal: controller.signal },
+        )
+            .then((response) => {
+                if (!response.ok) throw Error(`HTTP ${response.status}`);
+                return response.json();
+            })
+            .then((data) => {
+                if (!window.DATA) window.DATA = {};
+                window.DATA.status = data.status || data;
+                if (typeof renderNodes === 'function') renderNodes();
+            })
+            .catch(() => {
+                /* A failed poll must not leave a permanent "проверка" state. */
+            })
+            .finally(() => {
+                clearTimeout(timeout);
+                statusRequest = null;
+            });
+
+        await statusRequest;
+    }
+
+    function startStatusPolling() {
+        if (statusTimer) clearInterval(statusTimer);
+        pollNodeStatus();
+        statusTimer = setInterval(pollNodeStatus, 10000);
+    }
+
+    window.startStatusPolling = startStatusPolling;
+    window.stopStatusPolling = function () {
+        if (statusTimer) clearInterval(statusTimer);
+        statusTimer = null;
+    };
+
     window.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
             closePlaybookModal();
             if (typeof closeAddNodeModal === 'function') closeAddNodeModal();
         }
     });
+
+    startStatusPolling();
 })();
