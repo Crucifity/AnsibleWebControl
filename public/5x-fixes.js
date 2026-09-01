@@ -13,6 +13,10 @@
             + `&name=${encodeURIComponent(name)}`;
     }
 
+    window.editPlaybook = function (name) {
+        window.openPlaybookModal(name);
+    };
+
     window.openPlaybookModal = function (name) {
         const modal = document.getElementById('playbook_modal');
         const editor = document.getElementById('playbook_editor');
@@ -67,7 +71,9 @@
         })
             .then(async (response) => {
                 const data = await response.json();
-                if (!response.ok || data.ok === false) throw Error(data.error || 'Не удалось сохранить плейбук');
+                if (!response.ok || data.ok === false) {
+                    throw Error(data.error || 'Не удалось сохранить плейбук');
+                }
                 closePlaybookModal();
                 if (typeof loadMain === 'function') loadMain();
             })
@@ -80,23 +86,39 @@
         const card = document.getElementById('playbook_editor_card');
         if (!editor || !card) return;
 
-        const lines = editor.value.split('\n');
-        const longest = lines.reduce((max, line) => Math.max(max, line.length), 0);
-        const width = Math.min(1100, Math.max(620, longest * 7.2 + 70));
+        const longestLine = editor.value.split('\n').reduce(
+            (max, line) => Math.max(max, line.length),
+            0,
+        );
+        const width = Math.min(1100, Math.max(620, longestLine * 7.2 + 70));
         editor.style.width = `${width}px`;
         card.style.width = `${Math.min(width + 42, window.innerWidth - 40)}px`;
     }
 
     window.addEventListener('resize', () => {
-        if (!document.getElementById('playbook_modal')?.hidden) fitPlaybookEditor();
+        if (!document.getElementById('playbook_modal')?.hidden) {
+            fitPlaybookEditor();
+        }
     });
 
     window.renderNode = function (node) {
         const status = window.DATA?.status || {};
         const hasStatus = Object.prototype.hasOwnProperty.call(status, node.hostname);
-        const state = !hasStatus ? 'pending' : status[node.hostname] === true ? 'available' : 'unavailable';
-        const label = { pending: 'проверка', available: 'доступен', unavailable: 'недоступен' }[state];
-        const dot = { pending: 'status-pending', available: 'status-up', unavailable: 'status-down' }[state];
+        const state = !hasStatus
+            ? 'pending'
+            : status[node.hostname] === true
+                ? 'available'
+                : 'unavailable';
+        const label = {
+            pending: 'проверка',
+            available: 'доступен',
+            unavailable: 'недоступен',
+        }[state];
+        const dot = {
+            pending: 'status-pending',
+            available: 'status-up',
+            unavailable: 'status-down',
+        }[state];
         const params = Object.entries(node.parameters || {});
         const id = `node-${encodeURIComponent(node.hostname)}`;
 
@@ -114,7 +136,12 @@
             </div>
             <div class="host-body" hidden>
                 <div class="param-grid">
-                    ${params.length ? params.map(([key, value]) => `<div class="param-name" title="${esc(key)}">${esc(key)}</div><input class="param-value" data-key="${esc(key)}" value="${esc(value)}" readonly>`).join('') : '<div class="empty">Параметров нет</div>'}
+                    ${params.length
+                        ? params.map(([key, value]) => `
+                            <div class="param-name" title="${esc(key)}">${esc(key)}</div>
+                            <input class="param-value" data-key="${esc(key)}" value="${esc(value)}" readonly>
+                        `).join('')
+                        : '<div class="empty">Параметров нет</div>'}
                 </div>
                 <div class="host-footer">
                     <span class="edit-note">${esc(node.template || node.node_type || 'Узел')} · изменения сохраняются в hosts.yml</span>
