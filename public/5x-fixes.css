@@ -63,15 +63,29 @@
     transform: rotate(40deg);
 }
 
+/* Give the working columns more breathing room while keeping them side by side. */
 .workspace-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 14px;
-    align-items: start;
+    gap: 18px;
+    align-items: stretch;
+    width: 100%;
 }
 
-.workspace-panel { min-width: 0; }
-.execution-panel { margin-top: 14px; }
+.workspace-panel {
+    min-width: 0;
+    width: 100%;
+}
+
+.nodes-panel,
+.playbooks-panel {
+    min-width: 0;
+}
+
+.execution-panel {
+    width: 100%;
+    margin-top: 18px;
+}
 
 .playbook-editor-modal {
     width: fit-content;
