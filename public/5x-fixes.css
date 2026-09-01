@@ -62,16 +62,21 @@
     transform: rotate(40deg);
 }
 
-/* The two working panels use the same centered width as the project context. */
+/* Workspace width follows the same 1400px page container as the project context. */
+.workspace-grid,
+.execution-panel {
+    width: 100%;
+    max-width: 1400px;
+    margin-left: auto;
+    margin-right: auto;
+    box-sizing: border-box;
+}
+
 .workspace-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr);
+    grid-template-columns: minmax(0, 1.22fr) minmax(0, .78fr);
     gap: 22px;
     align-items: stretch;
-    width: 100%;
-    max-width: 100%;
-    margin: 0 auto;
-    box-sizing: border-box;
 }
 
 .workspace-panel {
@@ -80,19 +85,15 @@
     box-sizing: border-box;
 }
 
-.nodes-panel { min-width: 0; }
+.nodes-panel,
 .playbooks-panel { min-width: 0; }
 
 .execution-panel {
-    width: 100%;
     margin-top: 18px;
-    box-sizing: border-box;
 }
 
 /* Keep long node names, IPs and action buttons from colliding. */
-.host-head {
-    min-width: 0;
-}
+.host-head { min-width: 0; }
 
 .node-main {
     min-width: 0;
@@ -166,6 +167,13 @@
     caret-color: #fff;
     font: 13px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
     tab-size: 2;
+}
+
+@media (max-width: 1436px) {
+    .workspace-grid,
+    .execution-panel {
+        max-width: none;
+    }
 }
 
 @media (max-width: 1050px) {
