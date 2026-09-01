@@ -1,4 +1,4 @@
-/* Small 5.x overrides. The base 4.x visual system remains untouched. */
+/* Small 2.0 overrides. The base visual system remains untouched. */
 
 .host-card.node-available {
     border: 1px solid rgba(76, 190, 112, 0.28);
@@ -14,18 +14,95 @@
     border: 1px solid rgba(255, 255, 255, 0.10);
 }
 
-.host-card.node-available:hover {
-    border-color: rgba(76, 190, 112, 0.38);
+.host-card.node-available:hover { border-color: rgba(76, 190, 112, 0.38); }
+.host-card.node-unavailable:hover { border-color: rgba(205, 76, 76, 0.38); }
+.status-pending { background: rgba(255, 255, 255, 0.35); }
+.node-status.pending { color: rgba(255, 255, 255, 0.42); }
+
+.node-check,
+.pb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    margin: 0 9px 0 0;
+    flex: 0 0 18px;
+    vertical-align: middle;
+    border: 1px solid rgba(255, 255, 255, .22);
+    border-radius: 5px;
+    background: rgba(255, 255, 255, .045);
+    cursor: pointer;
+    position: relative;
+    transition: border-color .15s ease, background .15s ease, box-shadow .15s ease, transform .12s ease;
 }
 
-.host-card.node-unavailable:hover {
-    border-color: rgba(205, 76, 76, 0.38);
+.node-check:hover,
+.pb:hover {
+    border-color: rgba(255, 255, 255, .42);
+    background: rgba(255, 255, 255, .08);
+    transform: translateY(-1px);
 }
 
-.status-pending {
-    background: rgba(255, 255, 255, 0.35);
+.node-check:checked,
+.pb:checked {
+    background: rgba(77, 145, 100, .52);
+    border-color: rgba(118, 195, 138, .58);
+    box-shadow: 0 0 0 2px rgba(77, 145, 100, .08);
 }
 
-.node-status.pending {
-    color: rgba(255, 255, 255, 0.42);
+.node-check:checked::after,
+.pb:checked::after {
+    content: "";
+    position: absolute;
+    left: 5px;
+    top: 3px;
+    width: 6px;
+    height: 9px;
+    border-right: 2px solid rgba(255, 255, 255, .9);
+    border-bottom: 2px solid rgba(255, 255, 255, .9);
+    transform: rotate(40deg);
+}
+
+.workspace-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
+}
+
+.workspace-panel { min-width: 0; }
+.execution-panel { margin-top: 14px; }
+
+.playbook-editor-modal {
+    width: fit-content;
+    min-width: 620px;
+    max-width: calc(100vw - 40px);
+}
+
+.playbook-editor-body { background: #15181d; }
+
+.playbook-editor {
+    display: block;
+    box-sizing: border-box;
+    min-width: 560px;
+    min-height: 360px;
+    max-width: calc(100vw - 90px);
+    max-height: 68vh;
+    padding: 18px;
+    border: 1px solid rgba(255, 255, 255, .09);
+    border-radius: 9px;
+    outline: none;
+    resize: vertical;
+    overflow: auto;
+    background: #101216;
+    color: #d8dde5;
+    caret-color: #fff;
+    font: 13px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+    tab-size: 2;
+}
+
+@media (max-width: 900px) {
+    .workspace-grid { grid-template-columns: 1fr; }
+    .playbook-editor-modal { min-width: 0; }
+    .playbook-editor { min-width: 0; width: calc(100vw - 90px) !important; }
 }
