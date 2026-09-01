@@ -5,20 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Ansible Web Control</title>
     <link rel="stylesheet" href="/style.css">
-    <link rel="stylesheet" href="/5x-fixes.css?v=2.0.2">
+    <link rel="stylesheet" href="/5x-fixes.css?v=2.0.3">
 </head>
 <body>
     <div class="overlay">
         <div id="nav"></div>
         <div id="project_selector"></div>
 
-        <div class="page-wrap">
-            <div id="object_block" class="block project-context-block">
+        <main class="page-wrap">
+            <section id="object_block" class="block project-context-block">
                 <div class="section-head">
                     <h3 id="object_title">Объект</h3>
                     <select id="object_select" onchange="changeObject()"></select>
                 </div>
-            </div>
+            </section>
 
             <div id="autodeploy_block"></div>
 
@@ -60,7 +60,7 @@
                 </div>
                 <pre id="log" class="log"></pre>
             </section>
-        </div>
+        </main>
     </div>
 
     <div id="add_node_modal" class="modal-backdrop" hidden>
@@ -75,7 +75,7 @@
             <div class="modal-body">
                 <label class="modal-label" for="new_node_name">Название</label>
                 <input id="new_node_name" class="modal-input" type="text" placeholder="Например, host01" autocomplete="off">
-                <div class="modal-label" style="margin-top: 16px;">Шаблон параметров</div>
+                <div class="modal-label template-label">Шаблон параметров</div>
                 <div id="node_template_tabs" class="node-type-tabs"></div>
                 <div id="new_node_fields" class="node-modal-fields"></div>
             </div>
@@ -107,7 +107,6 @@
 
     <script src="/common.js"></script>
     <script src="/main.js"></script>
-    <script src="/5x-fixes.js?v=2.0.2"></script>
-    <script src="/status-fix.js?v=2.0.2"></script>
+    <script src="/5x-fixes.js?v=2.0.3"></script>
 </body>
 </html>
