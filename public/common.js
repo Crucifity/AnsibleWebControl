@@ -1,9 +1,42 @@
-function getParams(){return new URLSearchParams(window.location.search)}
-function getProjectFromURL(){return getParams().get('project')||''}
-function getObjectFromURL(){return getParams().get('object')||''}
-function projectSelectorHTML(projects,selected){return `<div class="project-bar"><b>Проект:</b><select id="project_select" onchange="changeProject()"><option value="">-- выберите проект --</option>${projects.map(p=>`<option value="${p}" ${p===selected?'selected':''}>${p}</option>`).join('')}</select></div>`}
-function navHTML(active,project,object){const q=`?project=${encodeURIComponent(project||'')}${object?`&object=${encodeURIComponent(object)}`:''}`;return `<div class="tabs"><a href="/main${q}" class="tab ${active==='main'?'active':''}">Запуск</a><a href="/hosts_info${q}" class="tab ${active==='hosts'?'active':''}">Информация о хостах</a></div>`}
-function injectNav(active,projects=[],selectedProject='',selectedObject=''){const n=document.getElementById('nav'),p=document.getElementById('project_selector');if(n)n.innerHTML=navHTML(active,selectedProject,selectedObject);if(p)p.innerHTML=projectSelectorHTML(projects,selectedProject)}
-function changeProject(){const p=document.getElementById('project_select').value;if(p)window.location.href=`${window.location.pathname}?project=${encodeURIComponent(p)}`;else window.location.href=window.location.pathname}
-function changeObject(){const o=document.getElementById('object_select').value,p=getProjectFromURL();window.location.href=`${window.location.pathname}?project=${encodeURIComponent(p)}&object=${encodeURIComponent(o)}`}
-function renderSummary(hosts,status){const all=hosts||[];const up=all.filter(h=>status[h.hostname]).length;const el=document.getElementById('host_summary');if(!el)return;el.innerHTML=`<div><b>${all.length}</b><span>хостов всего</span></div><div class="up"><b>${up}</b><span>доступны</span></div><div class="down"><b>${all.length-up}</b><span>недоступны</span></div>`}
+function getParams() {
+    return new URLSearchParams(window.location.search);
+}
+
+function getProjectFromURL() {
+    return getParams().get('project') || '';
+}
+
+function getObjectFromURL() {
+    return getParams().get('object') || '';
+}
+
+function projectSelectorHTML(projects, selected) {
+    return `<div class="project-bar"><b>Проект:</b><select id="project_select" onchange="changeProject()"><option value="">-- выберите проект --</option>${projects.map((project) => `<option value="${project}" ${project === selected ? 'selected' : ''}>${project}</option>`).join('')}</select></div>`;
+}
+
+function navHTML(active, project, object) {
+    const query = `?project=${encodeURIComponent(project || '')}${object ? `&object=${encodeURIComponent(object)}` : ''}`;
+    return `<div class="tabs"><a href="/main${query}" class="tab ${active === 'main' ? 'active' : ''}">Запуск</a></div>`;
+}
+
+function injectNav(active, projects = [], selectedProject = '', selectedObject = '') {
+    const nav = document.getElementById('nav');
+    const selector = document.getElementById('project_selector');
+    if (nav) nav.innerHTML = navHTML(active, selectedProject, selectedObject);
+    if (selector) selector.innerHTML = projectSelectorHTML(projects, selectedProject);
+}
+
+function changeProject() {
+    const project = document.getElementById('project_select').value;
+    if (project) {
+        window.location.href = `${window.location.pathname}?project=${encodeURIComponent(project)}`;
+    } else {
+        window.location.href = window.location.pathname;
+    }
+}
+
+function changeObject() {
+    const object = document.getElementById('object_select').value;
+    const project = getProjectFromURL();
+    window.location.href = `${window.location.pathname}?project=${encodeURIComponent(project)}&object=${encodeURIComponent(object)}`;
+}

@@ -1,0 +1,31 @@
+/* Small 5.x overrides. The base 4.x visual system remains untouched. */
+
+.host-card.node-available {
+    border: 1px solid rgba(76, 190, 112, 0.28);
+    box-shadow: 0 0 0 1px rgba(76, 190, 112, 0.05);
+}
+
+.host-card.node-unavailable {
+    border: 1px solid rgba(205, 76, 76, 0.28);
+    box-shadow: 0 0 0 1px rgba(205, 76, 76, 0.05);
+}
+
+.host-card.node-pending {
+    border: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.host-card.node-available:hover {
+    border-color: rgba(76, 190, 112, 0.38);
+}
+
+.host-card.node-unavailable:hover {
+    border-color: rgba(205, 76, 76, 0.38);
+}
+
+.status-pending {
+    background: rgba(255, 255, 255, 0.35);
+}
+
+.node-status.pending {
+    color: rgba(255, 255, 255, 0.42);
+}
