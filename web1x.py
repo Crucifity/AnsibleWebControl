@@ -1,177 +1,581 @@
 #!/usr/bin/env python3
-import os,json,yaml,socket,subprocess,threading,time
-from http.server import HTTPServer,BaseHTTPRequestHandler
-from urllib.parse import urlparse,parse_qs
+
+import json
+import os
+import socket
+import subprocess
+import threading
+import time
 from datetime import datetime
-BASE_DIR=os.path.dirname(os.path.abspath(__file__)); PUBLIC_DIR=os.path.join(BASE_DIR,'public'); PROJECTS_ROOT=os.environ.get('ANSIBLE_PROJECTS_ROOT','/opt/home/projects')
-LOG=[]; LOG_LOCK=threading.Lock(); PROCESSES=[]; PROC_LOCK=threading.Lock(); HOST_STATUS={}; STATUS_LOCK=threading.Lock()
-def safe(v): return os.path.basename(v or '')
-def project_dir(p): return os.path.join(PROJECTS_ROOT,safe(p)) if safe(p) else None
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import parse_qs, urlparse
+
+import yaml
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PUBLIC_DIR = os.path.join(BASE_DIR, "public")
+PROJECTS_ROOT = os.environ.get("ANSIBLE_PROJECTS_ROOT", "/opt/home/projects")
+
+LOG = []
+LOG_LOCK = threading.Lock()
+PROCESSES = []
+PROC_LOCK = threading.Lock()
+HOST_STATUS = {}
+STATUS_LOCK = threading.Lock()
+
+
+def safe(value):
+    return os.path.basename(value or "")
+
+
+def project_dir(project):
+    project = safe(project)
+    return os.path.join(PROJECTS_ROOT, project) if project else None
+
+
 def get_projects():
- out=[]
- if os.path.isdir(PROJECTS_ROOT):
-  for n in sorted(os.listdir(PROJECTS_ROOT)):
-   d=project_dir(n)
-   if os.path.isdir(d) and all(os.path.isdir(os.path.join(d,x)) for x in ('global','object','roles')):out.append(n)
- return out
-def get_objects(p):
- r=os.path.join(project_dir(p) or '','object');return sorted(x for x in os.listdir(r) if os.path.isdir(os.path.join(r,x))) if os.path.isdir(r) else []
-def object_dir(p,o):return os.path.join(project_dir(p),'object',safe(o)) if p and o and o in get_objects(p) else None
-def read(p):
- try:
-  with open(p,encoding='utf-8') as f:return f.read()
- except:return ''
-def write(p,s):os.makedirs(os.path.dirname(p),exist_ok=True);open(p,'w',encoding='utf-8').write(s)
-def paths(p,o):
- r=object_dir(p,o)
- if not r:return None
- def first(ns):
-  for n in ns:
-   q=os.path.join(r,n)
-   if os.path.isfile(q):return q
-  return os.path.join(r,ns[0])
- return {'object_dir':r,'hosts':first(['hosts.yml','hosts.yaml','hosts','inventory.yml']),'defaults':first(['defaults.yml','defaults.yaml','defaults']),'cfg':os.path.join(r,'ansible.cfg')}
-def log(s):
- with LOG_LOCK:LOG.append(f'[{datetime.now():%H:%M:%S}] {s}');del LOG[:-1000]
-def load_hosts_file(path):
- try:return yaml.safe_load(read(path)) or {}
- except Exception as e:raise ValueError(f'Некорректный YAML: {e}')
-def host_parameters(project,obj):
- ps=paths(project,obj)
- if not ps:return []
- data=load_hosts_file(ps['hosts']);hosts=data.get('all',{}).get('hosts',{}) or {}
- for vals in hosts.values():
-  if isinstance(vals,dict):return list(vals.keys())
- return []
-def parse_hosts(project,obj):
- ps=paths(project,obj);result={'servers':[],'arm':[]}
- if not ps or not os.path.exists(ps['hosts']):return result
- try:data=load_hosts_file(ps['hosts'])
- except Exception as e:log(str(e));return result
- allh=data.get('all',{}).get('hosts',{}) or {};arms=set((data.get('arms',{}) or {}).get('hosts',{}) or {})
- # Parameter names are discovered once from the first host and reused for the UI.
- schema=[]
- for vals in allh.values():
-  if isinstance(vals,dict):schema=list(vals.keys());break
- for hostname,vals in allh.items():
-  vals=vals if isinstance(vals,dict) else {};h={'hostname':hostname,'parameters':{k:vals.get(k,'') for k in schema}}
-  h.update({'name':vals.get('name',''),'description':vals.get('description',''),'ip':vals.get('ansible_host',vals.get('ip','')),'mac':vals.get('mac',''),'mask':vals.get('mask',''),'gate':vals.get('gate',''),'hwtype':vals.get('hwtype','')})
-  try:h['mask_cidr']=str(sum(bin(int(x)).count('1') for x in str(vals.get('mask','')).split('.')))
-  except:h['mask_cidr']=''
-  result['arm' if hostname in arms else 'servers'].append(h)
- return result
-def save_hosts(path,data):
- # PyYAML keeps the all/hosts hierarchy and parameter keys/values. Insert blank lines between host blocks.
- text=yaml.safe_dump(data,allow_unicode=True,sort_keys=False,default_flow_style=False)
- lines=text.splitlines();out=[]
- in_hosts=False
- for i,line in enumerate(lines):
-  if line=='    hosts:':in_hosts=True
-  elif in_hosts and line.startswith('    ') and line.endswith(':') and not line.startswith('      '):out.append('')
-  out.append(line)
- write(path,'\n'.join(out)+'\n')
-def save_host(project,obj,old_name,new_name,values,group):
- ps=paths(project,obj);data=load_hosts_file(ps['hosts']);allh=data.setdefault('all',{}).setdefault('hosts',{})
- if old_name not in allh:raise ValueError('Хост не найден')
- if new_name!=old_name and new_name in allh:raise ValueError('Хост с таким именем уже существует')
- old=allh[old_name] if isinstance(allh[old_name],dict) else {};merged=dict(old)
- # Update every supplied field without dropping unknown/original parameters.
- for k,v in values.items():merged[k]=v
- allh.pop(old_name);allh[new_name]=merged
- for g in ('arms','servers'):data.setdefault(g,{}).setdefault('hosts',{}).pop(old_name,None);data.setdefault(g,{}).setdefault('hosts',{}).pop(new_name,None)
- g='arms' if group=='arm' else 'servers';data.setdefault(g,{}).setdefault('hosts',{})[new_name]={}
- save_hosts(ps['hosts'],data)
-def add_host(project,obj,name,values,group):
- ps=paths(project,obj);data=load_hosts_file(ps['hosts']);allh=data.setdefault('all',{}).setdefault('hosts',{})
- if not name:raise ValueError('Имя хоста не указано')
- if name in allh:raise ValueError('Хост уже существует')
- schema=host_parameters(project,obj);new={k:values.get(k,'') for k in schema}
- for k,v in values.items():
-  if k not in new:new[k]=v
- allh[name]=new;g='arms' if group=='arm' else 'servers';data.setdefault(g,{}).setdefault('hosts',{})[name]={};save_hosts(ps['hosts'],data)
-def delete_host(project,obj,name):
- ps=paths(project,obj);data=load_hosts_file(ps['hosts'])
- for g in ('all','arms','servers'):data.setdefault(g,{}).setdefault('hosts',{}).pop(name,None)
- save_hosts(ps['hosts'],data)
-def get_playbooks(p,o):
- r=object_dir(p,o);out=[]
- if r:
-  for n in sorted(os.listdir(r)):
-   if os.path.isfile(os.path.join(r,n)) and n.lower().endswith(('.yml','.yaml')) and n not in ('hosts.yml','hosts.yaml','inventory.yml','defaults.yml','defaults.yaml'):out.append({'name':n,'path':os.path.join(r,n)})
- return out
+    result = []
+    if not os.path.isdir(PROJECTS_ROOT):
+        return result
+
+    for name in sorted(os.listdir(PROJECTS_ROOT)):
+        directory = project_dir(name)
+        if os.path.isdir(directory) and all(
+            os.path.isdir(os.path.join(directory, folder))
+            for folder in ("global", "object", "roles")
+        ):
+            result.append(name)
+
+    return result
+
+
+def get_objects(project):
+    directory = os.path.join(project_dir(project) or "", "object")
+    if not os.path.isdir(directory):
+        return []
+
+    return sorted(
+        name
+        for name in os.listdir(directory)
+        if os.path.isdir(os.path.join(directory, name))
+    )
+
+
+def object_dir(project, obj):
+    if not project or not obj or obj not in get_objects(project):
+        return None
+    return os.path.join(project_dir(project), "object", safe(obj))
+
+
+def read(path):
+    try:
+        with open(path, encoding="utf-8") as file:
+            return file.read()
+    except OSError:
+        return ""
+
+
+def write(path, content):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as file:
+        file.write(content)
+
+
+def paths(project, obj):
+    directory = object_dir(project, obj)
+    if not directory:
+        return None
+
+    def first_existing(names):
+        for name in names:
+            path = os.path.join(directory, name)
+            if os.path.isfile(path):
+                return path
+        return os.path.join(directory, names[0])
+
+    return {
+        "object_dir": directory,
+        "hosts": first_existing(
+            ["hosts.yml", "hosts.yaml", "hosts", "inventory.yml"]
+        ),
+        "defaults": first_existing(
+            ["defaults.yml", "defaults.yaml", "defaults"]
+        ),
+        "cfg": os.path.join(directory, "ansible.cfg"),
+    }
+
+
+def log(message):
+    with LOG_LOCK:
+        LOG.append(f"[{datetime.now():%H:%M:%S}] {message}")
+        del LOG[:-1000]
+
+
+def load_hosts(project, obj):
+    file_paths = paths(project, obj)
+    if not file_paths or not os.path.exists(file_paths["hosts"]):
+        return {}
+
+    try:
+        data = yaml.safe_load(read(file_paths["hosts"])) or {}
+        return data.get("all", {}).get("hosts", {}) or {}
+    except yaml.YAMLError as exc:
+        log(f"HOSTS YAML ERROR: {exc}")
+        return {}
+
+
+def parse_hosts(project, obj):
+    result = []
+
+    for hostname, raw in load_hosts(project, obj).items():
+        parameters = dict(raw) if isinstance(raw, dict) else {}
+        result.append(
+            {
+                "hostname": hostname,
+                "parameters": parameters,
+            }
+        )
+
+    return result
+
+
+def save_hosts(path, data):
+    text = yaml.safe_dump(
+        data,
+        allow_unicode=True,
+        sort_keys=False,
+        default_flow_style=False,
+    )
+
+    lines = text.splitlines()
+    output = []
+    inside_hosts = False
+
+    for line in lines:
+        if line == "  hosts:":
+            inside_hosts = True
+        elif (
+            inside_hosts
+            and line.startswith("    ")
+            and line.endswith(":")
+            and not line.startswith("      ")
+        ):
+            if output and output[-1] != "":
+                output.append("")
+
+        output.append(line)
+
+    write(path, "\n".join(output) + "\n")
+
+
+def scalar(value):
+    if not isinstance(value, str):
+        return value
+
+    stripped = value.strip()
+    lowered = stripped.lower()
+
+    if lowered in ("true", "false"):
+        return lowered == "true"
+    if lowered in ("null", "~"):
+        return None
+
+    if stripped:
+        try:
+            return int(stripped)
+        except ValueError:
+            pass
+
+    return value
+
+
+def save_host(project, obj, old_name, new_name, values):
+    file_paths = paths(project, obj)
+    data = yaml.safe_load(read(file_paths["hosts"])) or {}
+    hosts = data.setdefault("all", {}).setdefault("hosts", {})
+
+    if old_name not in hosts:
+        raise ValueError("Хост не найден")
+    if new_name != old_name and new_name in hosts:
+        raise ValueError("Хост с таким именем уже существует")
+
+    original = hosts[old_name] if isinstance(hosts[old_name], dict) else {}
+    updated = dict(original)
+
+    for key, value in values.items():
+        updated[key] = scalar(value)
+
+    hosts.pop(old_name)
+    hosts[new_name] = updated
+    save_hosts(file_paths["hosts"], data)
+
+
+def add_host(project, obj, name, values):
+    file_paths = paths(project, obj)
+    data = yaml.safe_load(read(file_paths["hosts"])) or {}
+    hosts = data.setdefault("all", {}).setdefault("hosts", {})
+
+    if not name:
+        raise ValueError("Имя хоста не указано")
+    if name in hosts:
+        raise ValueError("Хост уже существует")
+
+    hosts[name] = {key: scalar(value) for key, value in values.items()}
+    save_hosts(file_paths["hosts"], data)
+
+
+def delete_host(project, obj, name):
+    file_paths = paths(project, obj)
+    data = yaml.safe_load(read(file_paths["hosts"])) or {}
+    hosts = data.setdefault("all", {}).setdefault("hosts", {})
+
+    if name not in hosts:
+        raise ValueError("Хост не найден")
+
+    hosts.pop(name)
+    save_hosts(file_paths["hosts"], data)
+
+
+def get_playbooks(project, obj):
+    directory = object_dir(project, obj)
+    if not directory:
+        return []
+
+    excluded = {
+        "hosts.yml",
+        "hosts.yaml",
+        "inventory.yml",
+        "defaults.yml",
+        "defaults.yaml",
+    }
+
+    return [
+        {
+            "name": name,
+            "path": os.path.join(directory, name),
+        }
+        for name in sorted(os.listdir(directory))
+        if (
+            os.path.isfile(os.path.join(directory, name))
+            and name.lower().endswith((".yml", ".yaml"))
+            and name not in excluded
+        )
+    ]
+
+
 def host_up(ip):
- try:return bool(ip) and subprocess.run(['ping','-c','1','-W','1',str(ip)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0
- except:return False
+    try:
+        return bool(ip) and subprocess.run(
+            ["ping", "-c", "1", "-W", "1", str(ip)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode == 0
+    except OSError:
+        return False
+
+
 def status_worker():
- global HOST_STATUS
- while True:
-  r={}
-  for p in get_projects():
-   for o in get_objects(p):r.setdefault(p,{})[o]={h['hostname']:host_up(h['ip']) for g in parse_hosts(p,o).values() for h in g}
-  with STATUS_LOCK:HOST_STATUS=r
-  time.sleep(60)
-def status(p,o):
- with STATUS_LOCK:return dict(HOST_STATUS.get(p,{}).get(o,{}))
-def run_playbooks(p,o,names,hosts):
- ps=paths(p,o)
- for name in names:
-  if name not in [x['name'] for x in get_playbooks(p,o)]:continue
-  cmd=['ansible-playbook','-i',ps['hosts'],os.path.join(ps['object_dir'],name)]+(['-l',','.join(hosts)] if hosts else []);log(f'=== START {name} [{p}/{o}] ===')
-  try:
-   proc=subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,bufsize=1,cwd=ps['object_dir'],env={**os.environ,'ANSIBLE_CONFIG':ps['cfg'] if os.path.isfile(ps['cfg']) else os.environ.get('ANSIBLE_CONFIG','')})
-   with PROC_LOCK:PROCESSES.append(proc)
-   for line in proc.stdout:log(line.rstrip())
-   log(f'=== DONE {name}: rc={proc.wait()} ===')
-  except Exception as e:log(f'EXECUTION ERROR: {e}')
-  finally:
-   with PROC_LOCK:
-    if 'proc' in locals() and proc in PROCESSES:PROCESSES.remove(proc)
+    global HOST_STATUS
+
+    while True:
+        result = {}
+
+        for project in get_projects():
+            for obj in get_objects(project):
+                result.setdefault(project, {})[obj] = {
+                    host["hostname"]: host_up(
+                        host["parameters"].get(
+                            "ansible_host",
+                            host["parameters"].get("ip", ""),
+                        )
+                    )
+                    for host in parse_hosts(project, obj)
+                }
+
+        with STATUS_LOCK:
+            HOST_STATUS = result
+
+        time.sleep(60)
+
+
+def status(project, obj):
+    with STATUS_LOCK:
+        return dict(HOST_STATUS.get(project, {}).get(obj, {}))
+
+
+def run_playbooks(project, obj, names, hosts):
+    file_paths = paths(project, obj)
+    if not file_paths:
+        return
+
+    available = {item["name"] for item in get_playbooks(project, obj)}
+
+    for name in names:
+        if name not in available:
+            continue
+
+        log(f"=== START {name} [{project}/{obj}] ===")
+
+        command = [
+            "ansible-playbook",
+            "-i",
+            file_paths["hosts"],
+            os.path.join(file_paths["object_dir"], name),
+        ]
+
+        if hosts:
+            command.extend(["-l", ",".join(hosts)])
+
+        try:
+            environment = os.environ.copy()
+            if os.path.isfile(file_paths["cfg"]):
+                environment["ANSIBLE_CONFIG"] = file_paths["cfg"]
+
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                cwd=file_paths["object_dir"],
+                env=environment,
+            )
+
+            with PROC_LOCK:
+                PROCESSES.append(process)
+
+            for line in process.stdout:
+                log(line.rstrip())
+
+            log(f"=== DONE {name}: rc={process.wait()} ===")
+
+        except OSError as exc:
+            log(f"EXECUTION ERROR: {exc}")
+
+        finally:
+            with PROC_LOCK:
+                if process in PROCESSES:
+                    PROCESSES.remove(process)
+
+
 def stop():
- with PROC_LOCK:
-  for p in PROCESSES:
-   try:p.terminate()
-   except:pass
-  PROCESSES.clear()
- log('=== EXECUTION STOPPED ===')
+    with PROC_LOCK:
+        for process in PROCESSES:
+            try:
+                process.terminate()
+            except OSError:
+                pass
+
+        PROCESSES.clear()
+
+    log("=== EXECUTION STOPPED ===")
+
+
 class Handler(BaseHTTPRequestHandler):
- def json(self,d,code=200):
-  b=json.dumps(d,ensure_ascii=False).encode();self.send_response(code);self.send_header('Content-Type','application/json; charset=utf-8');self.send_header('Content-Length',str(len(b)));self.end_headers();self.wfile.write(b)
- def file(self,p,ct):
-  if not os.path.isfile(p):self.send_error(404);return
-  b=open(p,'rb').read();self.send_response(200);self.send_header('Content-Type',ct);self.send_header('Content-Length',str(len(b)));self.end_headers();self.wfile.write(b)
- def do_GET(self):
-  u=urlparse(self.path);q=parse_qs(u.query);p=q.get('project',[''])[0];o=q.get('object',[''])[0]
-  static={'/':'main.html','/main':'main.html','/hosts_info':'hosts_info.html','/editor':'editor.html','/style.css':'style.css','/common.js':'common.js','/main.js':'main.js','/hosts_info.js':'hosts_info.js','/editor.js':'editor.js','/background':None}
-  if u.path in static:
-   if u.path=='/':self.send_response(302);self.send_header('Location','/main');self.end_headers();return
-   if u.path=='/background':self.file(os.path.join(BASE_DIR,'logo.png'),'image/png');return
-   ct='text/html; charset=utf-8' if u.path in ('/main','/hosts_info','/editor') else 'application/javascript; charset=utf-8' if u.path.endswith('.js') else 'text/css; charset=utf-8';self.file(os.path.join(PUBLIC_DIR,static[u.path]),ct);return
-  if u.path=='/data':
-   hs=parse_hosts(p,o);self.json({'projects':get_projects(),'objects':get_objects(p),'selected_project':p,'selected_object':o,'hosts':hs,'host_parameters':host_parameters(p,o),'status':status(p,o),'playbooks':get_playbooks(p,o),'local_ip':socket.gethostbyname(socket.gethostname())});return
-  if u.path=='/status':self.json(status(p,o));return
-  if u.path=='/log_new':
-   try:start=int(q.get('start',['0'])[0])
-   except:start=0
-   with LOG_LOCK:lines=LOG[start:];nxt=len(LOG)
-   self.json({'lines':lines,'next':nxt});return
-  if u.path=='/playbook':
-   name=safe(q.get('name',[''])[0]);ps=paths(p,o);self.json({'name':name,'content':read(os.path.join(ps['object_dir'],name)) if ps else ''});return
-  if u.path=='/files':
-   ps=paths(p,o);self.json({'hosts':read(ps['hosts']) if ps else '','defaults':read(ps['defaults']) if ps else ''});return
-  self.send_error(404)
- def do_POST(self):
-  n=int(self.headers.get('Content-Length',0));raw=self.rfile.read(n)
-  try:d=json.loads(raw.decode()) if raw else {}
-  except:d={}
-  p=d.get('project','');o=d.get('object','')
-  try:
-   if self.path=='/run':threading.Thread(target=run_playbooks,args=(p,o,d.get('playbooks',[]),d.get('hosts',[])),daemon=True).start();return self.json({'ok':True})
-   if self.path=='/stop':stop();return self.json({'ok':True})
-   if self.path=='/update_host':save_host(p,o,d.get('hostname',''),d.get('new_hostname',d.get('hostname','')),d.get('values',{}),d.get('group','servers'));return self.json({'ok':True})
-   if self.path=='/add_host':add_host(p,o,d.get('hostname',''),d.get('values',{}),d.get('group','servers'));return self.json({'ok':True})
-   if self.path=='/delete_host':delete_host(p,o,d.get('hostname',''));return self.json({'ok':True})
-   if self.path=='/save_playbook':ps=paths(p,o);write(os.path.join(ps['object_dir'],safe(d.get('name'))),d.get('content',''));return self.json({'ok':True})
-   if self.path=='/save_files':ps=paths(p,o);write(ps['hosts'],d.get('hosts',''));write(ps['defaults'],d.get('defaults',''));return self.json({'ok':True})
-  except Exception as e:return self.json({'ok':False,'error':str(e)},500)
-  self.send_error(404)
-if __name__=='__main__':threading.Thread(target=status_worker,daemon=True).start();HTTPServer(('0.0.0.0',8000),Handler).serve_forever()
+    def json(self, data, code=200):
+        body = json.dumps(data, ensure_ascii=False).encode()
+        self.send_response(code)
+        self.send_header(
+            "Content-Type",
+            "application/json; charset=utf-8",
+        )
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def file(self, path, content_type):
+        if not os.path.isfile(path):
+            self.send_error(404)
+            return
+
+        with open(path, "rb") as file:
+            body = file.read()
+
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        url = urlparse(self.path)
+        query = parse_qs(url.query)
+        project = query.get("project", [""])[0]
+        obj = query.get("object", [""])[0]
+
+        static = {
+            "/main": "main.html",
+            "/hosts_info": "hosts_info.html",
+            "/editor": "editor.html",
+            "/style.css": "style.css",
+            "/common.js": "common.js",
+            "/main.js": "main.js",
+            "/hosts_info.js": "hosts_info.js",
+            "/editor.js": "editor.js",
+        }
+
+        if url.path in static:
+            filename = static[url.path]
+            if filename.endswith(".html"):
+                content_type = "text/html; charset=utf-8"
+            elif filename.endswith(".css"):
+                content_type = "text/css; charset=utf-8"
+            else:
+                content_type = "application/javascript; charset=utf-8"
+
+            self.file(os.path.join(PUBLIC_DIR, filename), content_type)
+            return
+
+        if url.path == "/background":
+            background = os.path.join(BASE_DIR, "logo.png")
+            self.file(background, "image/png")
+            return
+
+        if url.path == "/data":
+            self.json(
+                {
+                    "projects": get_projects(),
+                    "objects": get_objects(project),
+                    "selected_project": project,
+                    "selected_object": obj,
+                    "hosts": parse_hosts(project, obj),
+                    "status": status(project, obj),
+                    "playbooks": get_playbooks(project, obj),
+                    "local_ip": socket.gethostbyname(socket.gethostname()),
+                }
+            )
+            return
+
+        if url.path == "/status":
+            self.json(status(project, obj))
+            return
+
+        if url.path == "/log_new":
+            try:
+                start = int(query.get("start", ["0"])[0])
+            except ValueError:
+                start = 0
+
+            with LOG_LOCK:
+                lines = LOG[start:]
+                next_index = len(LOG)
+
+            self.json({"lines": lines, "next": next_index})
+            return
+
+        if url.path == "/playbook":
+            name = safe(query.get("name", [""])[0])
+            file_paths = paths(project, obj)
+            content = (
+                read(os.path.join(file_paths["object_dir"], name))
+                if file_paths
+                else ""
+            )
+            self.json({"name": name, "content": content})
+            return
+
+        if url.path == "/files":
+            file_paths = paths(project, obj)
+            self.json(
+                {
+                    "hosts": read(file_paths["hosts"]) if file_paths else "",
+                    "defaults": read(file_paths["defaults"])
+                    if file_paths
+                    else "",
+                }
+            )
+            return
+
+        self.send_error(404)
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        raw = self.rfile.read(length)
+
+        try:
+            data = json.loads(raw.decode()) if raw else {}
+        except json.JSONDecodeError:
+            data = {}
+
+        project = data.get("project", "")
+        obj = data.get("object", "")
+
+        try:
+            if self.path == "/run":
+                threading.Thread(
+                    target=run_playbooks,
+                    args=(
+                        project,
+                        obj,
+                        data.get("playbooks", []),
+                        data.get("hosts", []),
+                    ),
+                    daemon=True,
+                ).start()
+                self.json({"ok": True})
+                return
+
+            if self.path == "/stop":
+                stop()
+                self.json({"ok": True})
+                return
+
+            if self.path == "/update_host":
+                save_host(
+                    project,
+                    obj,
+                    data.get("hostname", ""),
+                    data.get("new_hostname", data.get("hostname", "")),
+                    data.get("values", {}),
+                )
+                self.json({"ok": True})
+                return
+
+            if self.path == "/add_host":
+                add_host(
+                    project,
+                    obj,
+                    data.get("hostname", ""),
+                    data.get("values", {}),
+                )
+                self.json({"ok": True})
+                return
+
+            if self.path == "/delete_host":
+                delete_host(
+                    project,
+                    obj,
+                    data.get("hostname", ""),
+                )
+                self.json({"ok": True})
+                return
+
+            if self.path == "/save_playbook":
+                file_paths = paths(project, obj)
+                write(
+                    os.path.join(
+                        file_paths["object_dir"],
+                        safe(data.get("name")),
+                    ),
+                    data.get("content", ""),
+                )
+                self.json({"ok": True})
+                return
+
+            if self.path == "/save_files":
+                file_paths = paths(project, obj)
+                write(file_paths["hosts"], data.get("hosts", ""))
+                write(file_paths["defaults"], data.get("defaults", ""))
+                self.json({"ok": True})
+                return
+
+        except (OSError, ValueError) as exc:
+            self.json({"ok": False, "error": str(exc)}, 500)
+            return
+
+        self.send_error(404)
+
+
+if __name__ == "__main__":
+    threading.Thread(target=status_worker, daemon=True).start()
+    HTTPServer(("0.0.0.0", 8000), Handler).serve_forever()

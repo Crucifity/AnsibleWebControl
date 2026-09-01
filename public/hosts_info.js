@@ -1,16 +1,242 @@
-const P=getProjectFromURL();let O=getObjectFromURL();let DATA=null;
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function changeObject(){O=document.getElementById('object_select').value;location.href=`/hosts_info?project=${encodeURIComponent(P)}&object=${encodeURIComponent(O)}`}
-function api(path,body){return fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(async r=>{const d=await r.json();if(!r.ok||d.ok===false)throw Error(d.error||'Ошибка');return d})}
-function field(k,v,edit=false){return `<label>${esc(k)}</label><input data-key="${esc(k)}" value="${esc(v)}" ${edit?'':'readonly'}>`}
-function card(h,group){const params=Object.entries(h.parameters||{});return `<div class="host-card" id="host-${encodeURIComponent(h.hostname)}"><div class="host-head" onclick="toggleHost(this.parentElement)"><span>▸</span><span class="title">${esc(h.hostname)}</span><span class="status-dot ${DATA.status[h.hostname]?'status-up':'status-down'}"></span><div class="host-actions" onclick="event.stopPropagation()"><button class="readonly" onclick="editHost(this)">Изменить</button><button class="danger readonly" onclick="deleteHost('${esc(h.hostname)}')">Удалить</button></div></div><div class="host-body" hidden><div class="param-grid">${params.map(([k,v])=>field(k,v)).join('')}</div><div class="host-footer"><button class="edit-save" onclick="saveHost(event,'${esc(h.hostname)}','${group}')">Сохранить</button><button class="edit-save" onclick="cancelEdit(event,'${esc(h.hostname)}')">Отмена</button></div></div></div>`}
-function toggleHost(c){const b=c.querySelector('.host-body');b.hidden=!b.hidden;c.querySelector('.host-head span').textContent=b.hidden?'▸':'▾'}
-function editHost(btn){const c=btn.closest('.host-card');c.classList.add('editing');c.querySelectorAll('input').forEach(x=>x.readOnly=false);c.querySelector('.host-body').hidden=false;c.querySelector('.host-head span').textContent='▾'}
-function cancelEdit(e,name){e.stopPropagation();load()}
-function saveHost(e,old,group){e.stopPropagation();const c=document.getElementById('host-'+encodeURIComponent(old));const vals={};c.querySelectorAll('input').forEach(x=>vals[x.dataset.key]=x.value);api('/update_host',{project:P,object:O,hostname:old,values:vals,group}).then(load).catch(x=>alert(x.message))}
-function deleteHost(name){if(!confirm(`Удалить хост «${name}»?\nДанные будут удалены из hosts-файла.`))return;api('/delete_host',{project:P,object:O,hostname:name}).then(load).catch(x=>alert(x.message))}
-function newForm(){const params=DATA.host_parameters||[];document.getElementById('new_host_form').innerHTML=`<div class="param-grid"><label>Имя хоста</label><input id="new-hostname"><label>Группа</label><select id="new-group"><option value="servers">Сервера</option><option value="arm">АРМ</option></select>${params.map(k=>field(k,'',true)).join('')}</div>`}
-function addHost(){const name=document.getElementById('new-hostname').value.trim();const group=document.getElementById('new-group').value;const vals={};document.querySelectorAll('#new_host_form [data-key]').forEach(x=>vals[x.dataset.key]=x.value);if(!name)return alert('Укажите имя хоста');api('/add_host',{project:P,object:O,hostname:name,group,values:vals}).then(load).catch(x=>alert(x.message))}
-function rows(list,group){return list.length?list.map(h=>card(h,group)).join(''):'<div class="empty">Хостов нет</div>'}
-function load(){fetch(`/data?project=${encodeURIComponent(P)}&object=${encodeURIComponent(O)}`).then(r=>r.json()).then(d=>{DATA=d;if(!O&&d.objects?.length){O=d.objects[0];return changeObject()}injectNav('hosts',d.projects||[],d.selected_project||'',O);document.getElementById('object_select').innerHTML=(d.objects||[]).map(o=>`<option value="${esc(o)}" ${o===O?'selected':''}>${esc(o)}</option>`).join('');renderSummary(d.hosts||{},d.status||{});document.getElementById('servers_list').innerHTML=rows(d.hosts?.servers||[],'servers');document.getElementById('arms_list').innerHTML=rows(d.hosts?.arm||[],'arm');newForm()}).catch(e=>alert(e))}
+const P = getProjectFromURL();
+let O = getObjectFromURL();
+let DATA = null;
+let NEW_NODE_TYPE = 'host';
+
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[c]));
+
+function changeObject() {
+    O = document.getElementById('object_select').value;
+    location.href = `/hosts_info?project=${encodeURIComponent(P)}&object=${encodeURIComponent(O)}`;
+}
+
+function api(path, body) {
+    return fetch(path, {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+    }).then(async (response) => {
+        const data = await response.json();
+        if (!response.ok || data.ok === false) throw Error(data.error || 'Ошибка');
+        return data;
+    });
+}
+
+function field(key, value, edit = false) {
+    return `
+        <div class="param-name" title="${esc(key)}">${esc(key)}</div>
+        <input class="param-value" data-key="${esc(key)}" value="${esc(value)}" ${edit ? '' : 'readonly'}>
+    `;
+}
+
+function nodeType(host) {
+    if (host.node_type === 'host' || host.node_type === 'md') return host.node_type;
+    const keys = Object.keys(host.parameters || {});
+    const last = keys.length ? keys[keys.length - 1] : '';
+    return last === 'uefi' ? 'host' : last === 'Description' ? 'md' : 'unknown';
+}
+
+function nodeTypeLabel(type) {
+    return type === 'md' ? 'МД' : type === 'host' ? 'Хост' : 'Узел';
+}
+
+function card(host) {
+    const params = Object.entries(host.parameters || {});
+    const type = host.node_type || nodeType(host);
+    const status = DATA.status[host.hostname];
+
+    return `
+        <div class="host-card" id="host-${encodeURIComponent(host.hostname)}">
+            <div class="host-head" onclick="toggleHost(this.parentElement)">
+                <span class="chevron">▸</span>
+                <span class="title">${esc(host.hostname)}</span>
+                <span class="node-badge">${nodeTypeLabel(type)}</span>
+                <span class="status-dot ${status ? 'status-up' : 'status-down'}"></span>
+                <span class="host-state">${status ? 'доступен' : 'недоступен'}</span>
+                <div class="host-actions" onclick="event.stopPropagation()">
+                    <button onclick="editHost(this)">Изменить</button>
+                    <button class="danger" onclick="deleteHost('${esc(host.hostname)}')">Удалить</button>
+                </div>
+            </div>
+            <div class="host-body" hidden>
+                <div class="param-grid">
+                    ${params.length ? params.map(([key, value]) => field(key, value)).join('') : '<div class="empty">Параметров нет</div>'}
+                </div>
+                <div class="host-footer">
+                    <span class="edit-note">Изменение применяется к hosts.yml</span>
+                    <button class="edit-save primary" onclick="saveHost(event, '${esc(host.hostname)}')">Сохранить</button>
+                    <button class="edit-save" onclick="cancelEdit(event)">Отмена</button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function animatePanel(body, open) {
+    body.style.overflow = 'hidden';
+    body.style.transition = 'max-height 220ms ease, opacity 180ms ease, padding 220ms ease';
+
+    if (open) {
+        body.hidden = false;
+        body.style.opacity = '0';
+        body.style.maxHeight = '0px';
+        requestAnimationFrame(() => {
+            body.style.maxHeight = `${body.scrollHeight}px`;
+            body.style.opacity = '1';
+        });
+        return;
+    }
+
+    body.style.maxHeight = `${body.scrollHeight}px`;
+    body.style.opacity = '1';
+    requestAnimationFrame(() => {
+        body.style.maxHeight = '0px';
+        body.style.opacity = '0';
+    });
+    window.setTimeout(() => {
+        body.hidden = true;
+        body.style.maxHeight = '';
+        body.style.opacity = '';
+        body.style.overflow = '';
+    }, 230);
+}
+
+function toggleHost(cardElement) {
+    if (cardElement.dataset.animating === '1') return;
+    const body = cardElement.querySelector('.host-body');
+    const isOpen = !body.hidden;
+    cardElement.dataset.animating = '1';
+    animatePanel(body, !isOpen);
+    cardElement.querySelector('.chevron').textContent = isOpen ? '▸' : '▾';
+    window.setTimeout(() => { cardElement.dataset.animating = '0'; }, 240);
+}
+
+function editHost(button) {
+    const cardElement = button.closest('.host-card');
+    const body = cardElement.querySelector('.host-body');
+    cardElement.classList.add('editing');
+    if (body.hidden) {
+        cardElement.dataset.animating = '1';
+        animatePanel(body, true);
+        cardElement.querySelector('.chevron').textContent = '▾';
+        window.setTimeout(() => { cardElement.dataset.animating = '0'; }, 240);
+    }
+    cardElement.querySelectorAll('input').forEach((input) => input.readOnly = false);
+    const first = cardElement.querySelector('input');
+    if (first) first.focus();
+}
+
+function cancelEdit(event) {
+    event.stopPropagation();
+    load();
+}
+
+function saveHost(event, oldName) {
+    event.stopPropagation();
+    const cardElement = document.getElementById(`host-${encodeURIComponent(oldName)}`);
+    const values = {};
+    cardElement.querySelectorAll('[data-key]').forEach((input) => { values[input.dataset.key] = input.value; });
+    api('/update_host', {
+        project: P, object: O, hostname: oldName, new_hostname: oldName, values
+    }).then(load).catch((error) => alert(error.message));
+}
+
+function deleteHost(name) {
+    if (!confirm(`Удалить узел «${name}»?\nЭто действие изменит hosts.yml.`)) return;
+    api('/delete_host', {project: P, object: O, hostname: name})
+        .then(load).catch((error) => alert(error.message));
+}
+
+function getNodeSchemas() {
+    const schemas = {host: [], md: []};
+    (DATA.hosts || []).forEach((item) => {
+        const type = item.node_type || nodeType(item);
+        if (!schemas[type]) return;
+        Object.keys(item.parameters || {}).forEach((key) => {
+            if (!schemas[type].includes(key)) schemas[type].push(key);
+        });
+    });
+    return schemas;
+}
+
+function selectNodeType(type) {
+    NEW_NODE_TYPE = type;
+    document.querySelectorAll('.node-type-tab').forEach((tab) => {
+        tab.classList.toggle('active', tab.dataset.nodeType === type);
+    });
+    renderNewNodeFields();
+}
+
+function renderNewNodeFields() {
+    const container = document.getElementById('new_node_fields');
+    const schemas = getNodeSchemas();
+    const keys = schemas[NEW_NODE_TYPE] || [];
+    if (!keys.length) {
+        container.innerHTML = `<div class="new-node-empty">Для типа «${nodeTypeLabel(NEW_NODE_TYPE)}» пока нет примера параметров. Сначала должен существовать хотя бы один такой узел в hosts.yml.</div>`;
+        return;
+    }
+    container.innerHTML = keys.map((key) => `
+        <label class="new-node-field">
+            <span>${esc(key)}</span>
+            <input data-new-key="${esc(key)}" type="text" placeholder="Значение">
+        </label>
+    `).join('');
+}
+
+function openAddNodeModal() {
+    NEW_NODE_TYPE = 'host';
+    document.getElementById('new_node_name').value = '';
+    document.getElementById('add_node_modal').hidden = false;
+    selectNodeType('host');
+    setTimeout(() => document.getElementById('new_node_name').focus(), 0);
+}
+
+function closeAddNodeModal() {
+    document.getElementById('add_node_modal').hidden = true;
+}
+
+function createNode() {
+    const nameInput = document.getElementById('new_node_name');
+    const name = nameInput.value.trim();
+    if (!name) { nameInput.focus(); return; }
+
+    const values = {};
+    document.querySelectorAll('[data-new-key]').forEach((input) => { values[input.dataset.newKey] = input.value; });
+    const schemas = getNodeSchemas();
+    const requiredKeys = schemas[NEW_NODE_TYPE] || [];
+    if (!requiredKeys.length) {
+        alert(`Нельзя создать ${nodeTypeLabel(NEW_NODE_TYPE)}: не удалось определить его параметры.`);
+        return;
+    }
+
+    api('/add_host', {project: P, object: O, hostname: name, node_type: NEW_NODE_TYPE, values})
+        .then(() => { closeAddNodeModal(); load(); })
+        .catch((error) => alert(error.message));
+}
+
+function load() {
+    fetch(`/data?project=${encodeURIComponent(P)}&object=${encodeURIComponent(O)}`)
+        .then((response) => response.json())
+        .then((data) => {
+            DATA = data;
+            if (!O && data.objects?.length) { O = data.objects[0]; return changeObject(); }
+            injectNav('hosts', data.projects || [], data.selected_project || '', O);
+            document.getElementById('object_select').innerHTML = (data.objects || [])
+                .map((object) => `<option value="${esc(object)}" ${object === O ? 'selected' : ''}>${esc(object)}</option>`)
+                .join('');
+            renderSummary(data.hosts || [], data.status || {});
+            document.getElementById('hosts_list').innerHTML = rows(data.hosts || []);
+        });
+}
+
+function rows(list) {
+    return list.length ? list.map(card).join('') : '<div class="empty">Узлов нет</div>';
+}
+
+window.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeAddNodeModal(); });
+window.addEventListener('click', (event) => {
+    const modal = document.getElementById('add_node_modal');
+    if (event.target === modal) closeAddNodeModal();
+});
+
 load();
