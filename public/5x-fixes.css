@@ -27,7 +27,6 @@
     height: 18px;
     margin: 0 9px 0 0;
     flex: 0 0 18px;
-    vertical-align: middle;
     border: 1px solid rgba(255, 255, 255, .22);
     border-radius: 5px;
     background: rgba(255, 255, 255, .045);
@@ -63,28 +62,82 @@
     transform: rotate(40deg);
 }
 
-/* Give the working columns more breathing room while keeping them side by side. */
+/* The two working panels use the same centered width as the project context. */
 .workspace-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 18px;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr);
+    gap: 22px;
     align-items: stretch;
     width: 100%;
+    max-width: 100%;
+    margin: 0 auto;
+    box-sizing: border-box;
 }
 
 .workspace-panel {
     min-width: 0;
     width: 100%;
+    box-sizing: border-box;
 }
 
-.nodes-panel,
-.playbooks-panel {
-    min-width: 0;
-}
+.nodes-panel { min-width: 0; }
+.playbooks-panel { min-width: 0; }
 
 .execution-panel {
     width: 100%;
     margin-top: 18px;
+    box-sizing: border-box;
+}
+
+/* Keep long node names, IPs and action buttons from colliding. */
+.host-head {
+    min-width: 0;
+}
+
+.node-main {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(150px, 1.2fr) minmax(105px, .75fr) minmax(145px, .95fr);
+    gap: 14px;
+    align-items: center;
+}
+
+.node-name,
+.node-ip,
+.node-template {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.node-ip { font-variant-numeric: tabular-nums; }
+
+.playbook-row {
+    min-width: 0;
+    gap: 16px;
+}
+
+.playbook-row > label {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+}
+
+.playbook-row > label span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.playbook-actions {
+    flex-shrink: 0;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
 }
 
 .playbook-editor-modal {
@@ -115,8 +168,15 @@
     tab-size: 2;
 }
 
+@media (max-width: 1050px) {
+    .workspace-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 @media (max-width: 900px) {
-    .workspace-grid { grid-template-columns: 1fr; }
     .playbook-editor-modal { min-width: 0; }
     .playbook-editor { min-width: 0; width: calc(100vw - 90px) !important; }
+    .node-main { grid-template-columns: minmax(0, 1fr); gap: 3px; }
+    .playbook-actions { width: 100%; justify-content: flex-start; }
 }
