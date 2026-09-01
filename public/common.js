@@ -14,15 +14,14 @@ function projectSelectorHTML(projects, selected) {
     return `<div class="project-bar"><b>Проект:</b><select id="project_select" onchange="changeProject()"><option value="">-- выберите проект --</option>${projects.map((project) => `<option value="${project}" ${project === selected ? 'selected' : ''}>${project}</option>`).join('')}</select></div>`;
 }
 
-function navHTML(active, project, object) {
-    const query = `?project=${encodeURIComponent(project || '')}${object ? `&object=${encodeURIComponent(object)}` : ''}`;
-    return `<div class="tabs"><a href="/main${query}" class="tab ${active === 'main' ? 'active' : ''}">Запуск</a></div>`;
+function navHTML() {
+    return '';
 }
 
 function injectNav(active, projects = [], selectedProject = '', selectedObject = '') {
     const nav = document.getElementById('nav');
     const selector = document.getElementById('project_selector');
-    if (nav) nav.innerHTML = navHTML(active, selectedProject, selectedObject);
+    if (nav) nav.innerHTML = navHTML();
     if (selector) selector.innerHTML = projectSelectorHTML(projects, selectedProject);
 }
 
