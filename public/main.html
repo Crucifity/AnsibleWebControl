@@ -4,47 +4,167 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Ansible Web Control 3.x</title>
+
     <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/5x-fixes.css">
+
     <style>
-        .playbook-card { border:1px solid rgba(255,255,255,.08); border-radius:10px; margin:6px 0; overflow:hidden; background:rgba(0,0,0,.12); }
-        .playbook-actions { display:flex; gap:8px; align-items:center; }
-        .playbook-roles { padding:8px 12px 12px 34px; border-top:1px solid rgba(255,255,255,.07); background:rgba(0,0,0,.12); }
-        .roles-title { color:rgba(255,255,255,.45); font:600 11px Arial,sans-serif; text-transform:uppercase; letter-spacing:.08em; margin-bottom:5px; }
-        .role-dir { margin:2px 0; }
-        .role-toggle,.role-file { display:block; width:100%; padding:5px 8px; border:0; border-radius:6px; background:transparent; text-align:left; color:rgba(255,255,255,.76); font:13px monospace; }
-        .role-toggle:hover,.role-file:hover { background:rgba(255,255,255,.07); transform:none; }
-        .role-children { margin-left:17px; padding-left:8px; border-left:1px solid rgba(255,255,255,.10); }
-        .role-file { color:rgba(255,255,255,.62); cursor:pointer; }
-        .roles-loading { color:rgba(255,255,255,.4); font-size:12px; padding:5px; }
+        .playbook-card {
+            border: 1px solid rgba(255, 255, 255, .08);
+            border-radius: 10px;
+            margin: 6px 0;
+            overflow: hidden;
+            background: rgba(0, 0, 0, .12);
+        }
+
+        .playbook-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .playbook-roles {
+            padding: 8px 12px 12px 34px;
+            border-top: 1px solid rgba(255, 255, 255, .07);
+            background: rgba(0, 0, 0, .12);
+        }
+
+        .roles-title {
+            color: rgba(255, 255, 255, .45);
+            font: 600 11px Arial, sans-serif;
+            text-transform: uppercase;
+            letter-spacing: .08em;
+            margin-bottom: 5px;
+        }
+
+        .role-dir {
+            margin: 2px 0;
+        }
+
+        .role-toggle,
+        .role-file {
+            display: block;
+            width: 100%;
+            padding: 5px 8px;
+            border: 0;
+            border-radius: 6px;
+            background: transparent;
+            text-align: left;
+            color: rgba(255, 255, 255, .76);
+            font: 13px monospace;
+        }
+
+        .role-toggle:hover,
+        .role-file:hover {
+            background: rgba(255, 255, 255, .07);
+            transform: none;
+        }
+
+        .role-children {
+            margin-left: 17px;
+            padding-left: 8px;
+            border-left: 1px solid rgba(255, 255, 255, .10);
+        }
+
+        .role-file {
+            color: rgba(255, 255, 255, .62);
+            cursor: pointer;
+        }
+
+        .roles-loading {
+            color: rgba(255, 255, 255, .4);
+            font-size: 12px;
+            padding: 5px;
+        }
     </style>
 </head>
+
 <body>
     <div class="overlay">
         <div id="nav"></div>
         <div id="project_selector"></div>
+
         <div class="page-wrap">
             <div id="object_block" class="block">
-                <div class="section-head"><h3>Объект</h3><select id="object_select" onchange="changeObject()"></select></div>
+                <div class="section-head">
+                    <h3>Объект</h3>
+                    <select id="object_select" onchange="changeObject()"></select>
+                </div>
             </div>
+
             <div id="autodeploy_block"></div>
+
             <div class="block">
-                <div class="section-head"><h3>Узлы</h3><div class="node-toolbar"><button onclick="selectHosts(true)">Выбрать все</button><button onclick="selectHosts(false)">Сбросить</button><button class="primary" onclick="openAddNodeModal()">+ Добавить узел</button><button class="danger" onclick="deleteSelectedNodes()">Удалить выбранные</button></div></div>
-                <div id="groups" class="group-strip"></div><div id="nodes" class="hosts-list"></div>
+                <div class="section-head">
+                    <h3>Узлы</h3>
+                    <div class="node-toolbar">
+                        <button onclick="selectHosts(true)">Выбрать все</button>
+                        <button onclick="selectHosts(false)">Сбросить</button>
+                        <button class="primary" onclick="openAddNodeModal()">+ Добавить узел</button>
+                        <button class="danger" onclick="deleteSelectedNodes()">Удалить выбранные</button>
+                    </div>
+                </div>
+
+                <div id="groups" class="group-strip"></div>
+                <div id="nodes" class="hosts-list"></div>
             </div>
+
             <div class="block">
-                <div class="section-head"><h3>Плейбуки</h3><div class="btn-row compact"><button onclick="selectPB(true)">Выбрать все</button><button onclick="selectPB(false)">Отменить выбор</button></div></div>
-                <div id="playbooks" class="playbook-list"></div><div class="run-row"><button class="primary" onclick="runSelected()">Запуск</button><button onclick="stopExecution()">Завершить</button></div>
+                <div class="section-head">
+                    <h3>Плейбуки</h3>
+                    <div class="btn-row compact">
+                        <button onclick="selectPB(true)">Выбрать все</button>
+                        <button onclick="selectPB(false)">Отменить выбор</button>
+                    </div>
+                </div>
+
+                <div id="playbooks" class="playbook-list"></div>
+
+                <div class="run-row">
+                    <button class="primary" onclick="runSelected()">Запуск</button>
+                    <button onclick="stopExecution()">Завершить</button>
+                </div>
             </div>
-            <div class="block"><div class="section-head"><h3>Выполнение</h3><span id="run_state">Готов</span></div><pre id="log" class="log"></pre></div>
+
+            <div class="block">
+                <div class="section-head">
+                    <h3>Выполнение</h3>
+                    <span id="run_state">Готов</span>
+                </div>
+                <pre id="log" class="log"></pre>
+            </div>
         </div>
     </div>
+
     <div id="add_node_modal" class="modal-backdrop" hidden>
         <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="add_node_title">
-            <div class="modal-head"><div><div class="modal-kicker">Новый узел</div><h3 id="add_node_title">Добавление узла</h3></div><button class="modal-close" onclick="closeAddNodeModal()" aria-label="Закрыть">×</button></div>
-            <div class="modal-body"><label class="modal-label" for="new_node_name">Название</label><input id="new_node_name" class="modal-input" type="text" placeholder="Например, host01" autocomplete="off"><div class="modal-label" style="margin-top:16px;">Шаблон параметров</div><div id="node_template_tabs" class="node-type-tabs"></div><div id="new_node_fields" class="node-modal-fields"></div></div>
-            <div class="modal-footer"><button class="modal-secondary" onclick="closeAddNodeModal()">Отмена</button><button class="primary" onclick="createNode()">Добавить узел</button></div>
+            <div class="modal-head">
+                <div>
+                    <div class="modal-kicker">Новый узел</div>
+                    <h3 id="add_node_title">Добавление узла</h3>
+                </div>
+                <button class="modal-close" onclick="closeAddNodeModal()" aria-label="Закрыть">×</button>
+            </div>
+
+            <div class="modal-body">
+                <label class="modal-label" for="new_node_name">Название</label>
+                <input id="new_node_name" class="modal-input" type="text"
+                       placeholder="Например, host01" autocomplete="off">
+
+                <div class="modal-label" style="margin-top: 16px;">Шаблон параметров</div>
+                <div id="node_template_tabs" class="node-type-tabs"></div>
+                <div id="new_node_fields" class="node-modal-fields"></div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="modal-secondary" onclick="closeAddNodeModal()">Отмена</button>
+                <button class="primary" onclick="createNode()">Добавить узел</button>
+            </div>
         </div>
     </div>
-    <script src="/common.js"></script><script src="/main.js"></script>
+
+    <script src="/common.js"></script>
+    <script src="/main.js"></script>
+    <script src="/5x-fixes.js"></script>
 </body>
 </html>
