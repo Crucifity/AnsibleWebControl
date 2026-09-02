@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Ansible Web Control</title>
     <link rel="stylesheet" href="/style.css">
-    <link rel="stylesheet" href="/3x-fixes.css?v=3.2.0">
+    <link rel="stylesheet" href="/3x-fixes.css?v=3.3.0">
 </head>
 <body>
     <div class="overlay">
@@ -27,13 +27,16 @@
                     <div class="section-head">
                         <h3>Узлы</h3>
                         <div class="node-toolbar">
-                            <button onclick="selectHosts(true)">Выбрать все</button>
-                            <button onclick="selectHosts(false)">Сбросить</button>
+                            <button id="host_select_toggle" type="button" onclick="toggleHostSelection()">
+                                <span class="selection-button-label">Выбрать все узлы</span>
+                            </button>
                             <button class="primary" onclick="openAddNodeModal()">Добавить узел</button>
                             <button class="danger" onclick="deleteSelectedNodes()">Удалить выбранные</button>
                         </div>
                     </div>
-                    <div id="groups" class="group-strip"></div>
+                    <div class="panel-subrow">
+                        <div id="groups" class="group-strip"></div>
+                    </div>
                     <div id="nodes" class="hosts-list"></div>
                 </section>
 
@@ -45,6 +48,7 @@
                             <button onclick="selectPB(false)">Сбросить</button>
                         </div>
                     </div>
+                    <div class="panel-subrow panel-subrow-spacer" aria-hidden="true"></div>
                     <div id="playbooks" class="playbook-list"></div>
                 </section>
             </div>
@@ -106,7 +110,7 @@
     </div>
 
     <script src="/common.js"></script>
-    <script src="/3x-fixes.js?v=3.2.0"></script>
+    <script src="/3x-fixes.js?v=3.3.0"></script>
     <script src="/main.js"></script>
 </body>
 </html>
