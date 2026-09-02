@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import socket
 import subprocess
 import threading
@@ -223,6 +224,122 @@ def scalar(value):
         return value
 
 
+def _hosts_section_bounds(lines):
+    hosts_index = next(
+        (index for index, line in enumerate(lines) if line.rstrip("\r\n") == "  hosts:"),
+        None,
+    )
+    if hosts_index is None:
+        return None, None
+
+    end_index = len(lines)
+    for index in range(hosts_index + 1, len(lines)):
+        stripped = lines[index].rstrip("\r\n")
+        if stripped and not stripped.startswith(" "):
+            end_index = index
+            break
+        if re.match(r"^  \S", stripped):
+            end_index = index
+            break
+    return hosts_index, end_index
+
+
+def _host_entry_indexes(lines, hosts_index, end_index):
+    return [
+        index
+        for index in range(hosts_index + 1, end_index)
+        if re.match(r"^    \S", lines[index].rstrip("\r\n"))
+    ]
+
+
+def _host_name_from_line(line):
+    match = re.match(r"^    (\S.*?):\s*(?:#.*)?(?:\r?\n)?$", line)
+    return match.group(1) if match else None
+
+
+def _host_yaml_block(name, values, newline):
+    block = yaml.safe_dump(
+        {name: values},
+        allow_unicode=True,
+        sort_keys=False,
+        default_flow_style=False,
+    )
+    if newline != "\n":
+        block = block.replace("\n", newline)
+    return "".join(f"    {line}" if line.strip() else line for line in block.splitlines(keepends=True))
+
+
+def add_host(project, obj, name, values):
+    file_paths = paths(project, obj)
+    data = load_inventory(project, obj)
+    hosts = data.setdefault("all", {}).setdefault("hosts", {})
+    if not name:
+        raise ValueError("Имя узла не указано")
+    if name in hosts:
+        raise ValueError("Узел уже существует")
+
+    normalized_values = {key: scalar(value) for key, value in values.items()}
+    hosts[name] = normalized_values
+
+    raw = read(file_paths["hosts"])
+    lines = raw.splitlines(keepends=True)
+    hosts_index, end_index = _hosts_section_bounds(lines)
+    if hosts_index is None:
+        save_hosts(file_paths["hosts"], data)
+        return
+
+    newline = "\r\n" if "\r\n" in raw else "\n"
+    entry_indexes = _host_entry_indexes(lines, hosts_index, end_index)
+
+    if entry_indexes:
+        insert_at = end_index
+        while insert_at > hosts_index + 1 and not lines[insert_at - 1].strip():
+            insert_at -= 1
+        prefix = newline if lines[insert_at - 1].strip() else ""
+    else:
+        insert_at = hosts_index + 1
+        while insert_at < end_index and not lines[insert_at].strip():
+            insert_at += 1
+        prefix = ""
+
+    block = _host_yaml_block(name, normalized_values, newline)
+    if entry_indexes:
+        block = prefix + block
+    if end_index < len(lines):
+        block += newline
+
+    lines[insert_at:insert_at] = [block]
+    write(file_paths["hosts"], "".join(lines))
+
+
+def delete_host(project, obj, name):
+    file_paths = paths(project, obj)
+    raw = read(file_paths["hosts"])
+    lines = raw.splitlines(keepends=True)
+    hosts_index, end_index = _hosts_section_bounds(lines)
+    if hosts_index is None:
+        raise ValueError("Узел не найден")
+
+    entry_indexes = _host_entry_indexes(lines, hosts_index, end_index)
+    target_index = None
+    for index in entry_indexes:
+        if _host_name_from_line(lines[index]) == name:
+            target_index = index
+            break
+
+    if target_index is None:
+        raise ValueError("Узел не найден")
+
+    next_index = end_index
+    for index in entry_indexes:
+        if index > target_index:
+            next_index = index
+            break
+
+    del lines[target_index:next_index]
+    write(file_paths["hosts"], "".join(lines))
+
+
 def save_host(project, obj, old_name, new_name, values):
     file_paths = paths(project, obj)
     data = load_inventory(project, obj)
@@ -236,28 +353,6 @@ def save_host(project, obj, old_name, new_name, values):
         updated[key] = scalar(value)
     hosts.pop(old_name)
     hosts[new_name] = updated
-    save_hosts(file_paths["hosts"], data)
-
-
-def add_host(project, obj, name, values):
-    file_paths = paths(project, obj)
-    data = load_inventory(project, obj)
-    hosts = data.setdefault("all", {}).setdefault("hosts", {})
-    if not name:
-        raise ValueError("Имя узла не указано")
-    if name in hosts:
-        raise ValueError("Узел уже существует")
-    hosts[name] = {key: scalar(value) for key, value in values.items()}
-    save_hosts(file_paths["hosts"], data)
-
-
-def delete_host(project, obj, name):
-    file_paths = paths(project, obj)
-    data = load_inventory(project, obj)
-    hosts = data.setdefault("all", {}).setdefault("hosts", {})
-    if name not in hosts:
-        raise ValueError("Узел не найден")
-    hosts.pop(name)
     save_hosts(file_paths["hosts"], data)
 
 
@@ -375,7 +470,7 @@ def status_worker():
                 }
         with STATUS_LOCK:
             HOST_STATUS = statuses
-        time.sleep(15)
+        time.sleep(10)
 
 
 def status(project, obj):
@@ -479,6 +574,9 @@ class Handler(BaseHTTPRequestHandler):
             "/editor.js": "editor.js",
             "/5x-fixes.css": "5x-fixes.css",
             "/5x-fixes.js": "5x-fixes.js",
+            "/3x-fixes.css": "3x-fixes.css",
+            "/3x-fixes.js": "3x-fixes.js",
+            "/status-fix.js": "status-fix.js",
         }
 
         if url.path in static:
