@@ -21,7 +21,7 @@ body {
 .tab:hover,.tab.active { background: rgba(255,255,255,.18); }
 .project-bar { display:flex; align-items:center; gap:12px; padding:14px 18px 6px; }
 .project-bar select,#object_select,#playbook_select { min-width:280px; padding:10px 12px; border-radius:10px; background:rgba(0,0,0,.5); color:#fff; border:1px solid rgba(255,255,255,.15); }
-.page-wrap { max-width:1400px; margin:0 auto; padding:10px 18px; }
+.page-wrap { max-width:1500px; margin:0 auto; padding:10px 18px; }
 .block { border:1px solid rgba(255,255,255,.12); background:rgba(0,0,0,.38); backdrop-filter:blur(5px); margin:12px 0; padding:16px; border-radius:14px; }
 .section-head { display:flex; justify-content:space-between; align-items:center; gap:16px; }
 .section-head h3 { margin:0; }

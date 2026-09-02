@@ -1,208 +1,210 @@
-/* 5.x targeted fixes. Loaded after the existing 4.x UI. */
+/* Small, isolated UI changes for the 2.0 branch. */
 
 (function () {
-    function statusFor(hostname) {
-        if (!window.DATA || !window.DATA.status) {
-            return 'pending';
-        }
-
-        if (!Object.prototype.hasOwnProperty.call(window.DATA.status, hostname)) {
-            return 'pending';
-        }
-
-        return window.DATA.status[hostname] === true ? 'available' : 'unavailable';
-    }
-
-    window.renderNode = function (node) {
-        const availability = statusFor(node.hostname);
-        const params = Object.entries(node.parameters || {});
-        const id = `node-${encodeURIComponent(node.hostname)}`;
-
-        let state = `
-            <span class="node-status pending">
-                <span class="status-dot status-pending"></span>
-                проверка
-            </span>`;
-
-        if (availability === 'available') {
-            state = `
-                <span class="node-status available">
-                    <span class="status-dot status-up"></span>
-                    доступен
-                </span>`;
-        } else if (availability === 'unavailable') {
-            state = `
-                <span class="node-status unavailable">
-                    <span class="status-dot status-down"></span>
-                    недоступен
-                </span>`;
-        }
-
-        return `
-            <div class="host-card node-card node-${availability}" id="${id}">
-                <div class="host-head" onclick="toggleNodeFromHead(event, this.closest('.node-card'))">
-                    ${state}
-                    <input class="node-check" type="checkbox"
-                           value="${esc(node.hostname)}"
-                           onclick="event.stopPropagation()"
-                           onchange="updateRunHint()">
-                    <span class="node-expand">▸</span>
-                    <div class="node-main">
-                        <span class="node-name">${esc(node.hostname)}</span>
-                        <span class="node-ip">${esc(node.ip || '—')}</span>
-                        <span class="node-template">${esc(node.template || node.node_type || 'Узел')}</span>
-                    </div>
-                    <button class="node-edit"
-                            onclick="editNode(event, '${esc(node.hostname)}')">
-                        Изменить
-                    </button>
-                </div>
-
-                <div class="host-body" hidden>
-                    <div class="param-grid">
-                        ${params.length
-                            ? params.map(([key, value]) => `
-                                <div class="param-name" title="${esc(key)}">${esc(key)}</div>
-                                <input class="param-value"
-                                       data-key="${esc(key)}"
-                                       value="${esc(value)}"
-                                       readonly>
-                            `).join('')
-                            : '<div class="empty">Параметров нет</div>'}
-                    </div>
-                    <div class="host-footer">
-                        <span class="edit-note">
-                            ${esc(node.template || node.node_type || 'Узел')} · изменения сохраняются в hosts.yml
-                        </span>
-                        <button class="edit-save primary"
-                                onclick="saveNode(event, '${esc(node.hostname)}')">
-                            Сохранить
-                        </button>
-                        <button class="edit-save" onclick="cancelNodeEdit(event)">
-                            Отмена
-                        </button>
-                    </div>
-                </div>
-            </div>`;
-    };
-
-    window.renderRoleTree = function (nodes) {
-        return (nodes || []).map((node) => {
-            if (node.type === 'dir') {
-                return `
-                    <div class="role-dir">
-                        <button class="role-toggle" onclick="toggleRoleDir(this)">
-                            ▸ <span>${esc(node.name)}</span>
-                        </button>
-                        <div class="role-children" hidden>
-                            ${renderRoleTree(node.children)}
-                        </div>
-                    </div>`;
-            }
-
-            return `
-                <button class="role-file"
-                        onclick="openRoleFile('${esc(node.path)}')">
-                    ${esc(node.name)}
-                </button>`;
-        }).join('');
-    };
-
-    window.togglePlaybookRoles = function (button, name) {
-        const card = button.closest('.playbook-card');
-        const panel = card.querySelector('.playbook-roles');
-
-        if (!panel.hidden) {
-            panel.hidden = true;
-            button.textContent = 'Роли ▸';
-            return;
-        }
-
-        if (!panel.dataset.loaded) {
-            panel.innerHTML = '<div class="roles-loading">Загрузка…</div>';
-
-            const query = `/roles?project=${encodeURIComponent(CURRENT_PROJECT)}`
-                + `${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}`
-                + `&playbook=${encodeURIComponent(name)}`;
-
-            fetch(query)
-                .then((response) => {
-                    if (!response.ok) {
-                        throw Error('Не удалось загрузить роли');
-                    }
-                    return response.json();
-                })
-                .then((roles) => {
-                    panel.innerHTML = roles.length
-                        ? `<div class="roles-title">Роли плейбука</div>${renderRoleTree(roles)}`
-                        : '<div class="muted">Роли в плейбуке не указаны.</div>';
-                    panel.dataset.loaded = '1';
-                })
-                .catch((error) => {
-                    panel.innerHTML = `<div class="muted">${esc(error.message)}</div>`;
-                });
-        }
-
-        panel.hidden = false;
-        button.textContent = 'Роли ▾';
-    };
-
-    window.openRoleFile = function (path) {
-        const query = `/role_file?project=${encodeURIComponent(CURRENT_PROJECT)}`
+    function roleFileUrl(path) {
+        return `/role_file?project=${encodeURIComponent(CURRENT_PROJECT)}`
             + `${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}`
             + `&path=${encodeURIComponent(path)}`;
+    }
 
-        fetch(query)
+    function playbookUrl(name) {
+        return `/playbook?project=${encodeURIComponent(CURRENT_PROJECT)}`
+            + `${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}`
+            + `&name=${encodeURIComponent(name)}`;
+    }
+
+    window.editPlaybook = function (name) {
+        window.openPlaybookModal(name);
+    };
+
+    window.openPlaybookModal = function (name) {
+        const modal = document.getElementById('playbook_modal');
+        const editor = document.getElementById('playbook_editor');
+        const title = document.getElementById('playbook_modal_title');
+        if (!modal || !editor) return;
+
+        window.CURRENT_EDITING_PLAYBOOK = name;
+        title.textContent = name;
+        editor.value = 'Загрузка…';
+        editor.readOnly = true;
+        modal.hidden = false;
+
+        fetch(playbookUrl(name))
             .then((response) => {
-                if (!response.ok) {
-                    throw Error('Не удалось открыть файл');
-                }
+                if (!response.ok) throw Error('Не удалось открыть плейбук');
                 return response.json();
             })
             .then((data) => {
-                const child = window.open('', '_blank');
-                if (!child) {
-                    throw Error('Браузер заблокировал новое окно');
-                }
-
-                child.document.write(`
-                    <!doctype html>
-                    <html lang="ru">
-                    <head>
-                        <meta charset="utf-8">
-                        <title>${esc(data.name)}</title>
-                        <style>
-                            body {
-                                margin: 0;
-                                background: #171717;
-                                color: #eee;
-                                font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-                            }
-                            header {
-                                padding: 12px 20px;
-                                border-bottom: 1px solid #333;
-                                color: #aaa;
-                            }
-                            pre {
-                                margin: 0;
-                                padding: 20px;
-                                white-space: pre-wrap;
-                                line-height: 1.5;
-                            }
-                        </style>
-                    </head>
-                    <body>
-                        <header>${esc(data.name)}</header>
-                        <pre>${esc(data.content)}</pre>
-                    </body>
-                    </html>`);
-                child.document.close();
+                editor.value = data.content || '';
+                editor.readOnly = false;
+                fitPlaybookEditor();
+                editor.focus();
             })
-            .catch((error) => alert(error.message));
+            .catch((error) => {
+                editor.value = '';
+                alert(error.message);
+                closePlaybookModal();
+            });
     };
 
-    const originalLoadMain = window.loadMain;
-    if (typeof originalLoadMain === 'function') {
-        originalLoadMain();
+    window.closePlaybookModal = function () {
+        const modal = document.getElementById('playbook_modal');
+        if (modal) modal.hidden = true;
+        window.CURRENT_EDITING_PLAYBOOK = '';
+    };
+
+    window.savePlaybookFromModal = function () {
+        const name = window.CURRENT_EDITING_PLAYBOOK;
+        const editor = document.getElementById('playbook_editor');
+        if (!name || !editor) return;
+
+        editor.disabled = true;
+        fetch('/save_playbook', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                project: CURRENT_PROJECT,
+                object: CURRENT_OBJECT,
+                name,
+                content: editor.value,
+            }),
+        })
+            .then(async (response) => {
+                const data = await response.json();
+                if (!response.ok || data.ok === false) {
+                    throw Error(data.error || 'Не удалось сохранить плейбук');
+                }
+                closePlaybookModal();
+                if (typeof loadMain === 'function') loadMain();
+            })
+            .catch((error) => alert(error.message))
+            .finally(() => { editor.disabled = false; });
+    };
+
+    function fitPlaybookEditor() {
+        const editor = document.getElementById('playbook_editor');
+        const card = document.getElementById('playbook_editor_card');
+        if (!editor || !card) return;
+
+        const longestLine = editor.value.split('\n').reduce(
+            (max, line) => Math.max(max, line.length),
+            0,
+        );
+        const width = Math.min(1100, Math.max(620, longestLine * 7.2 + 70));
+        editor.style.width = `${width}px`;
+        card.style.width = `${Math.min(width + 42, window.innerWidth - 40)}px`;
     }
+
+    window.addEventListener('resize', () => {
+        if (!document.getElementById('playbook_modal')?.hidden) {
+            fitPlaybookEditor();
+        }
+    });
+
+    window.renderNode = function (node) {
+        const status = window.DATA?.status || {};
+        const hasStatus = Object.prototype.hasOwnProperty.call(status, node.hostname);
+        const state = !hasStatus
+            ? 'pending'
+            : status[node.hostname] === true
+                ? 'available'
+                : 'unavailable';
+        const label = {
+            pending: 'проверка',
+            available: 'доступен',
+            unavailable: 'недоступен',
+        }[state];
+        const dot = {
+            pending: 'status-pending',
+            available: 'status-up',
+            unavailable: 'status-down',
+        }[state];
+        const params = Object.entries(node.parameters || {});
+        const id = `node-${encodeURIComponent(node.hostname)}`;
+
+        return `<div class="host-card node-card node-${state}" id="${id}">
+            <div class="host-head" onclick="toggleNodeFromHead(event, this.closest('.node-card'))">
+                <span class="node-status ${state}"><span class="status-dot ${dot}"></span>${label}</span>
+                <input class="node-check" type="checkbox" value="${esc(node.hostname)}" onclick="event.stopPropagation()" onchange="updateRunHint()">
+                <span class="node-expand">▸</span>
+                <div class="node-main">
+                    <span class="node-name">${esc(node.hostname)}</span>
+                    <span class="node-ip">${esc(node.ip || '—')}</span>
+                    <span class="node-template">${esc(node.template || node.node_type || 'Узел')}</span>
+                </div>
+                <button class="node-edit" onclick="editNode(event, '${esc(node.hostname)}')">Изменить</button>
+            </div>
+            <div class="host-body" hidden>
+                <div class="param-grid">
+                    ${params.length
+                        ? params.map(([key, value]) => `
+                            <div class="param-name" title="${esc(key)}">${esc(key)}</div>
+                            <input class="param-value" data-key="${esc(key)}" value="${esc(value)}" readonly>
+                        `).join('')
+                        : '<div class="empty">Параметров нет</div>'}
+                </div>
+                <div class="host-footer">
+                    <span class="edit-note">${esc(node.template || node.node_type || 'Узел')} · изменения сохраняются в hosts.yml</span>
+                    <button class="edit-save primary" onclick="saveNode(event, '${esc(node.hostname)}')">Сохранить</button>
+                    <button class="edit-save" onclick="cancelNodeEdit(event)">Отмена</button>
+                </div>
+            </div>
+        </div>`;
+    };
+
+    /* Availability polling: one request immediately, then every 10 seconds. */
+    let statusTimer = null;
+    let statusRequest = null;
+
+    async function pollNodeStatus() {
+        if (!CURRENT_PROJECT) return;
+        if (statusRequest) return;
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 4500);
+        statusRequest = fetch(
+            `/status?project=${encodeURIComponent(CURRENT_PROJECT)}`
+                + `${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}`,
+            { cache: 'no-store', signal: controller.signal },
+        )
+            .then((response) => {
+                if (!response.ok) throw Error(`HTTP ${response.status}`);
+                return response.json();
+            })
+            .then((data) => {
+                if (!window.DATA) window.DATA = {};
+                window.DATA.status = data.status || data;
+                if (typeof renderNodes === 'function') renderNodes();
+            })
+            .catch(() => {
+                /* A failed poll must not leave a permanent "проверка" state. */
+            })
+            .finally(() => {
+                clearTimeout(timeout);
+                statusRequest = null;
+            });
+
+        await statusRequest;
+    }
+
+    function startStatusPolling() {
+        if (statusTimer) clearInterval(statusTimer);
+        pollNodeStatus();
+        statusTimer = setInterval(pollNodeStatus, 10000);
+    }
+
+    window.startStatusPolling = startStatusPolling;
+    window.stopStatusPolling = function () {
+        if (statusTimer) clearInterval(statusTimer);
+        statusTimer = null;
+    };
+
+    window.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            closePlaybookModal();
+            if (typeof closeAddNodeModal === 'function') closeAddNodeModal();
+        }
+    });
+
+    startStatusPolling();
 })();

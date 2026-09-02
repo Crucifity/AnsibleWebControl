@@ -1,31 +1,52 @@
-/* Small 5.x overrides. The base 4.x visual system remains untouched. */
+/* 2.0 layout and component polish */
 
-.host-card.node-available {
-    border: 1px solid rgba(76, 190, 112, 0.28);
-    box-shadow: 0 0 0 1px rgba(76, 190, 112, 0.05);
-}
+.workspace-grid,
+.execution-panel { width:100%; max-width:none; margin-left:auto; margin-right:auto; box-sizing:border-box; }
+.workspace-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:22px; align-items:stretch; }
+.workspace-panel { min-width:0; width:100%; box-sizing:border-box; }
+.nodes-panel,.playbooks-panel { min-width:0; }
+.execution-panel { margin-top:18px; }
 
-.host-card.node-unavailable {
-    border: 1px solid rgba(205, 76, 76, 0.28);
-    box-shadow: 0 0 0 1px rgba(205, 76, 76, 0.05);
-}
+.host-head { min-width:0; display:grid; grid-template-columns:92px 18px 18px minmax(0,1fr) auto; align-items:center; column-gap:12px; }
+.node-main { min-width:0; display:grid; grid-template-columns:minmax(150px,1.15fr) minmax(110px,.8fr) minmax(140px,.95fr); gap:14px; align-items:center; }
+.node-name,.node-ip,.node-template { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.node-ip,.node-template { font-variant-numeric:tabular-nums; }
 
-.host-card.node-pending {
-    border: 1px solid rgba(255, 255, 255, 0.10);
-}
+.node-check,.pb { appearance:none; -webkit-appearance:none; width:18px; height:18px; margin:0; flex:0 0 18px; border:1px solid rgba(255,255,255,.22); border-radius:5px; background:rgba(255,255,255,.045); cursor:pointer; position:relative; transition:border-color .15s ease,background .15s ease,box-shadow .15s ease,transform .12s ease; }
+.node-check:hover,.pb:hover { border-color:rgba(255,255,255,.42); background:rgba(255,255,255,.08); transform:translateY(-1px); }
+.node-check:checked,.pb:checked { background:rgba(77,145,100,.52); border-color:rgba(118,195,138,.58); box-shadow:0 0 0 2px rgba(77,145,100,.08); }
+.node-check:checked::after,.pb:checked::after { content:""; position:absolute; left:5px; top:3px; width:6px; height:9px; border-right:2px solid rgba(255,255,255,.9); border-bottom:2px solid rgba(255,255,255,.9); transform:rotate(40deg); }
 
-.host-card.node-available:hover {
-    border-color: rgba(76, 190, 112, 0.38);
-}
+/* One self-contained card per playbook, like a host card. */
+.playbook-list { display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+.playbook-card { width:100%; box-sizing:border-box; overflow:hidden; border:1px solid rgba(255,255,255,.11); border-radius:11px; background:rgba(0,0,0,.22); transition:border-color .18s ease,background .18s ease,box-shadow .18s ease; }
+.playbook-card:hover { border-color:rgba(255,255,255,.20); background:rgba(0,0,0,.26); }
 
-.host-card.node-unavailable:hover {
-    border-color: rgba(205, 76, 76, 0.38);
-}
+/* Checkbox and playbook name stay on the same line. */
+.playbook-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:12px; width:100%; min-width:0; box-sizing:border-box; padding:10px 12px; }
+.playbook-row > label { display:flex; align-items:center; gap:9px; min-width:0; width:100%; white-space:nowrap; }
+.playbook-row > label span { display:block; min-width:0; overflow:visible; text-overflow:clip; white-space:nowrap; line-height:1.35; }
+.playbook-actions { display:flex; flex:0 0 auto; gap:8px; align-items:center; justify-content:flex-end; white-space:nowrap; }
 
-.status-pending {
-    background: rgba(255, 255, 255, 0.35);
-}
+.playbooks-panel .btn-row.compact { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.playbooks-panel .btn-row.compact button { width:100%; min-width:0; white-space:nowrap; }
 
-.node-status.pending {
-    color: rgba(255, 255, 255, 0.42);
+.playbook-roles { border-top:1px solid rgba(255,255,255,.07); }
+.host-card.node-available { border:1px solid rgba(76,190,112,.28); box-shadow:0 0 0 1px rgba(76,190,112,.05); }
+.host-card.node-unavailable { border:1px solid rgba(205,76,76,.28); box-shadow:0 0 0 1px rgba(205,76,76,.05); }
+.host-card.node-pending { border:1px solid rgba(255,255,255,.10); }
+
+.playbook-editor-modal { width:fit-content; min-width:620px; max-width:calc(100vw - 40px); }
+.playbook-editor-body { background:#15181d; }
+.playbook-editor { display:block; box-sizing:border-box; min-width:560px; min-height:360px; max-width:calc(100vw - 90px); max-height:68vh; padding:18px; border:1px solid rgba(255,255,255,.09); border-radius:9px; outline:none; resize:vertical; overflow:auto; background:#101216; color:#d8dde5; caret-color:#fff; font:13px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace; tab-size:2; }
+
+@media (max-width:1050px) { .workspace-grid { grid-template-columns:minmax(0,1fr); } }
+@media (max-width:900px) {
+    .playbook-editor-modal { min-width:0; }
+    .playbook-editor { min-width:0; width:calc(100vw - 90px)!important; }
+    .host-head { grid-template-columns:92px 18px 18px minmax(0,1fr) auto; }
+    .node-main { grid-column:1/-1; grid-template-columns:minmax(0,1fr); gap:4px; }
+    .node-edit { grid-column:4; grid-row:1; }
+    .playbook-row { grid-template-columns:minmax(0,1fr); }
+    .playbook-actions { justify-content:flex-start; flex-wrap:wrap; }
 }

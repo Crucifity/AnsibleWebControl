@@ -127,7 +127,6 @@ def load_inventory(project, obj):
     file_paths = paths(project, obj)
     if not file_paths or not os.path.exists(file_paths["hosts"]):
         return {}
-
     try:
         return yaml.safe_load(read(file_paths["hosts"])) or {}
     except yaml.YAMLError as error:
@@ -142,12 +141,10 @@ def load_hosts(project, obj):
 def classify_node(params):
     keys = list(params) if isinstance(params, dict) else []
     count = len(keys)
-
     if count in TEMPLATES:
         template = TEMPLATES[count]
         node_type = "md" if template.startswith("МД") else "si" if template.startswith("СИ") else "host"
         return node_type, template
-
     last_key = keys[-1] if keys else ""
     if last_key == "uefi":
         return "host", "Хост"
@@ -158,7 +155,6 @@ def classify_node(params):
 
 def parse_hosts(project, obj):
     result = []
-
     for name, raw in load_hosts(project, obj).items():
         params = dict(raw) if isinstance(raw, dict) else {}
         node_type, template = classify_node(params)
@@ -169,18 +165,15 @@ def parse_hosts(project, obj):
             "template": template,
             "ip": params.get("ansible_host", params.get("ip", "")),
         })
-
     return result
 
 
 def template_schemas(project, obj):
     schemas = {}
-
     for node in parse_hosts(project, obj):
         template = node["template"]
         if template not in ("Хост", "МД", "Узел") and template not in schemas:
             schemas[template] = list(node["parameters"])
-
     return schemas
 
 
@@ -195,10 +188,8 @@ def inventory_groups(project, obj):
             hosts = value.get("hosts", {})
             if isinstance(hosts, dict):
                 found.update(hosts.keys())
-
             for child in (value.get("children", {}) or {}).values():
                 found.update(collect(child))
-
         return found
 
     for name, value in data.items():
@@ -210,36 +201,22 @@ def inventory_groups(project, obj):
         if name in wanted:
             groups[name] = sorted(collect(value))
 
-    return [
-        {"name": name, "hosts": hosts}
-        for name, hosts in groups.items()
-        if hosts
-    ]
+    return [{"name": name, "hosts": hosts} for name, hosts in groups.items() if hosts]
 
 
 def save_hosts(path, data):
-    write(
-        path,
-        yaml.safe_dump(
-            data,
-            allow_unicode=True,
-            sort_keys=False,
-            default_flow_style=False,
-        ),
-    )
+    write(path, yaml.safe_dump(data, allow_unicode=True, sort_keys=False, default_flow_style=False))
 
 
 def scalar(value):
     if not isinstance(value, str):
         return value
-
     stripped = value.strip()
     lowered = stripped.lower()
     if lowered in ("true", "false"):
         return lowered == "true"
     if lowered in ("null", "~"):
         return None
-
     try:
         return int(stripped) if stripped else value
     except ValueError:
@@ -250,16 +227,13 @@ def save_host(project, obj, old_name, new_name, values):
     file_paths = paths(project, obj)
     data = load_inventory(project, obj)
     hosts = data.setdefault("all", {}).setdefault("hosts", {})
-
     if old_name not in hosts:
         raise ValueError("Узел не найден")
     if new_name != old_name and new_name in hosts:
         raise ValueError("Узел с таким именем уже существует")
-
     updated = dict(hosts[old_name]) if isinstance(hosts[old_name], dict) else {}
     for key, value in values.items():
         updated[key] = scalar(value)
-
     hosts.pop(old_name)
     hosts[new_name] = updated
     save_hosts(file_paths["hosts"], data)
@@ -269,12 +243,10 @@ def add_host(project, obj, name, values):
     file_paths = paths(project, obj)
     data = load_inventory(project, obj)
     hosts = data.setdefault("all", {}).setdefault("hosts", {})
-
     if not name:
         raise ValueError("Имя узла не указано")
     if name in hosts:
         raise ValueError("Узел уже существует")
-
     hosts[name] = {key: scalar(value) for key, value in values.items()}
     save_hosts(file_paths["hosts"], data)
 
@@ -283,10 +255,8 @@ def delete_host(project, obj, name):
     file_paths = paths(project, obj)
     data = load_inventory(project, obj)
     hosts = data.setdefault("all", {}).setdefault("hosts", {})
-
     if name not in hosts:
         raise ValueError("Узел не найден")
-
     hosts.pop(name)
     save_hosts(file_paths["hosts"], data)
 
@@ -295,12 +265,7 @@ def get_playbooks(project, obj):
     directory = object_dir(project, obj)
     if not directory or not os.path.isdir(directory):
         return []
-
-    excluded = {
-        "hosts.yml", "hosts.yaml", "inventory.yml",
-        "defaults.yml", "defaults.yaml", "ansible.cfg",
-    }
-
+    excluded = {"hosts.yml", "hosts.yaml", "inventory.yml", "defaults.yml", "defaults.yaml", "ansible.cfg"}
     return [
         {"name": name, "path": os.path.join(directory, name), "type": "playbook"}
         for name in sorted(os.listdir(directory))
@@ -311,15 +276,12 @@ def get_playbooks(project, obj):
 
 
 def playbook_roles(project, obj, playbook_name):
-    """Return a tree containing only roles referenced by this playbook."""
     file_paths = paths(project, obj)
     if not file_paths:
         return []
-
     playbook_path = os.path.join(file_paths["object_dir"], safe(playbook_name))
     if not os.path.isfile(playbook_path):
         return []
-
     try:
         document = yaml.safe_load(read(playbook_path)) or []
     except yaml.YAMLError as error:
@@ -347,20 +309,17 @@ def playbook_roles(project, obj, playbook_name):
                     inspect(child)
 
     inspect(document)
-
     root = roles_dir(project, obj)
     if not root or not os.path.isdir(root):
         return []
 
     result = []
     seen = set()
+    root_abs = os.path.abspath(root)
 
     for role_name in names:
         role_path = os.path.abspath(os.path.join(root, role_name))
-        root_abs = os.path.abspath(root)
-        if not role_path.startswith(root_abs + os.sep) or not os.path.isdir(role_path):
-            continue
-        if role_name in seen:
+        if not role_path.startswith(root_abs + os.sep) or not os.path.isdir(role_path) or role_name in seen:
             continue
         seen.add(role_name)
 
@@ -370,70 +329,23 @@ def playbook_roles(project, obj, playbook_name):
                 path = os.path.join(directory, name)
                 relative = os.path.relpath(path, root)
                 if os.path.isdir(path):
-                    items.append({
-                        "name": name,
-                        "type": "dir",
-                        "path": relative,
-                        "children": walk(path),
-                    })
+                    items.append({"name": name, "type": "dir", "path": relative, "children": walk(path)})
                 else:
-                    items.append({
-                        "name": name,
-                        "type": "file",
-                        "path": relative,
-                    })
+                    items.append({"name": name, "type": "file", "path": relative})
             return items
 
-        result.append({
-            "name": role_name,
-            "type": "dir",
-            "path": role_name,
-            "children": walk(role_path),
-        })
+        result.append({"name": role_name, "type": "dir", "path": role_name, "children": walk(role_path)})
 
     return result
-
-
-def roles_tree(project, obj):
-    root = roles_dir(project, obj)
-    if not root or not os.path.isdir(root):
-        return []
-
-    def walk(directory):
-        result = []
-        for name in sorted(os.listdir(directory), key=str.lower):
-            path = os.path.join(directory, name)
-            relative = os.path.relpath(path, root)
-            result.append(
-                {
-                    "name": name,
-                    "type": "dir",
-                    "path": relative,
-                    "children": walk(path),
-                }
-                if os.path.isdir(path)
-                else {
-                    "name": name,
-                    "type": "file",
-                    "path": relative,
-                }
-            )
-        return result
-
-    return walk(root)
 
 
 def role_file(project, obj, relative_path):
     root = roles_dir(project, obj)
     if not root:
         return None
-
     root = os.path.abspath(root)
     path = os.path.abspath(os.path.join(root, relative_path))
-
-    if path.startswith(root + os.sep) and os.path.isfile(path):
-        return path
-    return None
+    return path if path.startswith(root + os.sep) and os.path.isfile(path) else None
 
 
 def autodeploy(project):
@@ -445,22 +357,15 @@ def host_up(ip):
     if not ip:
         return False
     try:
-        return subprocess.run(
-            ["ping", "-c", "1", "-W", "1", str(ip)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        ).returncode == 0
+        return subprocess.run(["ping", "-c", "1", "-W", "1", str(ip)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
     except OSError:
         return False
 
 
 def status_worker():
-    """Populate real status immediately, then refresh periodically."""
     global HOST_STATUS
-
     while True:
         statuses = {}
-
         for project in get_projects():
             for obj in (get_objects(project) or [None]):
                 key = obj or ""
@@ -468,10 +373,8 @@ def status_worker():
                     node["hostname"]: host_up(node["ip"])
                     for node in parse_hosts(project, obj)
                 }
-
         with STATUS_LOCK:
             HOST_STATUS = statuses
-
         time.sleep(15)
 
 
@@ -484,28 +387,15 @@ def run_playbook(command, project, obj, name, cwd, cfg, label=None):
     title = label or name
     log(f"=== START {title} [{project}{('/' + obj) if obj else ''}] ===")
     process = None
-
     try:
         environment = os.environ.copy()
         if os.path.isfile(cfg):
             environment["ANSIBLE_CONFIG"] = cfg
-
-        process = subprocess.Popen(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-            cwd=cwd,
-            env=environment,
-        )
-
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, cwd=cwd, env=environment)
         with PROC_LOCK:
             PROCESSES.append(process)
-
         for line in process.stdout:
             log(line.rstrip())
-
         log(f"=== DONE {title}: rc={process.wait()} ===")
     except OSError as error:
         log(f"EXECUTION ERROR: {error}")
@@ -521,40 +411,23 @@ def run_command(project, obj, names, hosts):
     available = {item["name"]: item["path"] for item in get_playbooks(project, obj)}
     if not file_paths:
         return
-
     for name in names:
         if name in available:
             command = ["ansible-playbook", "-i", file_paths["hosts"], available[name]]
             if hosts:
                 command += ["-l", ",".join(hosts)]
-            run_playbook(
-                command,
-                project,
-                obj,
-                name,
-                os.path.dirname(available[name]),
-                file_paths["cfg"],
-            )
+            run_playbook(command, project, obj, name, os.path.dirname(available[name]), file_paths["cfg"])
 
 
 def run_autodeploy(project, hosts):
     path = autodeploy(project)
     if not path:
         return
-
     file_paths = paths(project, None)
     command = ["ansible-playbook", path]
     if hosts:
         command += ["-l", ",".join(hosts)]
-
-    run_playbook(
-        command,
-        project,
-        None,
-        "autodeploy.yml",
-        os.path.dirname(path),
-        file_paths["cfg"] if file_paths else "",
-    )
+    run_playbook(command, project, None, "autodeploy.yml", os.path.dirname(path), file_paths["cfg"] if file_paths else "")
 
 
 def stop():
@@ -581,10 +454,8 @@ class Handler(BaseHTTPRequestHandler):
         if not os.path.isfile(path):
             self.send_error(404)
             return
-
         with open(path, "rb") as file:
             body = file.read()
-
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
@@ -606,6 +477,8 @@ class Handler(BaseHTTPRequestHandler):
             "/main.js": "main.js",
             "/hosts_info.js": "hosts_info.js",
             "/editor.js": "editor.js",
+            "/5x-fixes.css": "5x-fixes.css",
+            "/5x-fixes.js": "5x-fixes.js",
         }
 
         if url.path in static:
@@ -643,7 +516,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if url.path == "/roles":
             playbook = query.get("playbook", [""])[0]
-            self.json(playbook_roles(project, obj, playbook) if playbook else roles_tree(project, obj))
+            self.json(playbook_roles(project, obj, playbook) if playbook else [])
             return
 
         if url.path == "/role_file":
@@ -651,11 +524,7 @@ class Handler(BaseHTTPRequestHandler):
             if not path:
                 self.send_error(404)
                 return
-            self.json({
-                "path": query.get("path", [""])[0],
-                "content": read(path),
-                "name": os.path.basename(path),
-            })
+            self.json({"path": query.get("path", [""])[0], "content": read(path), "name": os.path.basename(path)})
             return
 
         if url.path == "/status":
@@ -667,29 +536,21 @@ class Handler(BaseHTTPRequestHandler):
                 start = int(query.get("start", ["0"])[0])
             except ValueError:
                 start = 0
-
             with LOG_LOCK:
                 lines = LOG[start:]
                 next_index = len(LOG)
-
             self.json({"lines": lines, "next": next_index})
             return
 
         if url.path == "/playbook":
             name = safe(query.get("name", [""])[0])
             file_paths = paths(project, obj)
-            self.json({
-                "name": name,
-                "content": read(os.path.join(file_paths["object_dir"], name)) if file_paths else "",
-            })
+            self.json({"name": name, "content": read(os.path.join(file_paths["object_dir"], name)) if file_paths else ""})
             return
 
         if url.path == "/files":
             file_paths = paths(project, obj)
-            self.json({
-                "hosts": read(file_paths["hosts"]) if file_paths else "",
-                "defaults": read(file_paths["defaults"]) if file_paths else "",
-            })
+            self.json({"hosts": read(file_paths["hosts"]) if file_paths else "", "defaults": read(file_paths["defaults"]) if file_paths else ""})
             return
 
         self.send_error(404)
@@ -706,59 +567,35 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             if self.path == "/run":
-                threading.Thread(
-                    target=run_command,
-                    args=(project, obj, data.get("playbooks", []), data.get("hosts", [])),
-                    daemon=True,
-                ).start()
+                threading.Thread(target=run_command, args=(project, obj, data.get("playbooks", []), data.get("hosts", [])), daemon=True).start()
                 self.json({"ok": True})
                 return
-
             if self.path == "/run_autodeploy":
-                threading.Thread(
-                    target=run_autodeploy,
-                    args=(project, data.get("hosts", [])),
-                    daemon=True,
-                ).start()
+                threading.Thread(target=run_autodeploy, args=(project, data.get("hosts", [])), daemon=True).start()
                 self.json({"ok": True})
                 return
-
             if self.path == "/stop":
                 stop()
                 self.json({"ok": True})
                 return
-
             if self.path == "/update_host":
-                save_host(
-                    project,
-                    obj,
-                    data.get("hostname", ""),
-                    data.get("new_hostname", data.get("hostname", "")),
-                    data.get("values", {}),
-                )
+                save_host(project, obj, data.get("hostname", ""), data.get("new_hostname", data.get("hostname", "")), data.get("values", {}))
                 self.json({"ok": True})
                 return
-
             if self.path == "/add_host":
                 add_host(project, obj, data.get("hostname", ""), data.get("values", {}))
                 self.json({"ok": True})
                 return
-
             if self.path == "/delete_host":
                 delete_host(project, obj, data.get("hostname", ""))
                 self.json({"ok": True})
                 return
-
             if self.path == "/save_playbook":
                 file_paths = paths(project, obj)
                 if file_paths:
-                    write(
-                        os.path.join(file_paths["object_dir"], safe(data.get("name"))),
-                        data.get("content", ""),
-                    )
+                    write(os.path.join(file_paths["object_dir"], safe(data.get("name"))), data.get("content", ""))
                 self.json({"ok": True})
                 return
-
             if self.path == "/save_files":
                 file_paths = paths(project, obj)
                 if file_paths:
@@ -766,7 +603,6 @@ class Handler(BaseHTTPRequestHandler):
                     write(file_paths["defaults"], data.get("defaults", ""))
                 self.json({"ok": True})
                 return
-
         except (OSError, ValueError) as error:
             self.json({"ok": False, "error": str(error)}, 500)
             return
