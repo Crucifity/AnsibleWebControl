@@ -23,8 +23,9 @@
 
             <div class="workspace-grid">
                 <section class="block workspace-panel nodes-panel">
-                    <div class="section-head">
+                    <div class="section-head nodes-section-head">
                         <h3>Узлы</h3>
+                        <div id="groups" class="group-strip"></div>
                         <div class="node-toolbar">
                             <button id="host_select_toggle" type="button" onclick="toggleHostSelection()">
                                 <span class="selection-button-label">Выбрать все узлы</span>
@@ -32,9 +33,6 @@
                             <button class="primary" onclick="openAddNodeModal()">Добавить узел</button>
                             <button class="danger" onclick="deleteSelectedNodes()">Удалить выбранные</button>
                         </div>
-                    </div>
-                    <div class="panel-subrow">
-                        <div id="groups" class="group-strip"></div>
                     </div>
                     <div id="nodes" class="hosts-list"></div>
                 </section>
@@ -258,10 +256,6 @@
                     });
                 });
             }, true);
-
-            const toolbarObserver = new MutationObserver(() => patchPlaybookToolbar());
-            toolbarObserver.observe(document.getElementById('playbooks'), { childList: true });
-            patchPlaybookToolbar();
         })();
     </script>
 </body>
