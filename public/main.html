@@ -243,6 +243,8 @@
 
             window.addEventListener('keydown', (event) => {
                 if (event.key !== 'Escape') return;
+                event.preventDefault();
+                event.stopImmediatePropagation();
                 const modals = ['add_node_modal', 'playbook_modal', 'run_confirm_modal']
                     .map((id) => document.getElementById(id))
                     .filter((modal) => modal && !modal.hidden);
