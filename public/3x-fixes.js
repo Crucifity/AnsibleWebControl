@@ -1,67 +1,135 @@
-/* 3.0 UI behaviour: node group filters and launch confirmation. */
+/*
+ * Consolidated UI layer for 3.0.
+ *
+ * The older 5x-fixes.js and status-fix.js files are intentionally kept in
+ * the repository for compatibility, but main.html no longer loads them.
+ * This file is the single runtime layer for the current main page.
+ */
 (function () {
+    'use strict';
+
     let activeGroup = null;
+    let confirmAction = null;
 
-    const originalRenderNode = window.renderNode;
-    const originalRenderGroups = window.renderGroups;
-    const originalRunSelected = window.runSelected;
-    const originalRunAutodeploy = window.runAutodeploy;
-
-    function groupContainsNode(group, hostname) {
-        return (group?.hosts || []).some((host) => {
-            if (typeof host === 'string') return host === hostname;
-            return host?.hostname === hostname || host?.name === hostname;
-        });
+    function contextQuery(extra = '') {
+        const project = encodeURIComponent(CURRENT_PROJECT);
+        const object = CURRENT_OBJECT
+            ? `&object=${encodeURIComponent(CURRENT_OBJECT)}`
+            : '';
+        return `project=${project}${object}${extra}`;
     }
 
-    window.renderNode = function (node) {
-        if (activeGroup && !groupContainsNode(activeGroup, node.hostname)) return '';
-        return originalRenderNode(node);
-    };
+    function roleFileUrl(path) {
+        return `/role_file?${contextQuery(`&path=${encodeURIComponent(path)}`)}`;
+    }
 
-    function redrawNodes() {
-        const element = document.getElementById('nodes');
-        if (!element || !window.DATA) return;
-        const nodes = window.DATA.hosts || [];
-        element.innerHTML = nodes.map(window.renderNode).join('') || '<div class="empty">В этой группе узлов нет</div>';
+    function playbookUrl(name) {
+        return `/playbook?${contextQuery(`&name=${encodeURIComponent(name)}`)}`;
+    }
+
+    function renderNodesWithFilter() {
+        const container = document.getElementById('nodes');
+        if (!container || !DATA) return;
+
+        const nodes = (DATA.hosts || []).filter((node) => {
+            if (!activeGroup) return true;
+
+            return (activeGroup.hosts || []).some((host) => {
+                const name = typeof host === 'string'
+                    ? host
+                    : host?.hostname || host?.name;
+                return name === node.hostname;
+            });
+        });
+
+        container.innerHTML = nodes.map((node) => renderNode(node)).join('')
+            || '<div class="empty">В этой группе узлов нет</div>';
         updateRunHint();
     }
 
-    window.renderGroups = function (groups) {
-        const element = document.getElementById('groups');
-        if (!element) return;
+    function renderGroupButtons() {
+        const container = document.getElementById('groups');
+        if (!container) return;
 
-        if (!groups?.length) {
-            element.innerHTML = '';
-            activeGroup = null;
-            return;
-        }
-
-        if (activeGroup && !groups.some((group) => group.name === activeGroup.name)) {
-            activeGroup = null;
-        }
-
-        element.innerHTML = groups.map((group) => {
+        const groups = DATA?.groups || [];
+        container.innerHTML = groups.map((group) => {
             const active = activeGroup?.name === group.name;
             return `
-                <button type="button" class="group-chip group-filter ${active ? 'active' : ''}"
-                    data-group-name="${esc(group.name)}">
+                <button type="button"
+                        class="group-chip group-filter${active ? ' active' : ''}"
+                        data-group-name="${esc(group.name)}">
                     <b>${esc(group.name)}</b>${group.hosts?.length || 0}
                 </button>
             `;
         }).join('');
+    }
 
-        element.querySelectorAll('.group-filter').forEach((button) => {
-            button.addEventListener('click', () => {
-                const name = button.dataset.groupName;
-                activeGroup = activeGroup?.name === name
-                    ? null
-                    : groups.find((group) => group.name === name) || null;
-                window.renderGroups(groups);
-                redrawNodes();
-            });
+    function applyGroupFilter() {
+        renderGroupButtons();
+        renderNodesWithFilter();
+    }
+
+    function findGroup(name) {
+        return (DATA?.groups || []).find((group) => group.name === name) || null;
+    }
+
+    function setupGroupFilters() {
+        const container = document.getElementById('groups');
+        if (!container || container.dataset.filtersReady === '1') return;
+
+        container.dataset.filtersReady = '1';
+        container.addEventListener('click', (event) => {
+            const button = event.target.closest('.group-filter');
+            if (!button) return;
+
+            const name = button.dataset.groupName;
+            activeGroup = activeGroup?.name === name ? null : findGroup(name);
+            applyGroupFilter();
         });
-    };
+
+        const observer = new MutationObserver(() => {
+            if (container.dataset.rendering === '1') return;
+            if (!DATA?.groups?.length) return;
+
+            if (!container.querySelector('.group-filter')) {
+                container.dataset.rendering = '1';
+                renderGroupButtons();
+                delete container.dataset.rendering;
+            }
+        });
+        observer.observe(container, { childList: true });
+    }
+
+    function setupRenderObserver() {
+        const container = document.getElementById('nodes');
+        if (!container || container.dataset.filterObserverReady === '1') return;
+
+        container.dataset.filterObserverReady = '1';
+        const observer = new MutationObserver(() => {
+            if (!activeGroup || container.dataset.filtering === '1') return;
+
+            const visibleNames = new Set(
+                [...container.querySelectorAll('.node-check')].map((input) => input.value),
+            );
+            const expectedNames = new Set(
+                (activeGroup.hosts || []).map((host) => (
+                    typeof host === 'string'
+                        ? host
+                        : host?.hostname || host?.name
+                )),
+            );
+
+            const hasForeignNode = [...visibleNames]
+                .some((name) => !expectedNames.has(name));
+
+            if (hasForeignNode) {
+                container.dataset.filtering = '1';
+                renderNodesWithFilter();
+                delete container.dataset.filtering;
+            }
+        });
+        observer.observe(container, { childList: true });
+    }
 
     function ensureConfirmModal() {
         let modal = document.getElementById('run_confirm_modal');
@@ -76,7 +144,7 @@
                 <div class="modal-head">
                     <div>
                         <div class="modal-kicker">Подтверждение запуска</div>
-                        <h3 id="run_confirm_title">Запустить выбранные плейбуки?</h3>
+                        <h3 id="run_confirm_title">Запустить?</h3>
                     </div>
                     <button class="modal-close" type="button" aria-label="Закрыть">×</button>
                 </div>
@@ -91,68 +159,224 @@
         `;
         document.body.appendChild(modal);
 
-        const close = () => { modal.hidden = true; };
+        const close = () => {
+            modal.hidden = true;
+            confirmAction = null;
+        };
+
         modal.querySelector('.modal-close').addEventListener('click', close);
         modal.querySelector('.run-confirm-cancel').addEventListener('click', close);
         modal.addEventListener('click', (event) => {
             if (event.target === modal) close();
         });
+        modal.querySelector('.run-confirm-ok').addEventListener('click', () => {
+            const action = confirmAction;
+            close();
+            if (action) action();
+        });
+
         return modal;
     }
 
-    function confirmRun({ title, text, action }) {
+    function showConfirmation(title, text, action) {
         const modal = ensureConfirmModal();
+        confirmAction = action;
         modal.querySelector('#run_confirm_title').textContent = title;
         modal.querySelector('#run_confirm_text').innerHTML = text;
-        modal.querySelector('.run-confirm-ok').textContent = 'Запустить';
         modal.hidden = false;
-
-        const ok = modal.querySelector('.run-confirm-ok');
-        const handler = () => {
-            ok.removeEventListener('click', handler);
-            modal.hidden = true;
-            action();
-        };
-        ok.addEventListener('click', handler);
     }
 
-    window.runSelected = function () {
-        const playbooks = [...document.querySelectorAll('.pb:checked')].map((item) => item.value);
-        const hosts = [...document.querySelectorAll('.node-check:checked')].map((item) => item.value);
+    function interceptRunButtons() {
+        document.addEventListener('click', (event) => {
+            const button = event.target.closest('button');
+            if (!button) return;
 
-        if (!playbooks.length) {
-            alert('Выберите хотя бы один плейбук');
-            return;
-        }
+            const onclick = button.getAttribute('onclick') || '';
+            const isRun = /\brunSelected\s*\(/.test(onclick);
+            const isAutodeploy = /\brunAutodeploy\s*\(/.test(onclick);
+            if (!isRun && !isAutodeploy) return;
 
-        const hostsText = hosts.length
-            ? `${hosts.length} ${hosts.length === 1 ? 'узел' : 'узлов'}`
-            : 'все выбранные узлы';
-        const playbooksText = playbooks.map(esc).join('<br>');
+            event.preventDefault();
+            event.stopImmediatePropagation();
 
-        confirmRun({
-            title: 'Запустить выбранные плейбуки?',
-            text: `<strong>Плейбуки:</strong><br>${playbooksText}<br><br><strong>Узлы:</strong> ${hostsText}`,
-            action: () => originalRunSelected(),
+            const playbooks = [...document.querySelectorAll('.pb:checked')]
+                .map((input) => input.value);
+            const hosts = [...document.querySelectorAll('.node-check:checked')]
+                .map((input) => input.value);
+
+            if (isRun && !playbooks.length) {
+                alert('Выберите хотя бы один плейбук');
+                return;
+            }
+
+            if (isRun) {
+                const hostsText = hosts.length
+                    ? `${hosts.length} ${hosts.length === 1 ? 'узел' : 'узлов'}`
+                    : 'все узлы';
+
+                showConfirmation(
+                    'Запустить выбранные плейбуки?',
+                    `<strong>Плейбуки:</strong><br>${playbooks.map(esc).join('<br>')}<br><br>`
+                        + `<strong>Узлы:</strong> ${hostsText}`,
+                    () => window.runSelected(),
+                );
+                return;
+            }
+
+            const hostsText = hosts.length
+                ? `${hosts.length} ${hosts.length === 1 ? 'выбранный узел' : 'выбранных узлов'}`
+                : 'все узлы';
+
+            showConfirmation(
+                'Запустить авторазвертывание?',
+                `<strong>Плейбук:</strong> autodeploy.yml<br><br>`
+                    + `<strong>Узлы:</strong> ${hostsText}`,
+                () => window.runAutodeploy(),
+            );
+        }, true);
+    }
+
+    function installPlaybookEditor() {
+        window.editPlaybook = function (name) {
+            const modal = document.getElementById('playbook_modal');
+            const editor = document.getElementById('playbook_editor');
+            const title = document.getElementById('playbook_modal_title');
+            if (!modal || !editor || !title) return;
+
+            window.CURRENT_EDITING_PLAYBOOK = name;
+            title.textContent = name;
+            editor.value = 'Загрузка…';
+            editor.readOnly = true;
+            modal.hidden = false;
+
+            fetch(playbookUrl(name))
+                .then((response) => {
+                    if (!response.ok) throw Error('Не удалось открыть плейбук');
+                    return response.json();
+                })
+                .then((data) => {
+                    editor.value = data.content || '';
+                    editor.readOnly = false;
+                    fitPlaybookEditor();
+                    editor.focus();
+                })
+                .catch((error) => {
+                    editor.value = '';
+                    alert(error.message);
+                    closePlaybookModal();
+                });
+        };
+
+        window.closePlaybookModal = function () {
+            const modal = document.getElementById('playbook_modal');
+            if (modal) modal.hidden = true;
+            window.CURRENT_EDITING_PLAYBOOK = '';
+        };
+
+        window.savePlaybookFromModal = function () {
+            const name = window.CURRENT_EDITING_PLAYBOOK;
+            const editor = document.getElementById('playbook_editor');
+            if (!name || !editor) return;
+
+            editor.disabled = true;
+            fetch('/save_playbook', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    project: CURRENT_PROJECT,
+                    object: CURRENT_OBJECT,
+                    name,
+                    content: editor.value,
+                }),
+            })
+                .then(async (response) => {
+                    const data = await response.json();
+                    if (!response.ok || data.ok === false) {
+                        throw Error(data.error || 'Не удалось сохранить плейбук');
+                    }
+                    closePlaybookModal();
+                    loadMain();
+                })
+                .catch((error) => alert(error.message))
+                .finally(() => { editor.disabled = false; });
+        };
+    }
+
+    function fitPlaybookEditor() {
+        const editor = document.getElementById('playbook_editor');
+        const card = document.getElementById('playbook_editor_card');
+        if (!editor || !card) return;
+
+        const longestLine = editor.value.split('\n').reduce(
+            (max, line) => Math.max(max, line.length),
+            0,
+        );
+        const width = Math.min(1100, Math.max(620, longestLine * 7.2 + 70));
+        editor.style.width = `${width}px`;
+        card.style.width = `${Math.min(width + 42, window.innerWidth - 40)}px`;
+    }
+
+    function patchStatusInterval() {
+        const originalSetInterval = window.setInterval;
+        window.setInterval = function (callback, delay, ...args) {
+            if (
+                typeof callback === 'function'
+                && callback.name === 'updateNodeStatuses'
+                && delay === 15000
+            ) {
+                return originalSetInterval.call(this, callback, 10000, ...args);
+            }
+
+            return originalSetInterval.call(this, callback, delay, ...args);
+        };
+    }
+
+    function initialize() {
+        setupGroupFilters();
+        setupRenderObserver();
+        interceptRunButtons();
+        installPlaybookEditor();
+
+        const sync = () => {
+            setupGroupFilters();
+            setupRenderObserver();
+
+            if (DATA) {
+                if (activeGroup && !findGroup(activeGroup.name)) {
+                    activeGroup = null;
+                }
+                renderGroupButtons();
+                if (activeGroup) renderNodesWithFilter();
+            }
+
+            // main.js is loaded after this file and replaces editPlaybook.
+            installPlaybookEditor();
+        };
+
+        window.addEventListener('load', sync);
+        window.addEventListener('resize', () => {
+            const modal = document.getElementById('playbook_modal');
+            if (modal && !modal.hidden) fitPlaybookEditor();
         });
-    };
 
-    window.runAutodeploy = function () {
-        const hosts = [...document.querySelectorAll('.node-check:checked')].map((item) => item.value);
-        const hostsText = hosts.length
-            ? `${hosts.length} ${hosts.length === 1 ? 'выбранный узел' : 'выбранных узлов'}`
-            : 'все узлы';
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape') return;
 
-        confirmRun({
-            title: 'Запустить авторазвертывание?',
-            text: `<strong>Плейбук:</strong> autodeploy.yml<br><br><strong>Узлы:</strong> ${hostsText}`,
-            action: () => originalRunAutodeploy(),
+            const modal = document.getElementById('run_confirm_modal');
+            if (modal) {
+                modal.hidden = true;
+                confirmAction = null;
+            }
+
+            if (typeof closePlaybookModal === 'function') closePlaybookModal();
         });
-    };
 
-    window.addEventListener('keydown', (event) => {
-        if (event.key !== 'Escape') return;
-        const modal = document.getElementById('run_confirm_modal');
-        if (modal) modal.hidden = true;
-    });
+        setTimeout(sync, 0);
+        setTimeout(sync, 100);
+    }
+
+    // main.js registers its 15-second status timer after this file is loaded.
+    // Convert that single timer to the desired 10-second interval.
+    patchStatusInterval();
+    initialize();
 })();
