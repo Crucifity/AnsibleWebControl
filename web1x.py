@@ -266,7 +266,7 @@ def _host_yaml_block(name, values, newline):
     )
     if newline != "\n":
         block = block.replace("\n", newline)
-    return "".join(f"  {line}" if line.strip() else line for line in block.splitlines(keepends=True))
+    return "".join(f"    {line}" if line.strip() else line for line in block.splitlines(keepends=True))
 
 
 def add_host(project, obj, name, values):
