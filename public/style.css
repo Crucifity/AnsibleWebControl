@@ -707,8 +707,13 @@ button.danger {
 }
 
 .autodeploy-card {
-    border-color: rgba(0,210,106,.25);
-    background: rgba(0,150,90,.07);
+    border-color: rgba(0,180,255,.40);
+    background: rgba(0,150,255,.22);
+}
+
+.autodeploy-card .section-head {
+    min-height: 32px;
+    margin-bottom: 0;
 }
 
 .autodeploy-action {
