@@ -375,7 +375,7 @@ def status_worker():
                 }
         with STATUS_LOCK:
             HOST_STATUS = statuses
-        time.sleep(15)
+        time.sleep(10)
 
 
 def status(project, obj):
@@ -479,6 +479,9 @@ class Handler(BaseHTTPRequestHandler):
             "/editor.js": "editor.js",
             "/5x-fixes.css": "5x-fixes.css",
             "/5x-fixes.js": "5x-fixes.js",
+            "/3x-fixes.css": "3x-fixes.css",
+            "/3x-fixes.js": "3x-fixes.js",
+            "/status-fix.js": "status-fix.js",
         }
 
         if url.path in static:
