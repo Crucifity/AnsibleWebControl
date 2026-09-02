@@ -1,0 +1,42 @@
+/* 3.0 layout and interaction details. */
+
+.workspace-grid {
+    align-items: stretch;
+}
+
+.workspace-grid > .workspace-panel {
+    height: 100%;
+    box-sizing: border-box;
+}
+
+.group-filter {
+    appearance: none;
+    font: inherit;
+    cursor: pointer;
+    transition: background .15s ease, border-color .15s ease, transform .15s ease;
+}
+
+.group-filter:hover {
+    background: rgba(255,255,255,.10);
+    transform: translateY(-1px);
+}
+
+.group-filter.active {
+    background: rgba(0,150,90,.22);
+    border-color: rgba(0,210,106,.40);
+    color: rgba(255,255,255,.95);
+}
+
+.run-confirm-card {
+    width: min(520px, 100%);
+}
+
+.run-confirm-text {
+    color: rgba(255,255,255,.72);
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+}
+
+.run-confirm-text strong {
+    color: rgba(255,255,255,.92);
+}
