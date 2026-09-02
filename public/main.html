@@ -114,6 +114,7 @@
     <script>
         (() => {
             const MOTION_MS = 220;
+            let closePassthrough = false;
 
             function selectionLabel(button, nextText) {
                 const label = button?.querySelector('.selection-button-label');
@@ -144,13 +145,13 @@
             function patchPlaybookToolbar() {
                 const toolbar = document.getElementById('playbook-selection-toolbar');
                 if (!toolbar) return;
-                toolbar.innerHTML = '<button id="playbook_select_toggle" type="button" onclick="togglePlaybookSelection()"><span class="selection-button-label">Выбрать все плейбуки</span></button>';
+                if (toolbar.children.length !== 1 || toolbar.querySelectorAll('button').length !== 1) {
+                    toolbar.innerHTML = '<button id="playbook_select_toggle" type="button" onclick="togglePlaybookSelection()"><span class="selection-button-label">Выбрать все плейбуки</span></button>';
+                }
                 updatePlaybookSelectionButton();
             }
 
-            const playbookObserver = new MutationObserver(() => {
-                if (document.querySelector('#playbooks .playbook-card')) updatePlaybookSelectionButton();
-            });
+            const playbookObserver = new MutationObserver(() => updatePlaybookSelectionButton());
             playbookObserver.observe(document.getElementById('playbooks'), { childList: true, subtree: true });
 
             document.addEventListener('change', (event) => {
@@ -167,6 +168,17 @@
                 }, MOTION_MS);
             }
 
+            function smoothCloseWithOriginal(modal, originalClose) {
+                if (!modal || modal.hidden || modal.classList.contains('modal-closing')) return;
+                modal.classList.add('modal-closing');
+                setTimeout(() => {
+                    modal.classList.remove('modal-closing');
+                    closePassthrough = true;
+                    originalClose();
+                    closePassthrough = false;
+                }, MOTION_MS);
+            }
+
             function smoothShow(modal) {
                 if (!modal) return;
                 modal.classList.remove('modal-closing');
@@ -174,28 +186,32 @@
             }
 
             const originalOpenAddNodeModal = window.openAddNodeModal;
+            const originalCloseAddNodeModal = window.closeAddNodeModal;
+            const originalEditPlaybook = window.editPlaybook;
+            const originalClosePlaybookModal = window.closePlaybookModal;
+
             window.openAddNodeModal = function() {
                 originalOpenAddNodeModal();
                 smoothShow(document.getElementById('add_node_modal'));
             };
 
             window.closeAddNodeModal = function() {
-                smoothHide(document.getElementById('add_node_modal'));
+                if (closePassthrough) return originalCloseAddNodeModal();
+                smoothCloseWithOriginal(document.getElementById('add_node_modal'), originalCloseAddNodeModal);
             };
 
-            const originalEditPlaybook = window.editPlaybook;
             window.editPlaybook = function(name) {
                 originalEditPlaybook(name);
                 smoothShow(document.getElementById('playbook_modal'));
             };
 
             window.closePlaybookModal = function() {
-                smoothHide(document.getElementById('playbook_modal'), () => {
-                    window.CURRENT_EDITING_PLAYBOOK = '';
-                });
+                if (closePassthrough) return originalClosePlaybookModal();
+                smoothCloseWithOriginal(document.getElementById('playbook_modal'), originalClosePlaybookModal);
             };
 
             document.addEventListener('click', (event) => {
+                if (closePassthrough) return;
                 const button = event.target.closest('#add_node_modal .modal-close, #add_node_modal .modal-secondary, #playbook_modal .modal-close, #playbook_modal .modal-secondary, #run_confirm_modal .modal-close, #run_confirm_modal #run_confirm_cancel');
                 if (!button) return;
                 event.preventDefault();
@@ -203,21 +219,26 @@
 
                 const modal = button.closest('.modal-backdrop');
                 if (!modal) return;
+                if (modal.id === 'add_node_modal') return smoothCloseWithOriginal(modal, originalCloseAddNodeModal);
+                if (modal.id === 'playbook_modal') return smoothCloseWithOriginal(modal, originalClosePlaybookModal);
                 smoothHide(modal, () => {
-                    if (modal.id === 'run_confirm_modal') {
-                        window.CONFIRM_ACTION = null;
-                    } else if (modal.id === 'playbook_modal') {
-                        window.CURRENT_EDITING_PLAYBOOK = '';
-                    }
+                    closePassthrough = true;
+                    button.click();
+                    closePassthrough = false;
                 });
             }, true);
 
             document.addEventListener('click', (event) => {
+                if (closePassthrough) return;
                 const modal = event.target.closest('.modal-backdrop');
                 if (!modal || event.target !== modal) return;
                 if (modal.id === 'add_node_modal') closeAddNodeModal();
                 if (modal.id === 'playbook_modal') closePlaybookModal();
-                if (modal.id === 'run_confirm_modal') smoothHide(modal, () => { window.CONFIRM_ACTION = null; });
+                if (modal.id === 'run_confirm_modal') smoothHide(modal, () => {
+                    closePassthrough = true;
+                    modal.querySelector('#run_confirm_cancel')?.click();
+                    closePassthrough = false;
+                });
             });
 
             window.addEventListener('keydown', (event) => {
@@ -225,14 +246,19 @@
                 const modals = ['add_node_modal', 'playbook_modal', 'run_confirm_modal']
                     .map((id) => document.getElementById(id))
                     .filter((modal) => modal && !modal.hidden);
-                modals.forEach((modal) => smoothHide(modal, () => {
-                    if (modal.id === 'run_confirm_modal') window.CONFIRM_ACTION = null;
-                    if (modal.id === 'playbook_modal') window.CURRENT_EDITING_PLAYBOOK = '';
-                }));
+                modals.forEach((modal) => {
+                    if (modal.id === 'add_node_modal') return smoothCloseWithOriginal(modal, originalCloseAddNodeModal);
+                    if (modal.id === 'playbook_modal') return smoothCloseWithOriginal(modal, originalClosePlaybookModal);
+                    smoothHide(modal, () => {
+                        closePassthrough = true;
+                        modal.querySelector('#run_confirm_cancel')?.click();
+                        closePassthrough = false;
+                    });
+                });
             }, true);
 
-            // The original renderer creates the legacy two-button toolbar on each refresh.
-            // Keep the renderer untouched and normalize the toolbar after every refresh.
+            // main.js recreates the legacy two-button toolbar after every data refresh.
+            // Normalize it back to the single toggle without touching the data renderer.
             const toolbarObserver = new MutationObserver(() => patchPlaybookToolbar());
             toolbarObserver.observe(document.getElementById('playbooks'), { childList: true });
             patchPlaybookToolbar();
