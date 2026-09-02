@@ -112,11 +112,46 @@
     transform: rotate(40deg);
 }
 
+/*
+ * Both workspace columns use the same secondary row under their headers.
+ * The groups stay on one line and scroll horizontally when needed, so the
+ * first node and playbook cards always start at the same vertical position.
+ */
+.panel-subrow {
+    display: flex;
+    align-items: center;
+    min-height: 32px;
+    margin-top: 12px;
+    box-sizing: border-box;
+}
+
+.panel-subrow-spacer {
+    min-height: 32px;
+}
+
+.group-strip {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 7px;
+    width: 100%;
+    min-width: 0;
+    min-height: 32px;
+    margin-top: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+}
+
+.group-strip:empty {
+    visibility: hidden;
+}
+
 .playbook-list {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    margin-top: 10px;
+    margin-top: 0;
 }
 
 .playbook-card {
@@ -183,6 +218,23 @@
     width: 100%;
     min-width: 0;
     white-space: nowrap;
+}
+
+/* Combined node select-all/reset control. */
+#host_select_toggle {
+    min-width: 154px;
+    overflow: hidden;
+}
+
+#host_select_toggle .selection-button-label {
+    display: inline-block;
+    will-change: opacity, transform;
+    transition: opacity 180ms ease, transform 180ms ease;
+}
+
+#host_select_toggle.selection-changing .selection-button-label {
+    opacity: 0;
+    transform: translateY(4px);
 }
 
 .playbook-roles {
