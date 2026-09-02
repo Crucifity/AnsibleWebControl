@@ -193,13 +193,19 @@ function saveNode(event, hostname) {
 function deleteSelectedNodes() {
     const hosts = selectedHosts();
     if (!hosts.length) return alert('Выберите узлы для удаления.');
-    if (!confirm(`Удалить выбранные узлы (${hosts.length})?\nЭто изменит hosts.yml.`)) return;
-    hosts.reduce(
-        (promise, hostname) => promise.then(() => api('/delete_host', {
-            project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname
-        })),
-        Promise.resolve()
-    ).then(loadMain).catch((error) => alert(error.message));
+    showConfirmation(
+        'Удалить выбранные узлы?',
+        `<strong>Узлы:</strong><br>${hosts.map(esc).join('<br>')}<br><br>Это изменит hosts.yml.`,
+        () => hosts.reduce(
+            (promise, hostname) => promise.then(() => api('/delete_host', {
+                project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname
+            })),
+            Promise.resolve()
+        ).then(loadMain).catch((error) => alert(error.message)),
+        'Удалить',
+        'danger',
+        'Подтверждение удаления',
+    );
 }
 
 function openAddNodeModal() {
@@ -502,7 +508,7 @@ function stopExecution() {
     });
 }
 
-function showConfirmation(title, text, action) {
+function showConfirmation(title, text, action, actionLabel = 'Запустить', actionClass = 'primary', kicker = 'Подтверждение запуска') {
     let modal = document.getElementById('run_confirm_modal');
     if (!modal) {
         modal = document.createElement('div');
@@ -511,9 +517,9 @@ function showConfirmation(title, text, action) {
         modal.hidden = true;
         modal.innerHTML = `
             <div class="modal-card run-confirm-card" role="dialog" aria-modal="true">
-                <div class="modal-head"><div><div class="modal-kicker">Подтверждение запуска</div><h3 id="run_confirm_title"></h3></div><button class="modal-close" type="button">×</button></div>
+                <div class="modal-head"><div><div class="modal-kicker" id="run_confirm_kicker"></div><h3 id="run_confirm_title"></h3></div><button class="modal-close" type="button">×</button></div>
                 <div class="modal-body"><div id="run_confirm_text" class="run-confirm-text"></div></div>
-                <div class="modal-footer"><button type="button" class="modal-secondary" id="run_confirm_cancel">Отмена</button><button type="button" class="primary" id="run_confirm_ok">Запустить</button></div>
+                <div class="modal-footer"><button type="button" class="modal-secondary" id="run_confirm_cancel">Отмена</button><button type="button" id="run_confirm_ok"></button></div>
             </div>
         `;
         document.body.appendChild(modal);
@@ -522,14 +528,18 @@ function showConfirmation(title, text, action) {
         modal.querySelector('#run_confirm_cancel').onclick = close;
         modal.addEventListener('click', (event) => { if (event.target === modal) close(); });
         modal.querySelector('#run_confirm_ok').onclick = () => {
-            const action = CONFIRM_ACTION;
+            const currentAction = CONFIRM_ACTION;
             close();
-            if (action) action();
+            if (currentAction) currentAction();
         };
     }
     CONFIRM_ACTION = action;
+    modal.querySelector('#run_confirm_kicker').textContent = kicker;
     modal.querySelector('#run_confirm_title').textContent = title;
     modal.querySelector('#run_confirm_text').innerHTML = text;
+    const ok = modal.querySelector('#run_confirm_ok');
+    ok.textContent = actionLabel;
+    ok.className = actionClass;
     modal.hidden = false;
 }
 
