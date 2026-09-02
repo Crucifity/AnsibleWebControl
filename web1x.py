@@ -247,8 +247,50 @@ def add_host(project, obj, name, values):
         raise ValueError("Имя узла не указано")
     if name in hosts:
         raise ValueError("Узел уже существует")
+
     hosts[name] = {key: scalar(value) for key, value in values.items()}
-    save_hosts(file_paths["hosts"], data)
+
+    raw = read(file_paths["hosts"])
+    if "all:" not in raw or "\n  hosts:" not in raw:
+        save_hosts(file_paths["hosts"], data)
+        return
+
+    newline = "\r\n" if "\r\n" in raw else "\n"
+    lines = raw.splitlines(keepends=True)
+    hosts_index = next((index for index, line in enumerate(lines) if line.rstrip("\r\n") == "  hosts:"), None)
+    if hosts_index is None:
+        save_hosts(file_paths["hosts"], data)
+        return
+
+    group_index = None
+    for index in range(hosts_index + 1, len(lines)):
+        stripped = lines[index].rstrip("\r\n")
+        if stripped and not stripped.startswith(" "):
+            break
+        if stripped.startswith("  ") and not stripped.startswith("    "):
+            group_index = index
+            break
+
+    host_block = yaml.safe_dump(
+        {name: hosts[name]},
+        allow_unicode=True,
+        sort_keys=False,
+        default_flow_style=False,
+    ).replace("\n", newline)
+    host_block = "".join(f"  {line}" if line.strip() else line for line in host_block.splitlines(keepends=True))
+
+    insert_at = group_index if group_index is not None else len(lines)
+    while insert_at > hosts_index + 1 and not lines[insert_at - 1].strip():
+        insert_at -= 1
+
+    if insert_at > hosts_index + 1 and lines[insert_at - 1].strip():
+        host_block = newline + host_block
+
+    if group_index is not None:
+        host_block += newline
+
+    lines[insert_at:insert_at] = [host_block]
+    write(file_paths["hosts"], "".join(lines))
 
 
 def delete_host(project, obj, name):
