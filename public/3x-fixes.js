@@ -10,6 +10,7 @@
 
     let activeGroup = null;
     let confirmAction = null;
+    let selectionButtonTimer = null;
 
     function contextQuery(extra = '') {
         const project = encodeURIComponent(CURRENT_PROJECT);
@@ -27,9 +28,67 @@
         return `/playbook?${contextQuery(`&name=${encodeURIComponent(name)}`)}`;
     }
 
+    function updateHostSelectionButton(animate = false) {
+        const button = document.getElementById('host_select_toggle');
+        if (!button) return;
+
+        const label = button.querySelector('.selection-button-label');
+        if (!label) return;
+
+        const checkboxes = [...document.querySelectorAll('.node-check')];
+        const allSelected = checkboxes.length > 0
+            && checkboxes.every((checkbox) => checkbox.checked);
+        const nextText = allSelected ? 'Отменить выбор' : 'Выбрать все узлы';
+
+        if (label.textContent === nextText) return;
+
+        if (selectionButtonTimer) {
+            clearTimeout(selectionButtonTimer);
+            selectionButtonTimer = null;
+        }
+
+        if (!animate) {
+            label.textContent = nextText;
+            return;
+        }
+
+        button.classList.add('selection-changing');
+        selectionButtonTimer = setTimeout(() => {
+            label.textContent = nextText;
+            button.classList.remove('selection-changing');
+            selectionButtonTimer = null;
+        }, 90);
+    }
+
+    window.toggleHostSelection = function () {
+        const checkboxes = [...document.querySelectorAll('.node-check')];
+        if (!checkboxes.length) return;
+
+        const allSelected = checkboxes.every((checkbox) => checkbox.checked);
+        const nextValue = !allSelected;
+
+        checkboxes.forEach((checkbox) => {
+            checkbox.checked = nextValue;
+        });
+
+        if (typeof updateRunHint === 'function') updateRunHint();
+        updateHostSelectionButton(true);
+    };
+
+    function restoreSelectedNodes(selected) {
+        document.querySelectorAll('.node-check').forEach((checkbox) => {
+            checkbox.checked = selected.has(checkbox.value);
+        });
+    }
+
     function renderNodesWithFilter() {
         const container = document.getElementById('nodes');
         if (!container || !DATA) return;
+
+        const selected = new Set(
+            [...container.querySelectorAll('.node-check:checked')]
+                .map((checkbox) => checkbox.value),
+        );
 
         const nodes = (DATA.hosts || []).filter((node) => {
             if (!activeGroup) return true;
@@ -44,7 +103,9 @@
 
         container.innerHTML = nodes.map((node) => renderNode(node)).join('')
             || '<div class="empty">В этой группе узлов нет</div>';
+        restoreSelectedNodes(selected);
         updateRunHint();
+        updateHostSelectionButton();
     }
 
     function renderGroupButtons() {
@@ -106,7 +167,10 @@
 
         container.dataset.filterObserverReady = '1';
         const observer = new MutationObserver(() => {
-            if (!activeGroup || container.dataset.filtering === '1') return;
+            if (!activeGroup || container.dataset.filtering === '1') {
+                updateHostSelectionButton();
+                return;
+            }
 
             const visibleNames = new Set(
                 [...container.querySelectorAll('.node-check')].map((input) => input.value),
@@ -126,6 +190,8 @@
                 container.dataset.filtering = '1';
                 renderNodesWithFilter();
                 delete container.dataset.filtering;
+            } else {
+                updateHostSelectionButton();
             }
         });
         observer.observe(container, { childList: true });
@@ -337,6 +403,12 @@
         interceptRunButtons();
         installPlaybookEditor();
 
+        document.addEventListener('change', (event) => {
+            if (event.target.matches('.node-check')) {
+                updateHostSelectionButton();
+            }
+        });
+
         const sync = () => {
             setupGroupFilters();
             setupRenderObserver();
@@ -348,6 +420,8 @@
                 renderGroupButtons();
                 if (activeGroup) renderNodesWithFilter();
             }
+
+            updateHostSelectionButton();
 
             // main.js is loaded after this file and replaces editPlaybook.
             installPlaybookEditor();
