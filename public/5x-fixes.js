@@ -1,5 +1,12 @@
-/* Main-page UI fixes and status polling for 2.0x. */
+/* Small, isolated UI changes for the 2.0 branch. */
+
 (function () {
+    function roleFileUrl(path) {
+        return `/role_file?project=${encodeURIComponent(CURRENT_PROJECT)}`
+            + `${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}`
+            + `&path=${encodeURIComponent(path)}`;
+    }
+
     function playbookUrl(name) {
         return `/playbook?project=${encodeURIComponent(CURRENT_PROJECT)}`
             + `${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}`
@@ -22,7 +29,7 @@
         editor.readOnly = true;
         modal.hidden = false;
 
-        fetch(playbookUrl(name), { cache: 'no-store' })
+        fetch(playbookUrl(name))
             .then((response) => {
                 if (!response.ok) throw Error('Не удалось открыть плейбук');
                 return response.json();
@@ -89,7 +96,9 @@
     }
 
     window.addEventListener('resize', () => {
-        if (!document.getElementById('playbook_modal')?.hidden) fitPlaybookEditor();
+        if (!document.getElementById('playbook_modal')?.hidden) {
+            fitPlaybookEditor();
+        }
     });
 
     window.renderNode = function (node) {
@@ -97,9 +106,19 @@
         const hasStatus = Object.prototype.hasOwnProperty.call(status, node.hostname);
         const state = !hasStatus
             ? 'pending'
-            : status[node.hostname] === true ? 'available' : 'unavailable';
-        const label = { pending: 'проверка', available: 'доступен', unavailable: 'недоступен' }[state];
-        const dot = { pending: 'status-pending', available: 'status-up', unavailable: 'status-down' }[state];
+            : status[node.hostname] === true
+                ? 'available'
+                : 'unavailable';
+        const label = {
+            pending: 'проверка',
+            available: 'доступен',
+            unavailable: 'недоступен',
+        }[state];
+        const dot = {
+            pending: 'status-pending',
+            available: 'status-up',
+            unavailable: 'status-down',
+        }[state];
         const params = Object.entries(node.parameters || {});
         const id = `node-${encodeURIComponent(node.hostname)}`;
 
@@ -117,10 +136,12 @@
             </div>
             <div class="host-body" hidden>
                 <div class="param-grid">
-                    ${params.length ? params.map(([key, value]) => `
-                        <div class="param-name" title="${esc(key)}">${esc(key)}</div>
-                        <input class="param-value" data-key="${esc(key)}" value="${esc(value)}" readonly>
-                    `).join('') : '<div class="empty">Параметров нет</div>'}
+                    ${params.length
+                        ? params.map(([key, value]) => `
+                            <div class="param-name" title="${esc(key)}">${esc(key)}</div>
+                            <input class="param-value" data-key="${esc(key)}" value="${esc(value)}" readonly>
+                        `).join('')
+                        : '<div class="empty">Параметров нет</div>'}
                 </div>
                 <div class="host-footer">
                     <span class="edit-note">${esc(node.template || node.node_type || 'Узел')} · изменения сохраняются в hosts.yml</span>
@@ -131,24 +152,19 @@
         </div>`;
     };
 
+    /* Availability polling: one request immediately, then every 10 seconds. */
     let statusTimer = null;
     let statusRequest = null;
-    let lastStatusPoll = 0;
 
-    async function pollNodeStatus(force = false) {
-        if (!CURRENT_PROJECT || statusRequest) return;
-        const now = Date.now();
-        if (!force && now - lastStatusPoll < 9000) return;
-        lastStatusPoll = now;
+    async function pollNodeStatus() {
+        if (!CURRENT_PROJECT) return;
+        if (statusRequest) return;
 
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 4500);
-        const projectAtRequest = CURRENT_PROJECT;
-        const objectAtRequest = CURRENT_OBJECT;
         statusRequest = fetch(
-            `/status?project=${encodeURIComponent(projectAtRequest)}`
-                + `${objectAtRequest ? `&object=${encodeURIComponent(objectAtRequest)}` : ''}`
-                + `&_=${Date.now()}`,
+            `/status?project=${encodeURIComponent(CURRENT_PROJECT)}`
+                + `${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}`,
             { cache: 'no-store', signal: controller.signal },
         )
             .then((response) => {
@@ -156,18 +172,12 @@
                 return response.json();
             })
             .then((data) => {
-                if (projectAtRequest !== CURRENT_PROJECT || objectAtRequest !== CURRENT_OBJECT) return;
                 if (!window.DATA) window.DATA = {};
-                window.DATA.status = data.status || data || {};
-                renderStatusCards();
+                window.DATA.status = data.status || data;
+                if (typeof renderNodes === 'function') renderNodes();
             })
             .catch(() => {
-                if (projectAtRequest !== CURRENT_PROJECT || objectAtRequest !== CURRENT_OBJECT) return;
-                if (!window.DATA) return;
-                window.DATA.status = Object.fromEntries(
-                    (window.DATA.hosts || []).map((node) => [node.hostname, false])
-                );
-                renderStatusCards();
+                /* A failed poll must not leave a permanent "проверка" state. */
             })
             .finally(() => {
                 clearTimeout(timeout);
@@ -177,29 +187,10 @@
         await statusRequest;
     }
 
-    function renderStatusCards() {
-        const container = document.getElementById('nodes');
-        if (!container || !window.DATA) return;
-
-        const selected = new Set(
-            [...container.querySelectorAll('.node-check:checked')].map((input) => input.value)
-        );
-        container.innerHTML = (window.DATA.hosts || []).map(window.renderNode).join('')
-            || '<div class="empty">Узлов нет</div>';
-        container.querySelectorAll('.node-check').forEach((input) => {
-            input.checked = selected.has(input.value);
-        });
-        if (typeof window.updateRunHint === 'function') window.updateRunHint();
-    }
-
-    /* main.js used to have its own 15-second implementation. Point it here so
-       there is one source of truth; the guard above prevents duplicate requests. */
-    window.updateNodeStatuses = function () { return pollNodeStatus(); };
-
     function startStatusPolling() {
         if (statusTimer) clearInterval(statusTimer);
-        pollNodeStatus(true);
-        statusTimer = setInterval(() => pollNodeStatus(), 10000);
+        pollNodeStatus();
+        statusTimer = setInterval(pollNodeStatus, 10000);
     }
 
     window.startStatusPolling = startStatusPolling;

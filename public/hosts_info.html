@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Хосты</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="overlay">
+        <div id="nav"></div>
+        <div id="project_selector"></div>
+
+        <div class="page-wrap">
+            <div id="host_summary" class="host-summary"></div>
+
+            <div class="block">
+                <div class="section-head">
+                    <h3>Объект</h3>
+                    <select id="object_select" onchange="changeObject()"></select>
+                </div>
+            </div>
+
+            <div class="block">
+                <div class="section-head">
+                    <h3>Узлы</h3>
+                    <button class="primary" onclick="openAddNodeModal()">+ Добавить узел</button>
+                </div>
+                <div id="hosts_list" class="hosts-list"></div>
+            </div>
+        </div>
+
+        <div id="add_node_modal" class="modal-backdrop" hidden>
+            <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="add_node_title">
+                <div class="modal-head">
+                    <div>
+                        <div class="modal-kicker">Новый узел</div>
+                        <h3 id="add_node_title">Добавление узла</h3>
+                    </div>
+                    <button class="modal-close" onclick="closeAddNodeModal()" aria-label="Закрыть">×</button>
+                </div>
+
+                <div class="modal-body">
+                    <label class="modal-label" for="new_node_name">Название</label>
+                    <input id="new_node_name" class="modal-input" type="text" placeholder="Например, host01" autocomplete="off">
+
+                    <div class="modal-label">Тип узла</div>
+                    <div class="node-type-tabs">
+                        <button type="button" class="node-type-tab active" data-node-type="host" onclick="selectNodeType('host')">
+                            <span class="node-type-title">Хост</span>
+                            <span class="node-type-desc">Параметры заканчиваются на <b>uefi</b></span>
+                        </button>
+                        <button type="button" class="node-type-tab" data-node-type="md" onclick="selectNodeType('md')">
+                            <span class="node-type-title">МД</span>
+                            <span class="node-type-desc">Параметры заканчиваются на <b>Description</b></span>
+                        </button>
+                    </div>
+
+                    <div id="new_node_fields" class="new-node-fields"></div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="modal-secondary" onclick="closeAddNodeModal()">Отмена</button>
+                    <button class="primary" onclick="createNode()">Добавить узел</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/common.js"></script>
+    <script src="/hosts_info.js"></script>
+</body>
+</html>
