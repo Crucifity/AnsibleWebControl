@@ -2,7 +2,6 @@ const CURRENT_PROJECT = getProjectFromURL();
 let CURRENT_OBJECT = getObjectFromURL();
 let DATA = null;
 let logIndex = 0;
-let RUNNING = false;
 let NEW_TEMPLATE = '';
 let ACTIVE_GROUP = null;
 let CONFIRM_ACTION = null;
@@ -484,7 +483,6 @@ function openRoleFile(path) {
 
 function runAutodeploy() {
     const hosts = selectedHosts();
-    RUNNING = true;
     document.getElementById('run_state').textContent = '● Выполняется';
     api('/run_autodeploy', { project: CURRENT_PROJECT, hosts }).catch((error) => alert(error.message));
 }
@@ -493,7 +491,6 @@ function runSelected() {
     const playbooks = selectedPlaybooks();
     const hosts = selectedHosts();
     if (!playbooks.length) return alert('Выберите хотя бы один плейбук');
-    RUNNING = true;
     document.getElementById('run_state').textContent = '● Выполняется';
     api('/run', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, playbooks, hosts })
         .catch((error) => alert(error.message));
@@ -501,7 +498,6 @@ function runSelected() {
 
 function stopExecution() {
     api('/stop', {}).finally(() => {
-        RUNNING = false;
         document.getElementById('run_state').textContent = 'Остановлено';
     });
 }
