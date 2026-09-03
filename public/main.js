@@ -21,6 +21,9 @@ function api(path, body) {
         const data = await response.json();
         if (!response.ok || data.ok === false) throw Error(data.error || 'Ошибка');
         return data;
+    }).catch((error) => {
+        alert('Сетевая ошибка: ' + error.message);
+        throw error;
     });
 }
 
@@ -85,12 +88,18 @@ function renderNode(node) {
         statusClass = 'node-unavailable';
     }
 
+    // Добавляем поле имени хоста первым в списке параметров
+    const nameField = `
+        <div class="param-name" title="Имя узла">Имя узла</div>
+        <input class="param-value" data-key="hostname" value="${esc(node.hostname)}" readonly>
+    `;
+
     const fields = params.length
-        ? params.map(([key, value]) => `
+        ? nameField + params.map(([key, value]) => `
             <div class="param-name" title="${esc(key)}">${esc(key)}</div>
             <input class="param-value" data-key="${esc(key)}" value="${esc(value)}" readonly>
         `).join('')
-        : '<div class="empty">Параметров нет</div>';
+        : nameField + '<div class="empty" style="grid-column: 1 / -1;">Дополнительных параметров нет</div>';
 
     return `
         <div class="host-card node-card ${statusClass}" id="${id}">
@@ -171,6 +180,7 @@ function editNode(event, hostname) {
         card.querySelector('.node-expand').textContent = '▾';
         setTimeout(() => card.dataset.animating = '0', 240);
     }
+    // Разрешаем редактирование ВСЕХ полей, включая hostname
     card.querySelectorAll('.param-value').forEach((input) => input.readOnly = false);
     card.querySelector('.param-value')?.focus();
 }
@@ -180,13 +190,27 @@ function cancelNodeEdit(event) {
     loadMain();
 }
 
+// ИСПРАВЛЕНО: Поддержка переименования хоста через new_hostname
 function saveNode(event, hostname) {
     event.stopPropagation();
     const card = document.getElementById(`node-${encodeURIComponent(hostname)}`);
     const values = {};
-    card.querySelectorAll('[data-key]').forEach((input) => values[input.dataset.key] = input.value);
+    let newHostname = hostname;
+
+    const hostnameInput = card.querySelector('[data-key="hostname"]');
+    if (hostnameInput) {
+        newHostname = hostnameInput.value.trim();
+        if (!newHostname) return alert('Имя узла не может быть пустым');
+    }
+
+    card.querySelectorAll('[data-key]').forEach((input) => {
+        if (input.dataset.key !== 'hostname') {
+            values[input.dataset.key] = input.value;
+        }
+    });
+
     api('/update_host', {
-        project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname, new_hostname: hostname, values
+        project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname, new_hostname: newHostname, values
     }).then(loadMain).catch((error) => alert(error.message));
 }
 
@@ -210,6 +234,21 @@ function deleteSelectedNodes() {
 
 function openAddNodeModal() {
     document.getElementById('new_node_name').value = '';
+    
+    // Автоматически заполняем список групп из текущих данных
+    const groupSelect = document.getElementById('new_node_group');
+    if (groupSelect) {
+        groupSelect.innerHTML = '<option value="">-- Без группы --</option>';
+        if (DATA && DATA.groups) {
+            DATA.groups.forEach(group => {
+                const option = document.createElement('option');
+                option.value = group.name;
+                option.textContent = group.name;
+                groupSelect.appendChild(option);
+            });
+        }
+    }
+    
     document.getElementById('add_node_modal').hidden = false;
     renderTemplateTabs();
     setTimeout(() => document.getElementById('new_node_name').focus(), 0);
@@ -254,15 +293,25 @@ function renderTemplateFields() {
     `).join('');
 }
 
+// ИСПРАВЛЕНО: Чтение и передача параметра group
 function createNode() {
     const name = document.getElementById('new_node_name').value.trim();
+    const groupSelect = document.getElementById('new_node_group');
+    const group = groupSelect ? groupSelect.value : ""; 
+    
     const keys = (DATA.template_schemas || {})[NEW_TEMPLATE] || [];
     if (!name) return document.getElementById('new_node_name').focus();
     if (!keys.length) return alert('Выберите шаблон параметров.');
     const values = {};
     document.querySelectorAll('[data-new-key]').forEach((input) => values[input.dataset.newKey] = input.value);
+    
     api('/add_host', {
-        project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname: name, node_type: NEW_TEMPLATE, values
+        project: CURRENT_PROJECT, 
+        object: CURRENT_OBJECT, 
+        hostname: name, 
+        node_type: NEW_TEMPLATE, 
+        values,
+        group: group 
     }).then(() => {
         closeAddNodeModal();
         loadMain();
@@ -632,7 +681,8 @@ function refreshLog() {
                 logIndex = data.next;
                 element.scrollTop = element.scrollHeight;
             }
-        });
+        })
+        .catch(() => {});
 }
 
 document.addEventListener('click', (event) => {

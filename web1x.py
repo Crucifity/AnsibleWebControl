@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import concurrent.futures
 import json
 import os
 import re
@@ -12,7 +13,6 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import yaml
-
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PUBLIC_DIR = os.path.join(BASE_DIR, "public")
@@ -33,24 +33,19 @@ TEMPLATES = {
     7: "СИ шаблон-1",
 }
 
-
 def safe(value):
     return os.path.basename(value or "")
-
 
 def project_dir(project):
     return os.path.join(PROJECTS_ROOT, safe(project)) if project else None
 
-
 def single_project(project):
     return bool(project and os.path.isdir(os.path.join(project_dir(project), "playbooks")))
-
 
 def get_projects():
     if not os.path.isdir(PROJECTS_ROOT):
         return []
     return sorted(name for name in os.listdir(PROJECTS_ROOT) if os.path.isdir(project_dir(name)))
-
 
 def get_objects(project):
     if single_project(project):
@@ -60,14 +55,12 @@ def get_objects(project):
         return []
     return sorted(name for name in os.listdir(directory) if os.path.isdir(os.path.join(directory, name)))
 
-
 def object_dir(project, obj):
     if single_project(project):
         return os.path.join(project_dir(project), "playbooks")
     if not project or not obj or obj not in get_objects(project):
         return None
     return os.path.join(project_dir(project), "object", safe(obj))
-
 
 def read(path):
     try:
@@ -76,12 +69,10 @@ def read(path):
     except OSError:
         return ""
 
-
 def write(path, content):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as file:
         file.write(content)
-
 
 def paths(project, obj):
     directory = object_dir(project, obj)
@@ -100,17 +91,14 @@ def paths(project, obj):
         "cfg": os.path.join(directory, "ansible.cfg"),
     }
 
-
 def roles_dir(project, obj):
     directory = object_dir(project, obj)
     return os.path.join(directory, "roles") if directory else None
-
 
 def log(message):
     with LOG_LOCK:
         LOG.append(f"[{datetime.now():%H:%M:%S}] {message}")
         del LOG[:-1000]
-
 
 def load_inventory(project, obj):
     file_paths = paths(project, obj)
@@ -122,10 +110,8 @@ def load_inventory(project, obj):
         log(f"HOSTS YAML ERROR: {error}")
         return {}
 
-
 def load_hosts(project, obj):
     return load_inventory(project, obj).get("all", {}).get("hosts", {}) or {}
-
 
 def classify_node(params):
     keys = list(params) if isinstance(params, dict) else []
@@ -141,7 +127,6 @@ def classify_node(params):
         return "md", "МД"
     return "unknown", "Узел"
 
-
 def parse_hosts(project, obj):
     result = []
     for name, raw in load_hosts(project, obj).items():
@@ -149,7 +134,6 @@ def parse_hosts(project, obj):
         node_type, template = classify_node(params)
         result.append({"hostname": name, "parameters": params, "node_type": node_type, "template": template, "ip": params.get("ansible_host", params.get("ip", ""))})
     return result
-
 
 def template_schemas(project, obj):
     schemas = {}
@@ -159,12 +143,14 @@ def template_schemas(project, obj):
             schemas[template] = list(node["parameters"])
     return schemas
 
-
 def inventory_groups(project, obj):
+    """Собирает все группы из инвентаря динамически (без жёстко заданных имён)."""
     data = load_inventory(project, obj)
-    wanted = {"arms", "servers", "md"}
+    if not isinstance(data, dict):
+        return []
+    
     groups = {}
-
+    
     def collect(value):
         found = set()
         if isinstance(value, dict):
@@ -175,21 +161,22 @@ def inventory_groups(project, obj):
                 found.update(collect(child))
         return found
 
+    # Собираем все группы верхнего уровня (кроме "all")
     for name, value in data.items():
-        if name in wanted:
+        if name != "all" and isinstance(value, dict) and ("hosts" in value or "children" in value):
             groups[name] = sorted(collect(value))
 
-    all_group = data.get("all", {}) if isinstance(data, dict) else {}
-    for name, value in (all_group.get("children", {}) or {}).items():
-        if name in wanted:
-            groups[name] = sorted(collect(value))
+    # Также проверяем вложенные группы внутри all
+    all_group = data.get("all", {})
+    if isinstance(all_group, dict):
+        for name, value in (all_group.get("children", {}) or {}).items():
+            if isinstance(value, dict) and ("hosts" in value or "children" in value):
+                groups[name] = sorted(collect(value))
 
     return [{"name": name, "hosts": hosts} for name, hosts in groups.items()]
 
-
 def save_hosts(path, data):
     write(path, yaml.safe_dump(data, allow_unicode=True, sort_keys=False, default_flow_style=False))
-
 
 def scalar(value):
     if not isinstance(value, str):
@@ -205,38 +192,47 @@ def scalar(value):
     except ValueError:
         return value
 
-
 def _hosts_section_bounds(lines):
-    hosts_index = next((index for index, line in enumerate(lines) if line.rstrip("\r\n") == "  hosts:"), None)
-    if hosts_index is None:
-        return None, None
+    """Находит секцию hosts: с любым отступом и возвращает (hosts_index, end_index, indent)."""
+    match_info = next(((index, len(line) - len(line.lstrip(" "))) 
+                       for index, line in enumerate(lines) 
+                       if re.match(r"^ *hosts:\s*(?:#.*)?$", line)), None)
+    
+    if match_info is None:
+        return None, None, None
+        
+    hosts_index, indent = match_info
     end_index = len(lines)
+    
     for index in range(hosts_index + 1, len(lines)):
         stripped = lines[index].rstrip("\r\n")
-        if stripped and not stripped.startswith(" "):
+        if not stripped:
+            continue
+        current_indent = len(stripped) - len(stripped.lstrip(" "))
+        # Секция заканчивается, если встретили строку с отступом <= отступа hosts:
+        if current_indent <= indent:
             end_index = index
             break
-        if re.match(r"^  \S", stripped):
-            end_index = index
-            break
-    return hosts_index, end_index
+            
+    return hosts_index, end_index, indent
 
+def _host_entry_indexes(lines, hosts_index, end_index, indent):
+    """Находит индексы строк с определениями хостов (отступ = indent + 2)."""
+    entry_indent = indent + 2
+    return [index for index in range(hosts_index + 1, end_index) 
+            if re.match(rf"^ {{{entry_indent}}}\S.*?:\s*(?:#.*)?(?:\r?\n)?$", lines[index])]
 
-def _host_entry_indexes(lines, hosts_index, end_index, indent=4):
-    return [index for index in range(hosts_index + 1, end_index) if re.match(rf"^ {{{indent}}}\S.*?:\s*(?:#.*)?(?:\r?\n)?$", lines[index])]
-
-
-def _host_name_from_line(line, indent=4):
+def _host_name_from_line(line, indent):
+    """Извлекает имя хоста из строки с заданным отступом."""
     match = re.match(rf"^ {{{indent}}}(\S.*?):\s*(?:#.*)?(?:\r?\n)?$", line)
     return match.group(1) if match else None
 
-
-def _host_yaml_block(name, values, newline, indent=4):
+def _host_yaml_block(name, values, newline, indent):
+    """Формирует YAML-блок для хоста с правильным отступом."""
     block = yaml.safe_dump({name: values}, allow_unicode=True, sort_keys=False, default_flow_style=False)
     if newline != "\n":
         block = block.replace("\n", newline)
     return "".join(f"{' ' * indent}{line}" if line.strip() else line for line in block.splitlines(keepends=True))
-
 
 def _group_hosts_bounds(lines, group_name):
     escaped = re.escape(group_name)
@@ -263,11 +259,9 @@ def _group_hosts_bounds(lines, group_name):
                 return hosts_index, end_index, indent
     return None, None, None
 
-
 def _group_entry_indexes(lines, hosts_index, end_index, hosts_indent):
     entry_indent = hosts_indent + 2
     return [index for index in range(hosts_index + 1, end_index) if re.match(rf"^ {{{entry_indent}}}\S.*?:\s*(?:#.*)?(?:\r?\n)?$", lines[index])]
-
 
 def _insert_host_into_group(path, group_name, name):
     if not group_name:
@@ -298,7 +292,6 @@ def _insert_host_into_group(path, group_name, name):
     lines.insert(insert_at, host_line)
     write(path, "".join(lines))
 
-
 def _remove_host_from_group(path, group_name, name):
     raw = read(path)
     lines = raw.splitlines(keepends=True)
@@ -312,7 +305,6 @@ def _remove_host_from_group(path, group_name, name):
     next_index = next((index for index in entry_indexes if index > target), end_index)
     del lines[target:next_index]
     write(path, "".join(lines))
-
 
 def add_host(project, obj, name, values, group=""):
     file_paths = paths(project, obj)
@@ -332,12 +324,12 @@ def add_host(project, obj, name, values, group=""):
 
     raw = read(file_paths["hosts"])
     lines = raw.splitlines(keepends=True)
-    hosts_index, end_index = _hosts_section_bounds(lines)
+    hosts_index, end_index, hosts_indent = _hosts_section_bounds(lines)
     if hosts_index is None:
         save_hosts(file_paths["hosts"], data)
     else:
         newline = "\r\n" if "\r\n" in raw else "\n"
-        entry_indexes = _host_entry_indexes(lines, hosts_index, end_index)
+        entry_indexes = _host_entry_indexes(lines, hosts_index, end_index, hosts_indent)
         if entry_indexes:
             insert_at = end_index
             while insert_at > hosts_index + 1 and not lines[insert_at - 1].strip():
@@ -348,13 +340,12 @@ def add_host(project, obj, name, values, group=""):
             while insert_at < end_index and not lines[insert_at].strip():
                 insert_at += 1
             prefix = ""
-        block = _host_yaml_block(name, normalized_values, newline)
+        block = _host_yaml_block(name, normalized_values, newline, hosts_indent + 2)
         lines[insert_at:insert_at] = [prefix + block]
         write(file_paths["hosts"], "".join(lines))
 
     if group:
         _insert_host_into_group(file_paths["hosts"], group, name)
-
 
 def delete_host(project, obj, name):
     file_paths = paths(project, obj)
@@ -368,10 +359,10 @@ def delete_host(project, obj, name):
 
     raw = read(file_paths["hosts"])
     lines = raw.splitlines(keepends=True)
-    hosts_index, end_index = _hosts_section_bounds(lines)
+    hosts_index, end_index, hosts_indent = _hosts_section_bounds(lines)
     if hosts_index is not None:
-        entry_indexes = _host_entry_indexes(lines, hosts_index, end_index)
-        target_index = next((index for index in entry_indexes if _host_name_from_line(lines[index]) == name), None)
+        entry_indexes = _host_entry_indexes(lines, hosts_index, end_index, hosts_indent)
+        target_index = next((index for index in entry_indexes if _host_name_from_line(lines[index], hosts_indent + 2) == name), None)
         if target_index is not None:
             next_index = next((index for index in entry_indexes if index > target_index), end_index)
             del lines[target_index:next_index]
@@ -380,22 +371,66 @@ def delete_host(project, obj, name):
     for group in inventory_groups(project, obj):
         _remove_host_from_group(file_paths["hosts"], group["name"], name)
 
-
 def save_host(project, obj, old_name, new_name, values):
+    """Обновляет хост с сохранением форматирования и обновлением групп при переименовании."""
     file_paths = paths(project, obj)
+    if not file_paths:
+        raise ValueError("Объект не найден")
+    
     data = load_inventory(project, obj)
     hosts = data.setdefault("all", {}).setdefault("hosts", {})
     if old_name not in hosts:
         raise ValueError("Узел не найден")
     if new_name != old_name and new_name in hosts:
         raise ValueError("Узел с таким именем уже существует")
+
+    # Подготовка обновлённых значений
     updated = dict(hosts[old_name]) if isinstance(hosts[old_name], dict) else {}
     for key, value in values.items():
         updated[key] = scalar(value)
-    hosts.pop(old_name)
-    hosts[new_name] = updated
-    save_hosts(file_paths["hosts"], data)
 
+    # Построчное обновление файла для сохранения форматирования
+    raw = read(file_paths["hosts"])
+    lines = raw.splitlines(keepends=True)
+    hosts_index, end_index, hosts_indent = _hosts_section_bounds(lines)
+    
+    if hosts_index is not None:
+        entry_indexes = _host_entry_indexes(lines, hosts_index, end_index, hosts_indent)
+        target_index = next((index for index in entry_indexes if _host_name_from_line(lines[index], hosts_indent + 2) == old_name), None)
+        
+        if target_index is not None:
+            # Удаляем старую запись
+            next_index = next((index for index in entry_indexes if index > target_index), end_index)
+            del lines[target_index:next_index]
+            
+            # Вставляем новую запись
+            normalized_values = {key: scalar(value) for key, value in values.items()}
+            newline = "\r\n" if "\r\n" in raw else "\n"
+            insert_at = target_index
+            while insert_at < end_index and not lines[insert_at].strip():
+                insert_at += 1
+            
+            prefix = newline if (insert_at > hosts_index + 1 and lines[insert_at - 1].strip()) else ""
+            block = _host_yaml_block(new_name, normalized_values, newline, hosts_indent + 2)
+            lines[insert_at:insert_at] = [prefix + block]
+            write(file_paths["hosts"], "".join(lines))
+        else:
+            # Фоллбэк, если построчное редактирование не сработало
+            hosts.pop(old_name)
+            hosts[new_name] = updated
+            save_hosts(file_paths["hosts"], data)
+    else:
+        # Фоллбэк, если секция hosts не найдена
+        hosts.pop(old_name)
+        hosts[new_name] = updated
+        save_hosts(file_paths["hosts"], data)
+
+    # Обновляем членство в группах при переименовании
+    if new_name != old_name:
+        for group in inventory_groups(project, obj):
+            if old_name in group["hosts"]:
+                _remove_host_from_group(file_paths["hosts"], group["name"], old_name)
+                _insert_host_into_group(file_paths["hosts"], group["name"], new_name)
 
 def get_playbooks(project, obj):
     directory = object_dir(project, obj)
@@ -407,7 +442,6 @@ def get_playbooks(project, obj):
         for name in sorted(os.listdir(directory))
         if os.path.isfile(os.path.join(directory, name)) and name.lower().endswith((".yml", ".yaml")) and name not in excluded
     ]
-
 
 def playbook_roles(project, obj, playbook_name):
     file_paths = paths(project, obj)
@@ -456,7 +490,6 @@ def playbook_roles(project, obj, playbook_name):
         result.append({"name": role_name, "type": "dir", "path": role_name, "children": walk(role_path)})
     return result
 
-
 def role_file(project, obj, relative_path):
     root = roles_dir(project, obj)
     if not root: return None
@@ -464,11 +497,9 @@ def role_file(project, obj, relative_path):
     path = os.path.abspath(os.path.join(root, relative_path))
     return path if path.startswith(root + os.sep) and os.path.isfile(path) else None
 
-
 def autodeploy(project):
     path = os.path.join(project_dir(project) or "", "autodeploy", "autodeploy.yml")
     return path if os.path.isfile(path) else None
-
 
 def host_up(ip):
     if not ip: return False
@@ -477,23 +508,31 @@ def host_up(ip):
     except OSError:
         return False
 
-
 def status_worker():
+    """Параллельный опрос хостов для ускорения проверки статусов."""
     global HOST_STATUS
     while True:
         statuses = {}
         for project in get_projects():
             for obj in (get_objects(project) or [None]):
                 key = obj or ""
-                statuses.setdefault(project, {})[key] = {node["hostname"]: host_up(node["ip"]) for node in parse_hosts(project, obj)}
-        with STATUS_LOCK: HOST_STATUS = statuses
+                nodes = parse_hosts(project, obj)
+                
+                def check_node(node):
+                    return node["hostname"], host_up(node["ip"])
+                
+                with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+                    results = dict(executor.map(check_node, nodes))
+                
+                statuses.setdefault(project, {})[key] = results
+                
+        with STATUS_LOCK:
+            HOST_STATUS = statuses
         time.sleep(10)
-
 
 def status(project, obj):
     with STATUS_LOCK:
         return dict(HOST_STATUS.get(project, {}).get(obj or "", {}))
-
 
 def run_playbook(command, project, obj, name, cwd, cfg, label=None):
     title = label or name
@@ -513,7 +552,6 @@ def run_playbook(command, project, obj, name, cwd, cfg, label=None):
             with PROC_LOCK:
                 if process in PROCESSES: PROCESSES.remove(process)
 
-
 def run_command(project, obj, names, hosts):
     file_paths = paths(project, obj)
     available = {item["name"]: item["path"] for item in get_playbooks(project, obj)}
@@ -524,15 +562,13 @@ def run_command(project, obj, names, hosts):
             if hosts: command += ["-l", ",".join(hosts)]
             run_playbook(command, project, obj, name, os.path.dirname(available[name]), file_paths["cfg"])
 
-
 def run_autodeploy(project, hosts):
-    path = autodeploy(project,)
+    path = autodeploy(project)
     if not path: return
     file_paths = paths(project, None)
     command = ["ansible-playbook", path]
     if hosts: command += ["-l", ",".join(hosts)]
     run_playbook(command, project, None, "autodeploy.yml", os.path.dirname(path), file_paths["cfg"] if file_paths else "")
-
 
 def stop():
     with PROC_LOCK:
@@ -541,7 +577,6 @@ def stop():
             except OSError: pass
         PROCESSES.clear()
     log("=== EXECUTION STOPPED ===")
-
 
 class Handler(BaseHTTPRequestHandler):
     def json(self, data, code=200):
@@ -607,13 +642,19 @@ class Handler(BaseHTTPRequestHandler):
                 if file_paths: write(os.path.join(file_paths["object_dir"], safe(data.get("name"))), data.get("content", ""))
                 self.json({"ok": True}); return
             if self.path == "/save_files":
+                # Защита от случайной перезаписи пустым содержимым
+                hosts_content = data.get("hosts", "")
+                if not hosts_content.strip():
+                    self.json({"ok": False, "error": "Файл hosts.yml не может быть пустым"}, 400)
+                    return
                 file_paths = paths(project, obj)
-                if file_paths: write(file_paths["hosts"], data.get("hosts", "")); write(file_paths["defaults"], data.get("defaults", ""))
+                if file_paths: 
+                    write(file_paths["hosts"], hosts_content)
+                    write(file_paths["defaults"], data.get("defaults", ""))
                 self.json({"ok": True}); return
         except (OSError, ValueError) as error:
             self.json({"ok": False, "error": str(error)}, 500); return
         self.send_error(404)
-
 
 if __name__ == "__main__":
     threading.Thread(target=status_worker, daemon=True).start()

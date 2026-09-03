@@ -19,6 +19,9 @@ function api(path, body) {
         const data = await response.json();
         if (!response.ok || data.ok === false) throw Error(data.error || 'Ошибка');
         return data;
+    }).catch((error) => {
+        alert('Сетевая ошибка: ' + error.message);
+        throw error;
     });
 }
 
@@ -40,10 +43,22 @@ function nodeTypeLabel(type) {
     return type === 'md' ? 'МД' : type === 'host' ? 'Хост' : 'Узел';
 }
 
+// ИСПРАВЛЕНО: Корректная логика отображения статуса
 function card(host) {
     const params = Object.entries(host.parameters || {});
     const type = host.node_type || nodeType(host);
-    const status = DATA.status[host.hostname];
+    
+    const hasStatus = Object.prototype.hasOwnProperty.call(DATA.status || {}, host.hostname);
+    const isUp = hasStatus ? DATA.status[host.hostname] === true : null;
+
+    let statusHtml = '';
+    if (!hasStatus) {
+        statusHtml = '<span class="host-state" style="color:orange">проверка...</span>';
+    } else if (isUp) {
+        statusHtml = '<span class="host-state" style="color:green">доступен</span>';
+    } else {
+        statusHtml = '<span class="host-state" style="color:red">недоступен</span>';
+    }
 
     return `
         <div class="host-card" id="host-${encodeURIComponent(host.hostname)}">
@@ -51,8 +66,7 @@ function card(host) {
                 <span class="chevron">▸</span>
                 <span class="title">${esc(host.hostname)}</span>
                 <span class="node-badge">${nodeTypeLabel(type)}</span>
-                <span class="status-dot ${status ? 'status-up' : 'status-down'}"></span>
-                <span class="host-state">${status ? 'доступен' : 'недоступен'}</span>
+                ${statusHtml}
                 <div class="host-actions" onclick="event.stopPropagation()">
                     <button onclick="editHost(this)">Изменить</button>
                     <button class="danger" onclick="deleteHost('${esc(host.hostname)}')">Удалить</button>
@@ -226,7 +240,8 @@ function load() {
                 .join('');
             renderSummary(data.hosts || [], data.status || {});
             document.getElementById('hosts_list').innerHTML = rows(data.hosts || []);
-        });
+        })
+        .catch((error) => console.error('Ошибка загрузки данных:', error));
 }
 
 function rows(list) {
