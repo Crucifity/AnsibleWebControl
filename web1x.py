@@ -13,7 +13,6 @@ from urllib.parse import parse_qs, urlparse
 
 import yaml
 
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PUBLIC_DIR = os.path.join(BASE_DIR, "public")
 PROJECTS_ROOT = os.environ.get("ANSIBLE_PROJECTS_ROOT", "/opt/home/projects")
@@ -49,33 +48,23 @@ def single_project(project):
 def get_projects():
     if not os.path.isdir(PROJECTS_ROOT):
         return []
-    return sorted(
-        name for name in os.listdir(PROJECTS_ROOT)
-        if os.path.isdir(project_dir(name))
-    )
+    return sorted(name for name in os.listdir(PROJECTS_ROOT) if os.path.isdir(project_dir(name)))
 
 
 def get_objects(project):
     if single_project(project):
         return []
-
     directory = os.path.join(project_dir(project) or "", "object")
     if not os.path.isdir(directory):
         return []
-
-    return sorted(
-        name for name in os.listdir(directory)
-        if os.path.isdir(os.path.join(directory, name))
-    )
+    return sorted(name for name in os.listdir(directory) if os.path.isdir(os.path.join(directory, name)))
 
 
 def object_dir(project, obj):
     if single_project(project):
         return os.path.join(project_dir(project), "playbooks")
-
     if not project or not obj or obj not in get_objects(project):
         return None
-
     return os.path.join(project_dir(project), "object", safe(obj))
 
 
@@ -97,14 +86,12 @@ def paths(project, obj):
     directory = object_dir(project, obj)
     if not directory:
         return None
-
     def first(names):
         for name in names:
             path = os.path.join(directory, name)
             if os.path.isfile(path):
                 return path
         return os.path.join(directory, names[0])
-
     return {
         "object_dir": directory,
         "hosts": first(["hosts.yml", "hosts.yaml", "hosts", "inventory.yml"]),
@@ -202,7 +189,7 @@ def inventory_groups(project, obj):
         if name in wanted:
             groups[name] = sorted(collect(value))
 
-    return [{"name": name, "hosts": hosts} for name, hosts in groups.items() if hosts]
+    return [{"name": name, "hosts": hosts} for name, hosts in groups.items()]
 
 
 def save_hosts(path, data):
@@ -225,13 +212,9 @@ def scalar(value):
 
 
 def _hosts_section_bounds(lines):
-    hosts_index = next(
-        (index for index, line in enumerate(lines) if line.rstrip("\r\n") == "  hosts:"),
-        None,
-    )
+    hosts_index = next((index for index, line in enumerate(lines) if line.rstrip("\r\n") == "  hosts:"), None)
     if hosts_index is None:
         return None, None
-
     end_index = len(lines)
     for index in range(hosts_index + 1, len(lines)):
         stripped = lines[index].rstrip("\r\n")
@@ -244,32 +227,123 @@ def _hosts_section_bounds(lines):
     return hosts_index, end_index
 
 
-def _host_entry_indexes(lines, hosts_index, end_index):
-    return [
-        index
-        for index in range(hosts_index + 1, end_index)
-        if re.match(r"^    \S", lines[index].rstrip("\r\n"))
-    ]
+def _host_entry_indexes(lines, hosts_index, end_index, indent=4):
+    prefix = " " * indent
+    return [index for index in range(hosts_index + 1, end_index) if lines[index].rstrip("\r\n").startswith(prefix) and re.match(rf"^ {{{indent}}}\S", lines[index].rstrip("\r\n"))]
 
 
-def _host_name_from_line(line):
-    match = re.match(r"^    (\S.*?):\s*(?:#.*)?(?:\r?\n)?$", line)
+def _host_name_from_line(line, indent=4):
+    match = re.match(rf"^ {{{indent}}}(\S.*?):\s*(?:#.*)?(?:\r?\n)?$", line)
     return match.group(1) if match else None
 
 
-def _host_yaml_block(name, values, newline):
-    block = yaml.safe_dump(
-        {name: values},
-        allow_unicode=True,
-        sort_keys=False,
-        default_flow_style=False,
-    )
+def _host_yaml_block(name, values, newline, indent=4):
+    block = yaml.safe_dump({name: values}, allow_unicode=True, sort_keys=False, default_flow_style=False)
     if newline != "\n":
         block = block.replace("\n", newline)
-    return "".join(f"    {line}" if line.strip() else line for line in block.splitlines(keepends=True))
+    return "".join(f"{' ' * indent}{line}" if line.strip() else line for line in block.splitlines(keepends=True))
 
 
-def add_host(project, obj, name, values):
+def _group_hosts_bounds(lines, group_name):
+    """Find the hosts mapping belonging to a named inventory group."""
+    escaped = re.escape(group_name)
+    for group_index, line in enumerate(lines):
+        match = re.match(r"^( {0,2})" + escaped + r":\s*(?:#.*)?(?:\r?\n)?$", line)
+        if not match:
+            continue
+        group_indent = len(match.group(1))
+        for index in range(group_index + 1, len(lines)):
+            stripped = lines[index].rstrip("\r\n")
+            indent = len(stripped) - len(stripped.lstrip(" ")) if stripped else group_indent + 1
+            if stripped and indent <= group_indent:
+                break
+            if indent == group_indent + 2 and stripped.strip() == "hosts:":
+                hosts_index = index
+                end_index = len(lines)
+                hosts_indent = indent
+                for end in range(index + 1, len(lines)):
+                    value = lines[end].rstrip("\r\n")
+                    if value.strip():
+                        value_indent = len(value) - len(value.lstrip(" "))
+                        if value_indent <= group_indent:
+                            end_index = end
+                            break
+                return hosts_index, end_index, hosts_indent
+    return None, None, None
+
+
+def _group_entry_indexes(lines, hosts_index, end_index, hosts_indent):
+    entry_indent = hosts_indent + 2
+    return [
+        index for index in range(hosts_index + 1, end_index)
+        if re.match(rf"^ {{{entry_indent}}}\S.*?:\s*(?:#.*)?(?:\r?\n)?$", lines[index])
+    ]
+
+
+def _insert_host_into_group(path, group_name, name, values):
+    if not group_name:
+        return
+    raw = read(path)
+    lines = raw.splitlines(keepends=True)
+    hosts_index, end_index, hosts_indent = _group_hosts_bounds(lines, group_name)
+    if hosts_index is None:
+        raise ValueError(f"Группа не найдена: {group_name}")
+
+    newline = "\r\n" if "\r\n" in raw else "\n"
+    entry_indexes = _group_entry_indexes(lines, hosts_index, end_index, hosts_indent)
+    entry_indent = hosts_indent + 2
+    block = _host_yaml_block(name, values, newline, entry_indent)
+
+    if entry_indexes:
+        insert_at = end_index
+        for index in entry_indexes:
+            if index > entry_indexes[-1]:
+                insert_at = index
+                break
+        while insert_at > entry_indexes[-1] and not lines[insert_at - 1].strip():
+            del lines[insert_at - 1]
+            insert_at -= 1
+        if insert_at > hosts_index + 1 and lines[insert_at - 1].strip():
+            block = newline + block
+    else:
+        insert_at = hosts_index + 1
+        while insert_at < end_index and not lines[insert_at].strip():
+            insert_at += 1
+
+    lines[insert_at:insert_at] = [block]
+    write(path, "".join(lines))
+
+
+def _remove_host_from_group(path, group_name, name):
+    raw = read(path)
+    lines = raw.splitlines(keepends=True)
+    hosts_index, end_index, hosts_indent = _group_hosts_bounds(lines, group_name)
+    if hosts_index is None:
+        return
+    entry_indexes = _group_entry_indexes(lines, hosts_index, end_index, hosts_indent)
+    target = next((index for index in entry_indexes if _host_name_from_line(lines[index], hosts_indent + 2) == name), None)
+    if target is None:
+        return
+    next_index = next((index for index in entry_indexes if index > target), end_index)
+    del lines[target:next_index]
+    write(path, "".join(lines))
+
+
+def _remove_host_from_all_groups(path, name):
+    raw = read(path)
+    data = yaml.safe_load(raw) or {}
+    wanted = {"arms", "servers", "md"}
+    groups = set()
+    for group in wanted:
+        if group in data:
+            groups.add(group)
+        if group in (data.get("all", {}).get("children", {}) or {}):
+            groups.add(group)
+    for group in groups:
+        _remove_host_from_group(path, group, name)
+
+
+def add_host(project, obj, name, values, group=""):
     file_paths = paths(project, obj)
     data = load_inventory(project, obj)
     hosts = data.setdefault("all", {}).setdefault("hosts", {})
@@ -286,30 +360,29 @@ def add_host(project, obj, name, values):
     hosts_index, end_index = _hosts_section_bounds(lines)
     if hosts_index is None:
         save_hosts(file_paths["hosts"], data)
-        return
-
-    newline = "\r\n" if "\r\n" in raw else "\n"
-    entry_indexes = _host_entry_indexes(lines, hosts_index, end_index)
-
-    if entry_indexes:
-        insert_at = end_index
-        while insert_at > hosts_index + 1 and not lines[insert_at - 1].strip():
-            insert_at -= 1
-        prefix = newline if lines[insert_at - 1].strip() else ""
     else:
-        insert_at = hosts_index + 1
-        while insert_at < end_index and not lines[insert_at].strip():
-            insert_at += 1
-        prefix = ""
+        newline = "\r\n" if "\r\n" in raw else "\n"
+        entry_indexes = _host_entry_indexes(lines, hosts_index, end_index)
+        if entry_indexes:
+            insert_at = end_index
+            while insert_at > hosts_index + 1 and not lines[insert_at - 1].strip():
+                insert_at -= 1
+            prefix = newline if lines[insert_at - 1].strip() else ""
+        else:
+            insert_at = hosts_index + 1
+            while insert_at < end_index and not lines[insert_at].strip():
+                insert_at += 1
+            prefix = ""
+        block = _host_yaml_block(name, normalized_values, newline)
+        if entry_indexes:
+            block = prefix + block
+        if end_index < len(lines):
+            block += newline
+        lines[insert_at:insert_at] = [block]
+        write(file_paths["hosts"], "".join(lines))
 
-    block = _host_yaml_block(name, normalized_values, newline)
-    if entry_indexes:
-        block = prefix + block
-    if end_index < len(lines):
-        block += newline
-
-    lines[insert_at:insert_at] = [block]
-    write(file_paths["hosts"], "".join(lines))
+    if group:
+        _insert_host_into_group(file_paths["hosts"], group, name, normalized_values)
 
 
 def delete_host(project, obj, name):
@@ -319,25 +392,14 @@ def delete_host(project, obj, name):
     hosts_index, end_index = _hosts_section_bounds(lines)
     if hosts_index is None:
         raise ValueError("Узел не найден")
-
     entry_indexes = _host_entry_indexes(lines, hosts_index, end_index)
-    target_index = None
-    for index in entry_indexes:
-        if _host_name_from_line(lines[index]) == name:
-            target_index = index
-            break
-
+    target_index = next((index for index in entry_indexes if _host_name_from_line(lines[index]) == name), None)
     if target_index is None:
         raise ValueError("Узел не найден")
-
-    next_index = end_index
-    for index in entry_indexes:
-        if index > target_index:
-            next_index = index
-            break
-
+    next_index = next((index for index in entry_indexes if index > target_index), end_index)
     del lines[target_index:next_index]
     write(file_paths["hosts"], "".join(lines))
+    _remove_host_from_all_groups(file_paths["hosts"], name)
 
 
 def save_host(project, obj, old_name, new_name, values):
@@ -382,9 +444,7 @@ def playbook_roles(project, obj, playbook_name):
     except yaml.YAMLError as error:
         log(f"PLAYBOOK YAML ERROR: {error}")
         return []
-
     names = []
-
     def inspect(value):
         if isinstance(value, list):
             for item in value:
@@ -402,22 +462,18 @@ def playbook_roles(project, obj, playbook_name):
             for key, child in value.items():
                 if key != "roles":
                     inspect(child)
-
     inspect(document)
     root = roles_dir(project, obj)
     if not root or not os.path.isdir(root):
         return []
-
     result = []
     seen = set()
     root_abs = os.path.abspath(root)
-
     for role_name in names:
         role_path = os.path.abspath(os.path.join(root, role_name))
         if not role_path.startswith(root_abs + os.sep) or not os.path.isdir(role_path) or role_name in seen:
             continue
         seen.add(role_name)
-
         def walk(directory):
             items = []
             for name in sorted(os.listdir(directory), key=str.lower):
@@ -428,9 +484,7 @@ def playbook_roles(project, obj, playbook_name):
                 else:
                     items.append({"name": name, "type": "file", "path": relative})
             return items
-
         result.append({"name": role_name, "type": "dir", "path": role_name, "children": walk(role_path)})
-
     return result
 
 
@@ -464,10 +518,7 @@ def status_worker():
         for project in get_projects():
             for obj in (get_objects(project) or [None]):
                 key = obj or ""
-                statuses.setdefault(project, {})[key] = {
-                    node["hostname"]: host_up(node["ip"])
-                    for node in parse_hosts(project, obj)
-                }
+                statuses.setdefault(project, {})[key] = {node["hostname"]: host_up(node["ip"]) for node in parse_hosts(project, obj)}
         with STATUS_LOCK:
             HOST_STATUS = statuses
         time.sleep(10)
@@ -562,7 +613,6 @@ class Handler(BaseHTTPRequestHandler):
         query = parse_qs(url.query)
         project = query.get("project", [""])[0]
         obj = query.get("object", [""])[0]
-
         static = {
             "/main": "main.html",
             "/hosts_info": "hosts_info.html",
@@ -578,21 +628,14 @@ class Handler(BaseHTTPRequestHandler):
             "/3x-fixes.js": "3x-fixes.js",
             "/status-fix.js": "status-fix.js",
         }
-
         if url.path in static:
             filename = static[url.path]
-            content_type = (
-                "text/html; charset=utf-8" if filename.endswith(".html")
-                else "text/css; charset=utf-8" if filename.endswith(".css")
-                else "application/javascript; charset=utf-8"
-            )
+            content_type = "text/html; charset=utf-8" if filename.endswith(".html") else "text/css; charset=utf-8" if filename.endswith(".css") else "application/javascript; charset=utf-8"
             self.file(os.path.join(PUBLIC_DIR, filename), content_type)
             return
-
         if url.path == "/background":
             self.file(os.path.join(BASE_DIR, "logo.png"), "image/png")
             return
-
         if url.path == "/data":
             hosts = parse_hosts(project, obj)
             auto = autodeploy(project)
@@ -611,12 +654,10 @@ class Handler(BaseHTTPRequestHandler):
                 "autodeploy_playbook": "autodeploy.yml" if auto else None,
             })
             return
-
         if url.path == "/roles":
             playbook = query.get("playbook", [""])[0]
             self.json(playbook_roles(project, obj, playbook) if playbook else [])
             return
-
         if url.path == "/role_file":
             path = role_file(project, obj, query.get("path", [""])[0])
             if not path:
@@ -624,11 +665,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.json({"path": query.get("path", [""])[0], "content": read(path), "name": os.path.basename(path)})
             return
-
         if url.path == "/status":
             self.json(status(project, obj))
             return
-
         if url.path == "/log_new":
             try:
                 start = int(query.get("start", ["0"])[0])
@@ -639,18 +678,15 @@ class Handler(BaseHTTPRequestHandler):
                 next_index = len(LOG)
             self.json({"lines": lines, "next": next_index})
             return
-
         if url.path == "/playbook":
             name = safe(query.get("name", [""])[0])
             file_paths = paths(project, obj)
             self.json({"name": name, "content": read(os.path.join(file_paths["object_dir"], name)) if file_paths else ""})
             return
-
         if url.path == "/files":
             file_paths = paths(project, obj)
             self.json({"hosts": read(file_paths["hosts"]) if file_paths else "", "defaults": read(file_paths["defaults"]) if file_paths else ""})
             return
-
         self.send_error(404)
 
     def do_POST(self):
@@ -659,10 +695,8 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(body.decode() or "{}")
         except Exception:
             data = {}
-
         project = data.get("project", "")
         obj = data.get("object", "")
-
         try:
             if self.path == "/run":
                 threading.Thread(target=run_command, args=(project, obj, data.get("playbooks", []), data.get("hosts", [])), daemon=True).start()
@@ -681,7 +715,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.json({"ok": True})
                 return
             if self.path == "/add_host":
-                add_host(project, obj, data.get("hostname", ""), data.get("values", {}))
+                add_host(project, obj, data.get("hostname", ""), data.get("values", {}), data.get("group", ""))
                 self.json({"ok": True})
                 return
             if self.path == "/delete_host":
@@ -704,7 +738,6 @@ class Handler(BaseHTTPRequestHandler):
         except (OSError, ValueError) as error:
             self.json({"ok": False, "error": str(error)}, 500)
             return
-
         self.send_error(404)
 
 
