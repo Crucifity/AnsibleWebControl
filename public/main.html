@@ -5,6 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Ansible Web Control</title>
     <link rel="stylesheet" href="/style.css">
+    <style>
+        .node-group-field { margin-top: 16px; }
+        .node-group-field select {
+            display: block;
+            width: 100%;
+            margin-top: 7px;
+            padding: 10px 12px;
+            border: 1px solid rgba(255,255,255,.14);
+            border-radius: 8px;
+            background: rgba(0,0,0,.45);
+            color: inherit;
+        }
+        .playbook-roles,
+        .role-children { overflow: hidden; }
+        .playbook-roles.smooth-panel,
+        .role-children.smooth-panel {
+            transition: max-height 220ms ease, opacity 180ms ease;
+        }
+        .autodeploy-card { background: rgba(0,0,0,.34) !important; }
+    </style>
 </head>
 <body>
     <div class="overlay">
@@ -76,6 +96,12 @@
             <div class="modal-body">
                 <label class="modal-label" for="new_node_name">Название</label>
                 <input id="new_node_name" class="modal-input" type="text" placeholder="Например, host01" autocomplete="off">
+                <div class="node-group-field">
+                    <label class="modal-label" for="new_node_group">Группа</label>
+                    <select id="new_node_group">
+                        <option value="">Без группы</option>
+                    </select>
+                </div>
                 <div class="modal-label" style="margin-top: 16px;">Шаблон параметров</div>
                 <div id="node_template_tabs" class="node-type-tabs"></div>
                 <div id="new_node_fields" class="node-modal-fields"></div>
@@ -153,16 +179,128 @@
 
             document.addEventListener('change', (event) => {
                 if (event.target.matches('.pb')) updatePlaybookSelectionButton();
+                if (event.target.id === 'new_node_group') event.target.blur();
             });
 
-            function smoothHide(modal, after) {
-                if (!modal || modal.hidden || modal.classList.contains('modal-closing')) return;
-                modal.classList.add('modal-closing');
-                setTimeout(() => {
-                    modal.hidden = true;
-                    modal.classList.remove('modal-closing');
-                    if (after) after();
-                }, MOTION_MS);
+            function smoothPanel(panel, open) {
+                if (!panel) return;
+                panel.classList.add('smooth-panel');
+                if (open) {
+                    panel.hidden = false;
+                    panel.style.maxHeight = '0px';
+                    panel.style.opacity = '0';
+                    requestAnimationFrame(() => {
+                        panel.style.maxHeight = `${panel.scrollHeight}px`;
+                        panel.style.opacity = '1';
+                    });
+                } else {
+                    panel.style.maxHeight = `${panel.scrollHeight}px`;
+                    panel.style.opacity = '1';
+                    requestAnimationFrame(() => {
+                        panel.style.maxHeight = '0px';
+                        panel.style.opacity = '0';
+                    });
+                    setTimeout(() => {
+                        panel.hidden = true;
+                        panel.style.maxHeight = '';
+                        panel.style.opacity = '';
+                    }, MOTION_MS + 20);
+                }
+            }
+
+            function renderGroupSelector() {
+                const select = document.getElementById('new_node_group');
+                if (!select) return;
+                const groups = Array.isArray(DATA?.groups) ? DATA.groups : [];
+                select.innerHTML = '<option value="">Без группы</option>' + groups.map((group) =>
+                    `<option value="${esc(group.name)}">${esc(group.name)}${group.hosts?.length ? ` (${group.hosts.length})` : ''}</option>`
+                ).join('');
+            }
+
+            const originalOpenAddNodeModal = window.openAddNodeModal;
+            const originalCloseAddNodeModal = window.closeAddNodeModal;
+            const originalCreateNode = window.createNode;
+            const originalEditPlaybook = window.editPlaybook;
+            const originalClosePlaybookModal = window.closePlaybookModal;
+            const originalTogglePlaybookRoles = window.togglePlaybookRoles;
+            const originalToggleRoleDir = window.toggleRoleDir;
+
+            window.openAddNodeModal = function() {
+                originalOpenAddNodeModal();
+                renderGroupSelector();
+            };
+
+            window.createNode = function() {
+                const name = document.getElementById('new_node_name').value.trim();
+                const keys = (DATA?.template_schemas || {})[NEW_TEMPLATE] || [];
+                if (!name) return document.getElementById('new_node_name').focus();
+                if (!keys.length) return alert('Выберите шаблон параметров.');
+                const values = {};
+                document.querySelectorAll('[data-new-key]').forEach((input) => values[input.dataset.newKey] = input.value);
+                const group = document.getElementById('new_node_group')?.value || '';
+                api('/add_host', {
+                    project: CURRENT_PROJECT,
+                    object: CURRENT_OBJECT,
+                    hostname: name,
+                    node_type: NEW_TEMPLATE,
+                    values,
+                    group
+                }).then(() => {
+                    closeAddNodeModal();
+                    loadMain();
+                }).catch((error) => alert(error.message));
+            };
+
+            window.togglePlaybookRoles = function(button, name) {
+                const panel = button.closest('.playbook-card').querySelector('.playbook-roles');
+                const open = panel.hidden;
+                if (open && !panel.dataset.loaded) {
+                    panel.innerHTML = '<div class="roles-loading">Загрузка ролей…</div>';
+                    fetch(`/roles?${contextQuery(`&playbook=${encodeURIComponent(name)}`)}`)
+                        .then((response) => {
+                            if (!response.ok) throw Error('Не удалось загрузить роли');
+                            return response.json();
+                        })
+                        .then((roles) => {
+                            panel.innerHTML = roles.length
+                                ? `<div class="roles-title">Роли</div>${roleTree(roles)}`
+                                : '<div class="muted">В этом плейбуке роли не указаны.</div>';
+                            panel.dataset.loaded = '1';
+                            smoothPanel(panel, true);
+                        })
+                        .catch((error) => {
+                            panel.innerHTML = `<div class="muted">${esc(error.message)}</div>`;
+                            smoothPanel(panel, true);
+                        });
+                } else {
+                    smoothPanel(panel, open);
+                }
+                button.textContent = open ? 'Роли ▾' : 'Роли ▸';
+            };
+
+            window.toggleRoleDir = function(button) {
+                const children = button.parentElement.querySelector('.role-children');
+                const open = children.hidden;
+                if (open) {
+                    children.querySelectorAll('pre[data-readme-path]:not([data-loaded])').forEach((pre) => {
+                        pre.dataset.loaded = '1';
+                        fetch(`/role_file?${contextQuery(`&path=${encodeURIComponent(pre.dataset.readmePath)}`)}`)
+                            .then((response) => {
+                                if (!response.ok) throw Error('Не удалось загрузить README.md');
+                                return response.json();
+                            })
+                            .then((data) => pre.textContent = data.content)
+                            .catch((error) => pre.textContent = error.message);
+                    });
+                }
+                smoothPanel(children, open);
+                button.querySelector('.role-chevron').textContent = open ? '▾' : '▸';
+            };
+
+            function smoothShow(modal) {
+                if (!modal) return;
+                modal.classList.remove('modal-closing');
+                modal.hidden = false;
             }
 
             function smoothCloseWithOriginal(modal, originalClose) {
@@ -175,22 +313,6 @@
                     closePassthrough = false;
                 }, MOTION_MS);
             }
-
-            function smoothShow(modal) {
-                if (!modal) return;
-                modal.classList.remove('modal-closing');
-                modal.hidden = false;
-            }
-
-            const originalOpenAddNodeModal = window.openAddNodeModal;
-            const originalCloseAddNodeModal = window.closeAddNodeModal;
-            const originalEditPlaybook = window.editPlaybook;
-            const originalClosePlaybookModal = window.closePlaybookModal;
-
-            window.openAddNodeModal = function() {
-                originalOpenAddNodeModal();
-                smoothShow(document.getElementById('add_node_modal'));
-            };
 
             window.closeAddNodeModal = function() {
                 if (closePassthrough) return originalCloseAddNodeModal();
@@ -213,16 +335,17 @@
                 if (!button) return;
                 event.preventDefault();
                 event.stopImmediatePropagation();
-
                 const modal = button.closest('.modal-backdrop');
                 if (!modal) return;
                 if (modal.id === 'add_node_modal') return smoothCloseWithOriginal(modal, originalCloseAddNodeModal);
                 if (modal.id === 'playbook_modal') return smoothCloseWithOriginal(modal, originalClosePlaybookModal);
-                smoothHide(modal, () => {
+                modal.classList.add('modal-closing');
+                setTimeout(() => {
+                    modal.classList.remove('modal-closing');
                     closePassthrough = true;
                     button.click();
                     closePassthrough = false;
-                });
+                }, MOTION_MS);
             }, true);
 
             document.addEventListener('click', (event) => {
@@ -231,28 +354,21 @@
                 if (!modal || event.target !== modal) return;
                 if (modal.id === 'add_node_modal') closeAddNodeModal();
                 if (modal.id === 'playbook_modal') closePlaybookModal();
-                if (modal.id === 'run_confirm_modal') smoothHide(modal, () => {
-                    closePassthrough = true;
-                    modal.querySelector('#run_confirm_cancel')?.click();
-                    closePassthrough = false;
-                });
+                if (modal.id === 'run_confirm_modal') modal.querySelector('#run_confirm_cancel')?.click();
             });
 
             window.addEventListener('keydown', (event) => {
                 if (event.key !== 'Escape') return;
-                event.preventDefault();
-                event.stopImmediatePropagation();
                 const modals = ['add_node_modal', 'playbook_modal', 'run_confirm_modal']
                     .map((id) => document.getElementById(id))
                     .filter((modal) => modal && !modal.hidden);
+                if (!modals.length) return;
+                event.preventDefault();
+                event.stopImmediatePropagation();
                 modals.forEach((modal) => {
-                    if (modal.id === 'add_node_modal') return smoothCloseWithOriginal(modal, originalCloseAddNodeModal);
-                    if (modal.id === 'playbook_modal') return smoothCloseWithOriginal(modal, originalClosePlaybookModal);
-                    smoothHide(modal, () => {
-                        closePassthrough = true;
-                        modal.querySelector('#run_confirm_cancel')?.click();
-                        closePassthrough = false;
-                    });
+                    if (modal.id === 'add_node_modal') return closeAddNodeModal();
+                    if (modal.id === 'playbook_modal') return closePlaybookModal();
+                    modal.querySelector('#run_confirm_cancel')?.click();
                 });
             }, true);
         })();
