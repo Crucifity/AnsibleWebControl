@@ -1409,6 +1409,10 @@ button.danger {
     z-index: 1000;
 }
 
+.group-filter-list[hidden] {
+    display: none;
+}
+
 .group-filter-item {
     display: block;
     width: 100%;

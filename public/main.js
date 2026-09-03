@@ -512,62 +512,37 @@ function renderGroups(groups) {
     }
     
     element.innerHTML = `
-        <div class="group-filter-dropdown" id="group-filter-dropdown">
-            <button type="button" class="group-filter-btn" id="group-filter-btn">
+        <div class="group-filter-dropdown">
+            <button type="button" class="group-filter-btn" onclick="event.stopPropagation(); toggleGroupFilter()">
                 ${ACTIVE_GROUP ? `<b>Группа:</b> ${esc(ACTIVE_GROUP.name)}` : 'Фильтр по группам ▾'}
-                ${ACTIVE_GROUP ? '<button type="button" class="group-filter-clear" id="group-filter-clear">×</button>' : ''}
+                ${ACTIVE_GROUP ? '<button type="button" class="group-filter-clear" onclick="event.stopPropagation(); clearGroupFilter()">×</button>' : ''}
             </button>
-            <div class="group-filter-list" id="group-filter-list" style="display: ${GROUP_FILTER_OPEN ? 'block' : 'none'};">
+            <div class="group-filter-list" ${GROUP_FILTER_OPEN ? '' : 'hidden'}>
                 ${groups.map(group => `
-                    <button type="button" class="group-filter-item ${ACTIVE_GROUP?.name === group.name ? 'active' : ''}" data-group-name="${esc(group.name)}">
+                    <button type="button" class="group-filter-item ${ACTIVE_GROUP?.name === group.name ? 'active' : ''}" 
+                        onclick="event.stopPropagation(); selectGroupFilter('${esc(group.name)}')">
                         ${esc(group.name)}
                     </button>
                 `).join('')}
             </div>
         </div>
     `;
-    
-    // Привязываем обработчики через addEventListener вместо inline onclick
-    document.getElementById('group-filter-btn').addEventListener('click', (e) => {
-        e.stopPropagation();
-        toggleGroupFilter();
-    });
-    
-    const clearBtn = document.getElementById('group-filter-clear');
-    if (clearBtn) {
-        clearBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            clearGroupFilter();
-        });
-    }
-    
-    document.querySelectorAll('.group-filter-item').forEach(item => {
-        item.addEventListener('click', (e) => {
-            e.stopPropagation();
-            selectGroupFilter(item.dataset.groupName);
-        });
-    });
 }
 
 function toggleGroupFilter() {
-    GROUP_FILTER_OPEN = !GROUP_FILTER_OPEN;
-    const list = document.getElementById('group-filter-list');
-    if (list) {
-        list.style.display = GROUP_FILTER_OPEN ? 'block' : 'none';
-    }
+    const list = document.querySelector('.group-filter-list');
+    list.hidden = !list.hidden;
 }
 
 function selectGroupFilter(name) {
     const group = (DATA.groups || []).find((item) => item.name === name);
     ACTIVE_GROUP = ACTIVE_GROUP?.name === name ? null : group || null;
-    GROUP_FILTER_OPEN = false;
     renderGroups(DATA.groups || []);
     renderNodes();
 }
 
 function clearGroupFilter() {
     ACTIVE_GROUP = null;
-    GROUP_FILTER_OPEN = false;
     renderGroups(DATA.groups || []);
     renderNodes();
 }
