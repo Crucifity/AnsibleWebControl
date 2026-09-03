@@ -512,27 +512,49 @@ function renderGroups(groups) {
     }
     
     element.innerHTML = `
-        <div class="group-filter-dropdown">
-            <button type="button" class="group-filter-btn" onclick="event.stopPropagation(); toggleGroupFilter()">
+        <div class="group-filter-dropdown" id="group-filter-dropdown">
+            <button type="button" class="group-filter-btn" id="group-filter-btn">
                 ${ACTIVE_GROUP ? `<b>Группа:</b> ${esc(ACTIVE_GROUP.name)}` : 'Фильтр по группам ▾'}
-                ${ACTIVE_GROUP ? '<button type="button" class="group-filter-clear" onclick="event.stopPropagation(); clearGroupFilter()">×</button>' : ''}
+                ${ACTIVE_GROUP ? '<button type="button" class="group-filter-clear" id="group-filter-clear">×</button>' : ''}
             </button>
-            <div class="group-filter-list" ${GROUP_FILTER_OPEN ? '' : 'hidden'}>
+            <div class="group-filter-list" id="group-filter-list" style="display: ${GROUP_FILTER_OPEN ? 'block' : 'none'};">
                 ${groups.map(group => `
-                    <button type="button" class="group-filter-item ${ACTIVE_GROUP?.name === group.name ? 'active' : ''}" 
-                        onclick="event.stopPropagation(); selectGroupFilter('${esc(group.name)}')">
+                    <button type="button" class="group-filter-item ${ACTIVE_GROUP?.name === group.name ? 'active' : ''}" data-group-name="${esc(group.name)}">
                         ${esc(group.name)}
                     </button>
                 `).join('')}
             </div>
         </div>
     `;
+    
+    // Привязываем обработчики через addEventListener вместо inline onclick
+    document.getElementById('group-filter-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleGroupFilter();
+    });
+    
+    const clearBtn = document.getElementById('group-filter-clear');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            clearGroupFilter();
+        });
+    }
+    
+    document.querySelectorAll('.group-filter-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectGroupFilter(item.dataset.groupName);
+        });
+    });
 }
 
 function toggleGroupFilter() {
     GROUP_FILTER_OPEN = !GROUP_FILTER_OPEN;
-    const list = document.querySelector('.group-filter-list');
-    if (list) list.hidden = !GROUP_FILTER_OPEN;
+    const list = document.getElementById('group-filter-list');
+    if (list) {
+        list.style.display = GROUP_FILTER_OPEN ? 'block' : 'none';
+    }
 }
 
 function selectGroupFilter(name) {
