@@ -83,10 +83,21 @@
             <div class="modal-head"><div><div class="modal-kicker">Новый узел</div><h3 id="add_node_title">Добавление узла</h3></div><button class="modal-close" onclick="closeAddNodeModal()" aria-label="Закрыть">×</button></div>
             <div class="modal-body">
                 <label class="modal-label" for="new_node_name">Название</label>
-                <input id="new_node_name" class="modal-input" type="text" placeholder="Например, host01" autocomplete="off">
-                <div class="node-group-field">
-                    <label class="modal-label" for="new_node_group">Группа</label>
-                    <select id="new_node_group"><option value="">Без группы</option></select>
+                <input id="new_node_name" class="modal-input" type="text" placeholder="Например, host01" autocomplete="off"> 
+                <!-- НОВЫЙ БЛОК: Выбор и создание групп -->
+                <div class="node-group-field" style="margin-top: 16px;">
+                    <div class="group-selector-buttons">
+                        <button type="button" class="group-btn" onclick="toggleGroupSelector()">
+                            Выбрать группу ▾
+                        </button>
+                        <button type="button" class="group-btn group-btn-create" onclick="openCreateGroupModal()">
+                            + Создать группу
+                        </button>
+                    </div>
+                    <div id="group_selector_list" class="group-selector-list" hidden></div>
+                    <div id="selected_groups_display" class="selected-groups-display">
+                        <span class="muted">Группы не выбраны</span>
+                    </div>
                 </div>
                 <div class="modal-label" style="margin-top: 16px;">Шаблон параметров</div>
                 <div id="node_template_tabs" class="node-type-tabs"></div>

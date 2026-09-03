@@ -5,6 +5,9 @@ let logIndex = 0;
 let NEW_TEMPLATE = '';
 let ACTIVE_GROUP = null;
 let CONFIRM_ACTION = null;
+let SELECTED_GROUPS = [];
+let NEW_GROUPS_CREATED = [];
+let GROUP_FILTER_OPEN = false;
 
 function esc(value) {
     return String(value ?? '').replace(/[&<>"']/g, (char) => ({
@@ -88,7 +91,6 @@ function renderNode(node) {
         statusClass = 'node-unavailable';
     }
 
-    // Добавляем поле имени хоста первым в списке параметров
     const nameField = `
         <div class="param-name" title="Имя узла">Имя узла</div>
         <input class="param-value" data-key="hostname" value="${esc(node.hostname)}" readonly>
@@ -102,7 +104,7 @@ function renderNode(node) {
         : nameField + '<div class="empty" style="grid-column: 1 / -1;">Дополнительных параметров нет</div>';
 
     return `
-        <div class="host-card node-card ${statusClass}" id="${id}">
+        <div class="host-card node-card ${statusClass}" id="${id}" data-hostname="${esc(node.hostname)}">
             <div class="host-head" onclick="toggleNodeFromHead(event, this.closest('.node-card'))">
                 ${state}
                 <input class="node-check" type="checkbox" value="${esc(node.hostname)}"
@@ -180,7 +182,6 @@ function editNode(event, hostname) {
         card.querySelector('.node-expand').textContent = '▾';
         setTimeout(() => card.dataset.animating = '0', 240);
     }
-    // Разрешаем редактирование ВСЕХ полей, включая hostname
     card.querySelectorAll('.param-value').forEach((input) => input.readOnly = false);
     card.querySelector('.param-value')?.focus();
 }
@@ -190,7 +191,6 @@ function cancelNodeEdit(event) {
     loadMain();
 }
 
-// ИСПРАВЛЕНО: Поддержка переименования хоста через new_hostname
 function saveNode(event, hostname) {
     event.stopPropagation();
     const card = document.getElementById(`node-${encodeURIComponent(hostname)}`);
@@ -234,28 +234,19 @@ function deleteSelectedNodes() {
 
 function openAddNodeModal() {
     document.getElementById('new_node_name').value = '';
-    
-    // Автоматически заполняем список групп из текущих данных
-    const groupSelect = document.getElementById('new_node_group');
-    if (groupSelect) {
-        groupSelect.innerHTML = '<option value="">-- Без группы --</option>';
-        if (DATA && DATA.groups) {
-            DATA.groups.forEach(group => {
-                const option = document.createElement('option');
-                option.value = group.name;
-                option.textContent = group.name;
-                groupSelect.appendChild(option);
-            });
-        }
-    }
-    
+    SELECTED_GROUPS = [];
+    NEW_GROUPS_CREATED = [];
     document.getElementById('add_node_modal').hidden = false;
     renderTemplateTabs();
+    updateSelectedGroupsDisplay();
+    const list = document.getElementById('group_selector_list');
+    if (list) list.hidden = true;
     setTimeout(() => document.getElementById('new_node_name').focus(), 0);
 }
 
 function closeAddNodeModal() {
     document.getElementById('add_node_modal').hidden = true;
+    closeCreateGroupModal();
 }
 
 function renderTemplateTabs() {
@@ -293,12 +284,8 @@ function renderTemplateFields() {
     `).join('');
 }
 
-// ИСПРАВЛЕНО: Чтение и передача параметра group
 function createNode() {
     const name = document.getElementById('new_node_name').value.trim();
-    const groupSelect = document.getElementById('new_node_group');
-    const group = groupSelect ? groupSelect.value : ""; 
-    
     const keys = (DATA.template_schemas || {})[NEW_TEMPLATE] || [];
     if (!name) return document.getElementById('new_node_name').focus();
     if (!keys.length) return alert('Выберите шаблон параметров.');
@@ -309,13 +296,145 @@ function createNode() {
         project: CURRENT_PROJECT, 
         object: CURRENT_OBJECT, 
         hostname: name, 
-        node_type: NEW_TEMPLATE, 
         values,
-        group: group 
+        groups: SELECTED_GROUPS
     }).then(() => {
         closeAddNodeModal();
         loadMain();
     }).catch((error) => alert(error.message));
+}
+
+function toggleGroupSelector() {
+    const list = document.getElementById('group_selector_list');
+    list.hidden = !list.hidden;
+    if (!list.hidden) {
+        renderGroupCheckboxes();
+    }
+}
+
+function renderGroupCheckboxes() {
+    const list = document.getElementById('group_selector_list');
+    const allGroups = [...new Set([
+        ...(DATA?.groups || []).map(g => g.name),
+        ...NEW_GROUPS_CREATED
+    ])];
+    
+    list.innerHTML = allGroups.length
+        ? allGroups.map(name => `
+            <label class="group-checkbox-item">
+                <input type="checkbox" value="${esc(name)}" 
+                    ${SELECTED_GROUPS.includes(name) ? 'checked' : ''}
+                    onchange="toggleGroupSelection('${esc(name)}')">
+                <span>${esc(name)}</span>
+            </label>
+        `).join('')
+        : '<div class="muted" style="padding: 8px;">Нет доступных групп. Создайте первую!</div>';
+}
+
+function toggleGroupSelection(name) {
+    if (SELECTED_GROUPS.includes(name)) {
+        SELECTED_GROUPS = SELECTED_GROUPS.filter(g => g !== name);
+    } else {
+        SELECTED_GROUPS.push(name);
+    }
+    updateSelectedGroupsDisplay();
+}
+
+function updateSelectedGroupsDisplay() {
+    const display = document.getElementById('selected_groups_display');
+    if (!display) return;
+    display.innerHTML = SELECTED_GROUPS.length
+        ? SELECTED_GROUPS.map(name => `
+            <span class="selected-group-chip">
+                ${esc(name)}
+                <button type="button" class="chip-remove" onclick="removeGroupFromSelection('${esc(name)}')">×</button>
+            </span>
+        `).join('')
+        : '<span class="muted">Группы не выбраны</span>';
+}
+
+function removeGroupFromSelection(name) {
+    SELECTED_GROUPS = SELECTED_GROUPS.filter(g => g !== name);
+    updateSelectedGroupsDisplay();
+    const list = document.getElementById('group_selector_list');
+    if (list && !list.hidden) {
+        renderGroupCheckboxes();
+    }
+}
+
+function openCreateGroupModal() {
+    let modal = document.getElementById('create_group_modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'create_group_modal';
+        modal.className = 'modal-backdrop';
+        modal.hidden = true;
+        modal.innerHTML = `
+            <div class="modal-card" role="dialog" aria-modal="true">
+                <div class="modal-head">
+                    <div>
+                        <div class="modal-kicker">Новая группа</div>
+                        <h3>Создание группы</h3>
+                    </div>
+                    <button class="modal-close" type="button" onclick="closeCreateGroupModal()">×</button>
+                </div>
+                <div class="modal-body">
+                    <label class="modal-label" for="new_group_name">Название группы</label>
+                    <input id="new_group_name" class="modal-input" type="text" 
+                        placeholder="Например, web_servers" autocomplete="off">
+                    <div class="muted" style="margin-top: 8px; font-size: 12px;">
+                        Допустимы буквы, цифры, дефис и подчёркивание
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="modal-secondary" onclick="closeCreateGroupModal()">Отмена</button>
+                    <button type="button" class="primary" onclick="confirmCreateGroup()">Создать</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) closeCreateGroupModal();
+        });
+    }
+    document.getElementById('new_group_name').value = '';
+    modal.hidden = false;
+    setTimeout(() => document.getElementById('new_group_name').focus(), 0);
+}
+
+function closeCreateGroupModal() {
+    const modal = document.getElementById('create_group_modal');
+    if (modal) modal.hidden = true;
+}
+
+function confirmCreateGroup() {
+    const name = document.getElementById('new_group_name').value.trim();
+    if (!name) {
+        alert('Введите название группы');
+        return;
+    }
+    if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
+        alert('Название группы может содержать только буквы, цифры, дефис и подчёркивание');
+        return;
+    }
+    const allGroups = [...new Set([
+        ...(DATA?.groups || []).map(g => g.name),
+        ...NEW_GROUPS_CREATED
+    ])];
+    if (allGroups.includes(name)) {
+        alert('Группа с таким названием уже существует');
+        return;
+    }
+    
+    NEW_GROUPS_CREATED.push(name);
+    SELECTED_GROUPS.push(name);
+    
+    closeCreateGroupModal();
+    const list = document.getElementById('group_selector_list');
+    if (list && !list.hidden) {
+        renderGroupCheckboxes();
+    }
+    updateSelectedGroupsDisplay();
 }
 
 function contextQuery(extra = '') {
@@ -387,14 +506,48 @@ function fitPlaybookEditor() {
 
 function renderGroups(groups) {
     const element = document.getElementById('groups');
-    element.innerHTML = groups?.length
-        ? groups.map((group) => `
-            <button type="button" class="group-chip group-filter${ACTIVE_GROUP?.name === group.name ? ' active' : ''}"
-                data-group-name="${esc(group.name)}">
-                <b>${esc(group.name)}</b>${group.hosts.length}
+    if (!groups?.length) {
+        element.innerHTML = '<span class="muted">Групп нет</span>';
+        return;
+    }
+    
+    element.innerHTML = `
+        <div class="group-filter-dropdown">
+            <button type="button" class="group-filter-btn" onclick="event.stopPropagation(); toggleGroupFilter()">
+                ${ACTIVE_GROUP ? `<b>Группа:</b> ${esc(ACTIVE_GROUP.name)}` : 'Фильтр по группам ▾'}
+                ${ACTIVE_GROUP ? '<button type="button" class="group-filter-clear" onclick="event.stopPropagation(); clearGroupFilter()">×</button>' : ''}
             </button>
-        `).join('')
-        : '';
+            <div class="group-filter-list" ${GROUP_FILTER_OPEN ? '' : 'hidden'}>
+                ${groups.map(group => `
+                    <button type="button" class="group-filter-item ${ACTIVE_GROUP?.name === group.name ? 'active' : ''}" 
+                        onclick="event.stopPropagation(); selectGroupFilter('${esc(group.name)}')">
+                        ${esc(group.name)}
+                    </button>
+                `).join('')}
+            </div>
+        </div>
+    `;
+}
+
+function toggleGroupFilter() {
+    GROUP_FILTER_OPEN = !GROUP_FILTER_OPEN;
+    const list = document.querySelector('.group-filter-list');
+    if (list) list.hidden = !GROUP_FILTER_OPEN;
+}
+
+function selectGroupFilter(name) {
+    const group = (DATA.groups || []).find((item) => item.name === name);
+    ACTIVE_GROUP = ACTIVE_GROUP?.name === name ? null : group || null;
+    GROUP_FILTER_OPEN = false;
+    renderGroups(DATA.groups || []);
+    renderNodes();
+}
+
+function clearGroupFilter() {
+    ACTIVE_GROUP = null;
+    GROUP_FILTER_OPEN = false;
+    renderGroups(DATA.groups || []);
+    renderNodes();
 }
 
 function groupHosts(group) {
@@ -407,13 +560,6 @@ function renderNodes() {
         : (DATA.hosts || []);
     document.getElementById('nodes').innerHTML = hosts.map(renderNode).join('') || '<div class="empty">Узлов нет</div>';
     updateHostSelectionButton();
-}
-
-function toggleGroup(name) {
-    const group = (DATA.groups || []).find((item) => item.name === name);
-    ACTIVE_GROUP = ACTIVE_GROUP?.name === name ? null : group || null;
-    renderGroups(DATA.groups || []);
-    renderNodes();
 }
 
 function renderAutodeploy(enabled) {
@@ -474,7 +620,8 @@ function renderPlaybooks(items) {
 }
 
 function togglePlaybookRoles(button, name) {
-    const panel = button.closest('.playbook-card').querySelector('.playbook-roles');
+    const card = button.closest('.playbook-card');
+    const panel = card.querySelector('.playbook-roles');
     if (!panel.hidden) {
         panel.hidden = true;
         button.textContent = 'Роли ▸';
@@ -504,6 +651,7 @@ function toggleRoleDir(button) {
     const open = !children.hidden;
     children.hidden = open;
     button.querySelector('.role-chevron').textContent = open ? '▸' : '▾';
+    
     if (open) return;
     children.querySelectorAll('pre[data-readme-path]:not([data-loaded])').forEach((pre) => {
         pre.dataset.loaded = '1';
@@ -512,7 +660,9 @@ function toggleRoleDir(button) {
                 if (!response.ok) throw Error('Не удалось загрузить README.md');
                 return response.json();
             })
-            .then((data) => pre.textContent = data.content)
+            .then((data) => {
+                pre.textContent = data.content;
+            })
             .catch((error) => pre.textContent = error.message);
     });
 }
@@ -629,10 +779,37 @@ function updateNodeStatuses() {
         .then((status) => {
             if (!DATA) return;
             DATA.status = status;
-            const selected = new Set(selectedHosts());
-            renderNodes();
-            document.querySelectorAll('.node-check').forEach((item) => item.checked = selected.has(item.value));
-            updateHostSelectionButton();
+            
+            document.querySelectorAll('.node-card').forEach(card => {
+                const hostname = card.dataset.hostname;
+                if (!hostname) return;
+                
+                const hasStatus = Object.prototype.hasOwnProperty.call(status, hostname);
+                const isUp = hasStatus ? status[hostname] === true : null;
+                
+                card.classList.remove('node-pending', 'node-available', 'node-unavailable');
+                if (!hasStatus) {
+                    card.classList.add('node-pending');
+                } else if (isUp) {
+                    card.classList.add('node-available');
+                } else {
+                    card.classList.add('node-unavailable');
+                }
+                
+                const statusEl = card.querySelector('.node-status');
+                if (statusEl) {
+                    if (!hasStatus) {
+                        statusEl.className = 'node-status pending';
+                        statusEl.innerHTML = '<span class="status-dot status-pending"></span>проверка';
+                    } else if (isUp) {
+                        statusEl.className = 'node-status available';
+                        statusEl.innerHTML = '<span class="status-dot status-up"></span>доступен';
+                    } else {
+                        statusEl.className = 'node-status unavailable';
+                        statusEl.innerHTML = '<span class="status-dot status-down"></span>недоступен';
+                    }
+                }
+            });
         })
         .catch(() => {});
 }
@@ -686,14 +863,18 @@ function refreshLog() {
 }
 
 document.addEventListener('click', (event) => {
-    const group = event.target.closest('.group-filter');
-    if (group) toggleGroup(group.dataset.groupName);
+    if (!event.target.closest('.group-filter-dropdown')) {
+        GROUP_FILTER_OPEN = false;
+        const list = document.querySelector('.group-filter-list');
+        if (list) list.hidden = true;
+    }
 });
 
 window.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
     closeAddNodeModal();
     closePlaybookModal();
+    closeCreateGroupModal();
     const modal = document.getElementById('run_confirm_modal');
     if (modal) {
         modal.hidden = true;

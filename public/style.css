@@ -614,11 +614,16 @@ button.danger {
     padding: 7px 11px;
 }
 
+/* === Playbook roles panel === */
 .playbook-roles {
-    border-top: 1px solid rgba(255,255,255,.07);
-    padding: 8px 12px 12px 34px;
-    background: rgba(0,0,0,.12);
-    transform-origin: top;
+    margin-top: 12px;
+    padding: 12px;
+    background: #1a1a1a;
+    border-radius: 6px;
+}
+
+.playbook-roles[hidden] {
+    display: none;
 }
 
 .playbook-roles:not([hidden]) {
@@ -1249,4 +1254,239 @@ button.danger {
         min-width: 190px;
         max-width: 190px;
     }
+}
+
+/* === Множественный выбор групп === */
+.group-selector-buttons {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.group-btn {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid #444;
+    background: #2a2a2a;
+    color: #eee;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.group-btn:hover {
+    background: #333;
+    border-color: #666;
+}
+
+.group-btn-create {
+    background: #1e3a5f;
+    border-color: #2d5a8a;
+}
+
+.group-btn-create:hover {
+    background: #2d5a8a;
+}
+
+.group-selector-list {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid #444;
+    border-radius: 6px;
+    background: #1e1e1e;
+    margin-bottom: 8px;
+    padding: 4px;
+}
+
+.group-checkbox-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background 0.1s;
+}
+
+.group-checkbox-item:hover {
+    background: #2a2a2a;
+}
+
+.group-checkbox-item input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+.selected-groups-display {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-height: 28px;
+    align-items: center;
+}
+
+.selected-group-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    background: #2d5a8a;
+    color: #fff;
+    border-radius: 12px;
+    font-size: 12px;
+}
+
+.chip-remove {
+    background: none;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 2px;
+    line-height: 1;
+    opacity: 0.7;
+    transition: opacity 0.15s;
+}
+
+.chip-remove:hover {
+    opacity: 1;
+}
+
+/* === Dropdown фильтр групп === */
+.group-filter-dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.group-filter-btn {
+    padding: 8px 16px;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    border-radius: 6px;
+    color: #eee;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.group-filter-btn:hover {
+    background: #333;
+    border-color: #666;
+}
+
+.group-filter-clear {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0 4px;
+    line-height: 1;
+    margin-left: 4px;
+}
+
+.group-filter-clear:hover {
+    color: #fff;
+}
+
+.group-filter-list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    min-width: 200px;
+    max-height: 300px;
+    overflow-y: auto;
+    background: #1e1e1e;
+    border: 1px solid #444;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 100;
+}
+
+.group-filter-item {
+    display: block;
+    width: 100%;
+    padding: 10px 16px;
+    background: none;
+    border: none;
+    color: #eee;
+    text-align: left;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.1s;
+}
+
+.group-filter-item:hover {
+    background: #2a2a2a;
+}
+
+.group-filter-item.active {
+    background: #2d5a8a;
+    color: #fff;
+}
+
+/* === Playbook roles panel === */
+.playbook-roles {
+    margin-top: 12px;
+    padding: 12px;
+    background: #1a1a1a;
+    border-radius: 6px;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.playbook-roles[hidden] {
+    display: none;
+}
+
+.roles-title {
+    font-weight: bold;
+    margin-bottom: 8px;
+    color: #aaa;
+}
+
+.role-dir {
+    margin-left: 8px;
+}
+
+.role-toggle {
+    background: none;
+    border: none;
+    color: #eee;
+    cursor: pointer;
+    padding: 4px 8px;
+    font-size: 13px;
+    text-align: left;
+}
+
+.role-toggle:hover {
+    background: #2a2a2a;
+    border-radius: 4px;
+}
+
+.role-children {
+    margin-left: 16px;
+    margin-top: 4px;
+}
+
+.role-file {
+    display: block;
+    background: none;
+    border: none;
+    color: #88a;
+    cursor: pointer;
+    padding: 4px 8px;
+    font-size: 12px;
+    text-align: left;
+}
+
+.role-file:hover {
+    color: #aaf;
+    text-decoration: underline;
 }

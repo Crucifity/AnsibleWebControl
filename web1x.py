@@ -144,7 +144,6 @@ def template_schemas(project, obj):
     return schemas
 
 def inventory_groups(project, obj):
-    """Собирает все группы из инвентаря динамически (без жёстко заданных имён)."""
     data = load_inventory(project, obj)
     if not isinstance(data, dict):
         return []
@@ -161,12 +160,10 @@ def inventory_groups(project, obj):
                 found.update(collect(child))
         return found
 
-    # Собираем все группы верхнего уровня (кроме "all")
     for name, value in data.items():
         if name != "all" and isinstance(value, dict) and ("hosts" in value or "children" in value):
             groups[name] = sorted(collect(value))
 
-    # Также проверяем вложенные группы внутри all
     all_group = data.get("all", {})
     if isinstance(all_group, dict):
         for name, value in (all_group.get("children", {}) or {}).items():
@@ -193,7 +190,6 @@ def scalar(value):
         return value
 
 def _hosts_section_bounds(lines):
-    """Находит секцию hosts: с любым отступом и возвращает (hosts_index, end_index, indent)."""
     match_info = next(((index, len(line) - len(line.lstrip(" "))) 
                        for index, line in enumerate(lines) 
                        if re.match(r"^ *hosts:\s*(?:#.*)?$", line)), None)
@@ -209,7 +205,6 @@ def _hosts_section_bounds(lines):
         if not stripped:
             continue
         current_indent = len(stripped) - len(stripped.lstrip(" "))
-        # Секция заканчивается, если встретили строку с отступом <= отступа hosts:
         if current_indent <= indent:
             end_index = index
             break
@@ -217,36 +212,31 @@ def _hosts_section_bounds(lines):
     return hosts_index, end_index, indent
 
 def _host_entry_indexes(lines, hosts_index, end_index, indent):
-    """Находит индексы строк с определениями хостов (отступ = indent + 2)."""
     entry_indent = indent + 2
     return [index for index in range(hosts_index + 1, end_index) 
             if re.match(rf"^ {{{entry_indent}}}\S.*?:\s*(?:#.*)?(?:\r?\n)?$", lines[index])]
 
-def _host_name_from_line(line, indent):
-    """Извлекает имя хоста из строки с заданным отступом."""
-    match = re.match(rf"^ {{{indent}}}(\S.*?):\s*(?:#.*)?(?:\r?\n)?$", line)
-    return match.group(1) if match else None
-
 def _host_yaml_block(name, values, newline, indent):
-    """Формирует YAML-блок для хоста с правильным отступом."""
     block = yaml.safe_dump({name: values}, allow_unicode=True, sort_keys=False, default_flow_style=False)
     if newline != "\n":
         block = block.replace("\n", newline)
     return "".join(f"{' ' * indent}{line}" if line.strip() else line for line in block.splitlines(keepends=True))
 
 def _group_hosts_bounds(lines, group_name):
+    """Находит секцию hosts: внутри группы."""
     escaped = re.escape(group_name)
     for group_index, line in enumerate(lines):
-        match = re.match(r"^( {0,2})" + escaped + r":\s*(?:#.*)?(?:\r?\n)?$", line)
+        stripped = line.rstrip("\r\n")
+        match = re.match(r"^( {0,4})" + escaped + r":\s*(?:#.*)?$", stripped)
         if not match:
             continue
         group_indent = len(match.group(1))
         for index in range(group_index + 1, len(lines)):
-            stripped = lines[index].rstrip("\r\n")
-            indent = len(stripped) - len(stripped.lstrip(" ")) if stripped else group_indent + 1
-            if stripped and indent <= group_indent:
+            current_stripped = lines[index].rstrip("\r\n")
+            indent = len(current_stripped) - len(current_stripped.lstrip(" ")) if current_stripped else group_indent + 1
+            if current_stripped and indent <= group_indent:
                 break
-            if indent == group_indent + 2 and stripped.strip() == "hosts:":
+            if indent == group_indent + 2 and current_stripped.strip() == "hosts:":
                 hosts_index = index
                 end_index = len(lines)
                 for end in range(index + 1, len(lines)):
@@ -260,35 +250,52 @@ def _group_hosts_bounds(lines, group_name):
     return None, None, None
 
 def _group_entry_indexes(lines, hosts_index, end_index, hosts_indent):
+    """Находит индексы хостов внутри группы."""
     entry_indent = hosts_indent + 2
-    return [index for index in range(hosts_index + 1, end_index) if re.match(rf"^ {{{entry_indent}}}\S.*?:\s*(?:#.*)?(?:\r?\n)?$", lines[index])]
+    return [index for index in range(hosts_index + 1, end_index) 
+            if re.match(rf"^ {{{entry_indent}}}\S.*?:\s*(?:#.*)?$", lines[index].rstrip("\r\n"))]
+
+def _host_name_from_line(line, indent):
+    """Извлекает имя хоста из строки."""
+    match = re.match(rf"^ {{{indent}}}(\S.*?):\s*(?:#.*)?$", line.rstrip("\r\n"))
+    return match.group(1) if match else None
 
 def _insert_host_into_group(path, group_name, name):
+    """Добавляет хост в группу. Если группы нет — создаёт её."""
     if not group_name:
         return
+    
     raw = read(path)
     lines = raw.splitlines(keepends=True)
     hosts_index, end_index, hosts_indent = _group_hosts_bounds(lines, group_name)
-    if hosts_index is None:
-        raise ValueError(f"Группа не найдена: {group_name}")
-
+    
     newline = "\r\n" if "\r\n" in raw else "\n"
+    
+    if hosts_index is None:
+        # Группа не найдена — создаём её
+        if lines and lines[-1].strip():
+            lines.append(newline)
+        
+        group_block = f"{group_name}:{newline}  hosts:{newline}    {name}:{newline}"
+        lines.append(group_block)
+        write(path, "".join(lines))
+        return
+    
+    # Группа существует — добавляем хост
     entry_indexes = _group_entry_indexes(lines, hosts_index, end_index, hosts_indent)
     entry_indent = hosts_indent + 2
     host_line = f"{' ' * entry_indent}{name}:{newline}"
-
+    
     if entry_indexes:
         insert_at = end_index
         while insert_at > hosts_index + 1 and not lines[insert_at - 1].strip():
             del lines[insert_at - 1]
             insert_at -= 1
-        if insert_at > hosts_index + 1 and lines[insert_at - 1].strip():
-            host_line = newline + host_line
     else:
         insert_at = hosts_index + 1
         while insert_at < end_index and not lines[insert_at].strip():
             insert_at += 1
-
+    
     lines.insert(insert_at, host_line)
     write(path, "".join(lines))
 
@@ -306,7 +313,7 @@ def _remove_host_from_group(path, group_name, name):
     del lines[target:next_index]
     write(path, "".join(lines))
 
-def add_host(project, obj, name, values, group=""):
+def add_host(project, obj, name, values, groups=None):
     file_paths = paths(project, obj)
     if not file_paths:
         raise ValueError("Объект не найден")
@@ -316,8 +323,6 @@ def add_host(project, obj, name, values, group=""):
         raise ValueError("Имя узла не указано")
     if name in hosts:
         raise ValueError("Узел уже существует")
-    if group and group not in {item["name"] for item in inventory_groups(project, obj)}:
-        raise ValueError(f"Группа не найдена: {group}")
 
     normalized_values = {key: scalar(value) for key, value in values.items()}
     hosts[name] = normalized_values
@@ -344,8 +349,9 @@ def add_host(project, obj, name, values, group=""):
         lines[insert_at:insert_at] = [prefix + block]
         write(file_paths["hosts"], "".join(lines))
 
-    if group:
-        _insert_host_into_group(file_paths["hosts"], group, name)
+    for group in (groups or []):
+        if group:
+            _insert_host_into_group(file_paths["hosts"], group, name)
 
 def delete_host(project, obj, name):
     file_paths = paths(project, obj)
@@ -372,7 +378,6 @@ def delete_host(project, obj, name):
         _remove_host_from_group(file_paths["hosts"], group["name"], name)
 
 def save_host(project, obj, old_name, new_name, values):
-    """Обновляет хост с сохранением форматирования и обновлением групп при переименовании."""
     file_paths = paths(project, obj)
     if not file_paths:
         raise ValueError("Объект не найден")
@@ -384,12 +389,10 @@ def save_host(project, obj, old_name, new_name, values):
     if new_name != old_name and new_name in hosts:
         raise ValueError("Узел с таким именем уже существует")
 
-    # Подготовка обновлённых значений
     updated = dict(hosts[old_name]) if isinstance(hosts[old_name], dict) else {}
     for key, value in values.items():
         updated[key] = scalar(value)
 
-    # Построчное обновление файла для сохранения форматирования
     raw = read(file_paths["hosts"])
     lines = raw.splitlines(keepends=True)
     hosts_index, end_index, hosts_indent = _hosts_section_bounds(lines)
@@ -399,11 +402,9 @@ def save_host(project, obj, old_name, new_name, values):
         target_index = next((index for index in entry_indexes if _host_name_from_line(lines[index], hosts_indent + 2) == old_name), None)
         
         if target_index is not None:
-            # Удаляем старую запись
             next_index = next((index for index in entry_indexes if index > target_index), end_index)
             del lines[target_index:next_index]
             
-            # Вставляем новую запись
             normalized_values = {key: scalar(value) for key, value in values.items()}
             newline = "\r\n" if "\r\n" in raw else "\n"
             insert_at = target_index
@@ -415,17 +416,14 @@ def save_host(project, obj, old_name, new_name, values):
             lines[insert_at:insert_at] = [prefix + block]
             write(file_paths["hosts"], "".join(lines))
         else:
-            # Фоллбэк, если построчное редактирование не сработало
             hosts.pop(old_name)
             hosts[new_name] = updated
             save_hosts(file_paths["hosts"], data)
     else:
-        # Фоллбэк, если секция hosts не найдена
         hosts.pop(old_name)
         hosts[new_name] = updated
         save_hosts(file_paths["hosts"], data)
 
-    # Обновляем членство в группах при переименовании
     if new_name != old_name:
         for group in inventory_groups(project, obj):
             if old_name in group["hosts"]:
@@ -509,7 +507,6 @@ def host_up(ip):
         return False
 
 def status_worker():
-    """Параллельный опрос хостов для ускорения проверки статусов."""
     global HOST_STATUS
     while True:
         statuses = {}
@@ -634,7 +631,13 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/update_host":
                 save_host(project, obj, data.get("hostname", ""), data.get("new_hostname", data.get("hostname", "")), data.get("values", {})); self.json({"ok": True}); return
             if self.path == "/add_host":
-                add_host(project, obj, data.get("hostname", ""), data.get("values", {}), data.get("group", "")); self.json({"ok": True}); return
+                groups = data.get("groups", [])
+                if not isinstance(groups, list):
+                    groups = [groups] if groups else []
+                if not groups and data.get("group"):
+                    groups = [data.get("group")]
+                add_host(project, obj, data.get("hostname", ""), data.get("values", {}), groups)
+                self.json({"ok": True}); return
             if self.path == "/delete_host":
                 delete_host(project, obj, data.get("hostname", "")); self.json({"ok": True}); return
             if self.path == "/save_playbook":
@@ -642,7 +645,6 @@ class Handler(BaseHTTPRequestHandler):
                 if file_paths: write(os.path.join(file_paths["object_dir"], safe(data.get("name"))), data.get("content", ""))
                 self.json({"ok": True}); return
             if self.path == "/save_files":
-                # Защита от случайной перезаписи пустым содержимым
                 hosts_content = data.get("hosts", "")
                 if not hosts_content.strip():
                     self.json({"ok": False, "error": "Файл hosts.yml не может быть пустым"}, 400)
