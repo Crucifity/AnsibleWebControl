@@ -249,7 +249,7 @@ def _group_entry_indexes(lines, hosts_index, end_index, hosts_indent):
             if re.match(rf"^ {{{entry_indent}}}\S.*?:\s*(?:#.*)?(?:\r?\n)?$", lines[index].rstrip("\r\n"))]
 
 def _insert_host_into_group(path, group_name, name):
-    """Добавляет хост в группу. Если группы нет — создаёт её с отступом."""
+    """Добавляет хост в группу. Если группы нет — создаёт её."""
     if not group_name:
         return
     
@@ -260,12 +260,9 @@ def _insert_host_into_group(path, group_name, name):
     
     if hosts_index is None:
         # Группа не найдена — создаём её в конце файла
-        # Гарантируем пустую строку перед новой группой, если файл не пустой
         if lines and lines[-1].strip():
             lines.append(newline)
-        
         group_block = f"{group_name}:{newline}  hosts:{newline}    {name}:{newline}"
-        # Добавляем пустую строку после нового блока группы для будущих вставок
         lines.append(group_block)
         lines.append(newline)
         write(path, "".join(lines))
@@ -276,18 +273,21 @@ def _insert_host_into_group(path, group_name, name):
     entry_indent = hosts_indent + 2
     
     if entry_indexes:
-        # Вставляем сразу ПОСЛЕ последнего существующего хоста в группе
+        # Вставляем СРАЗУ ПОСЛЕ последнего хоста (без пропуска пустых строк!)
         last_host_index = entry_indexes[-1]
         insert_at = last_host_index + 1
         
-        # Пропускаем существующие пустые строки после последнего хоста
-        while insert_at < end_index and not lines[insert_at].strip():
-            insert_at += 1
-            
-        # Формируем строку хоста с пустой строкой ПОСЛЕ него, чтобы отделить от следующей группы
-        host_line = f"{' ' * entry_indent}{name}:{newline}{newline}"
+        # Проверяем, есть ли уже пустая строка после последнего хоста
+        has_blank_after = (insert_at < end_index and not lines[insert_at].strip())
+        
+        # Формируем строку: имя хоста + перенос
+        host_line = f"{' ' * entry_indent}{name}:{newline}"
+        
+        # Если после последнего хоста нет пустой строки, добавляем её ПОСЛЕ нового хоста
+        if not has_blank_after:
+            host_line += newline
     else:
-        # Это первый хост в группе, вставляем сразу после "hosts:"
+        # Первый хост в группе
         insert_at = hosts_index + 1
         while insert_at < end_index and not lines[insert_at].strip():
             insert_at += 1
