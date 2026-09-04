@@ -249,34 +249,50 @@ def _group_entry_indexes(lines, hosts_index, end_index, hosts_indent):
             if re.match(rf"^ {{{entry_indent}}}\S.*?:\s*(?:#.*)?(?:\r?\n)?$", lines[index].rstrip("\r\n"))]
 
 def _insert_host_into_group(path, group_name, name):
+    """Добавляет хост в группу. Если группы нет — создаёт её."""
     if not group_name:
         return
+    
     raw = read(path)
     lines = raw.splitlines(keepends=True)
     hosts_index, end_index, hosts_indent = _group_hosts_bounds(lines, group_name)
     newline = "\r\n" if "\r\n" in raw else "\n"
     
     if hosts_index is None:
+        # Группа не найдена — создаём её в конце файла
         if lines and lines[-1].strip():
             lines.append(newline)
         group_block = f"{group_name}:{newline}  hosts:{newline}    {name}:{newline}"
         lines.append(group_block)
+        lines.append(newline)
         write(path, "".join(lines))
         return
     
+    # Группа существует — добавляем хост
     entry_indexes = _group_entry_indexes(lines, hosts_index, end_index, hosts_indent)
     entry_indent = hosts_indent + 2
-    host_line = f"{' ' * entry_indent}{name}:{newline}"
     
     if entry_indexes:
-        insert_at = end_index
-        while insert_at > hosts_index + 1 and not lines[insert_at - 1].strip():
-            del lines[insert_at - 1]
-            insert_at -= 1
+        # Вставляем СРАЗУ ПОСЛЕ последнего хоста (без пропуска пустых строк!)
+        last_host_index = entry_indexes[-1]
+        insert_at = last_host_index + 1
+        
+        # Проверяем, есть ли уже пустая строка после последнего хоста
+        has_blank_after = (insert_at < end_index and not lines[insert_at].strip())
+        
+        # Формируем строку: имя хоста + перенос
+        host_line = f"{' ' * entry_indent}{name}:{newline}"
+        
+        # Если после последнего хоста нет пустой строки, добавляем её ПОСЛЕ нового хоста
+        if not has_blank_after:
+            host_line += newline
     else:
+        # Первый хост в группе
         insert_at = hosts_index + 1
         while insert_at < end_index and not lines[insert_at].strip():
             insert_at += 1
+        host_line = f"{' ' * entry_indent}{name}:{newline}"
+        
     lines.insert(insert_at, host_line)
     write(path, "".join(lines))
 
@@ -292,6 +308,82 @@ def _remove_host_from_group(path, group_name, name):
         return
     next_index = next((index for index in entry_indexes if index > target), end_index)
     del lines[target:next_index]
+    write(path, "".join(lines))
+
+def _cleanup_empty_groups(path):
+    """Удаляет группы, в которых нет хостов."""
+    raw = read(path)
+    if not raw.strip():
+        return
+    
+    lines = raw.splitlines(keepends=True)
+    
+    # Собираем информацию о всех группах
+    groups_info = []
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].rstrip("\r\n")
+        if stripped and not stripped.startswith(" ") and stripped.endswith(":") and not stripped.startswith("#"):
+            group_name = stripped[:-1].strip()
+            if group_name == "all":
+                i += 1
+                continue
+            
+            group_start = i
+            group_indent = 0
+            has_hosts = False
+            group_end = len(lines)
+            
+            j = i + 1
+            while j < len(lines):
+                next_stripped = lines[j].rstrip("\r\n")
+                if not next_stripped:
+                    j += 1
+                    continue
+                next_indent = len(next_stripped) - len(next_stripped.lstrip(" "))
+                if next_indent <= group_indent:
+                    group_end = j
+                    break
+                if next_indent == group_indent + 2 and next_stripped.strip() == "hosts:":
+                    # Проверяем, есть ли хосты
+                    k = j + 1
+                    while k < len(lines):
+                        k_stripped = lines[k].rstrip("\r\n")
+                        if not k_stripped:
+                            k += 1
+                            continue
+                        k_indent = len(k_stripped) - len(k_stripped.lstrip(" "))
+                        if k_indent <= group_indent + 2:
+                            break
+                        if k_indent == group_indent + 4:
+                            has_hosts = True
+                            break
+                        k += 1
+                j += 1
+            
+            groups_info.append({
+                "name": group_name,
+                "start": group_start,
+                "end": group_end,
+                "has_hosts": has_hosts
+            })
+            i = group_end
+        else:
+            i += 1
+    
+    # Удаляем пустые группы (в обратном порядке, чтобы индексы не сдвигались)
+    for group in reversed(groups_info):
+        if not group["has_hosts"]:
+            start = group["start"]
+            end = group["end"]
+            # Удаляем также пустые строки перед группой
+            while start > 0 and not lines[start - 1].strip():
+                start -= 1
+            # Удаляем пустые строки после группы
+            while end < len(lines) and not lines[end].strip():
+                end += 1
+            del lines[start:end]
+    
     write(path, "".join(lines))
 
 def add_host(project, obj, name, values, groups=None):
@@ -406,6 +498,7 @@ def save_host(project, obj, old_name, new_name, values):
             if old_name in group["hosts"]:
                 _remove_host_from_group(file_paths["hosts"], group["name"], old_name)
                 _insert_host_into_group(file_paths["hosts"], group["name"], new_name)
+        _cleanup_empty_groups(file_paths["hosts"])
 
 def get_playbooks(project, obj):
     directory = object_dir(project, obj)

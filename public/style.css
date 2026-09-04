@@ -256,7 +256,6 @@ button.danger { background: rgba(160,50,50,.55); }
 }
 .group-strip:empty { visibility: hidden; }
 
-/* === Dropdown фильтр групп === */
 .group-filter-dropdown { position: relative; display: inline-block; }
 .group-filter-btn {
     padding: 8px 16px;
@@ -323,7 +322,6 @@ button.danger { background: rgba(160,50,50,.55); }
 .playbook-actions { display: flex; flex: 0 0 auto; gap: 8px; align-items: center; justify-content: flex-end; white-space: nowrap; }
 .playbook-actions button { min-height: 34px; box-sizing: border-box; padding: 7px 11px; }
 
-/* === Playbook roles panel === */
 .playbook-roles {
     margin-top: 12px;
     padding: 12px;
@@ -491,7 +489,6 @@ button.danger { background: rgba(160,50,50,.55); }
     #host_select_toggle { width: 190px; min-width: 190px; max-width: 190px; }
 }
 
-/* === Множественный выбор групп (модалка) === */
 .group-selector-buttons { display: flex; gap: 8px; margin-bottom: 8px; }
 .group-btn { flex: 1; padding: 8px 12px; border: 1px solid #444; background: #2a2a2a; color: #eee; border-radius: 6px; cursor: pointer; font-size: 13px; transition: background 0.15s, border-color 0.15s; }
 .group-btn:hover { background: #333; border-color: #666; }
@@ -501,7 +498,69 @@ button.danger { background: rgba(160,50,50,.55); }
 .group-checkbox-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; cursor: pointer; border-radius: 4px; transition: background 0.1s; }
 .group-checkbox-item:hover { background: #2a2a2a; }
 .group-checkbox-item input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
-.selected-groups-display { display: flex; flex-wrap: wrap; gap: 6px; min-height: 28px; align-items: center; }
-.selected-group-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; background: #2d5a8a; color: #fff; border-radius: 12px; font-size: 12px; }
-.chip-remove { background: none; border: none; color: #fff; cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1; opacity: 0.7; transition: opacity 0.15s; }
-.chip-remove:hover { opacity: 1; }
+
+.selected-groups-display {
+    display: flex;
+    min-height: 10px;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 4px 0;
+    flex-wrap: wrap;
+}
+
+.selected-group-chip {
+    padding: 3px 7px 3px 9px;
+    font-size: 12px;
+    line-height: 1.1;
+    background: #2d5a8a;
+    color: #fff;
+    align-items: center;
+    border-radius: 10px;
+    transition: opacity 0.15s;
+    gap: 6px;
+    margin: 5px 0;
+}
+
+.chip-remove {
+    display: inline-flex;
+    align-items: center;
+    background: none;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0 3px;
+    line-height: 1;
+    opacity: 0.5;
+    transition: opacity 0.15s;
+    border-radius: 8px;
+    min-height: auto;
+    height: auto;
+}
+
+.chip-remove:hover {
+    opacity: 1;
+}
+
+#add_node_modal .modal-card {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    max-height: min(760px, calc(100vh - 40px));
+}
+
+#add_node_modal .modal-body {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+#add_node_modal #new_node_fields {
+    flex: 1;
+    overflow-y: auto;
+    max-height: none;
+    min-height: 100px;
+}
