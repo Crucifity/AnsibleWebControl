@@ -31,7 +31,7 @@
         }
         .node-group-field select:focus { outline: none; border-color: rgba(0,210,106,.45); }
         .node-group-field select option { background: #202020; color: #fff; }
-        .playbook-roles, .role-children { overflow: hidden; }
+        .role-children { overflow: hidden; }
         .playbook-roles.smooth-panel, .role-children.smooth-panel { transition: max-height 220ms ease, opacity 180ms ease; }
         .autodeploy-card { background: rgba(0,0,0,.34) !important; }
     </style>
@@ -83,16 +83,11 @@
             <div class="modal-head"><div><div class="modal-kicker">Новый узел</div><h3 id="add_node_title">Добавление узла</h3></div><button class="modal-close" onclick="closeAddNodeModal()" aria-label="Закрыть">×</button></div>
             <div class="modal-body">
                 <label class="modal-label" for="new_node_name">Название</label>
-                <input id="new_node_name" class="modal-input" type="text" placeholder="Например, host01" autocomplete="off"> 
-                <!-- НОВЫЙ БЛОК: Выбор и создание групп -->
+                <input id="new_node_name" class="modal-input" type="text" placeholder="Например, host01" autocomplete="off">
                 <div class="node-group-field" style="margin-top: 16px;">
                     <div class="group-selector-buttons">
-                        <button type="button" class="group-btn" onclick="toggleGroupSelector()">
-                            Выбрать группу ▾
-                        </button>
-                        <button type="button" class="group-btn group-btn-create" onclick="openCreateGroupModal()">
-                            + Создать группу
-                        </button>
+                        <button type="button" class="group-btn" onclick="toggleGroupSelector()">Выбрать группу ▾</button>
+                        <button type="button" class="group-btn group-btn-create" onclick="openCreateGroupModal()">+ Создать группу</button>
                     </div>
                     <div id="group_selector_list" class="group-selector-list" hidden></div>
                     <div id="selected_groups_display" class="selected-groups-display">
@@ -138,7 +133,6 @@
             playbookObserver.observe(document.getElementById('playbooks'), { childList: true, subtree: true });
             document.addEventListener('change', (event) => {
                 if (event.target.matches('.pb')) updatePlaybookSelectionButton();
-                if (event.target.id === 'new_node_group') event.target.blur();
             });
             function smoothPanel(panel, open) {
                 if (!panel) return; panel.classList.add('smooth-panel');
@@ -151,37 +145,44 @@
                     setTimeout(() => { panel.hidden = true; panel.style.maxHeight = ''; panel.style.opacity = ''; }, MOTION_MS + 20);
                 }
             }
-            function renderGroupSelector() {
-                const select = document.getElementById('new_node_group'); if (!select) return;
-                const groups = Array.isArray(DATA?.groups) ? DATA.groups : [];
-                select.innerHTML = '<option value="">Без группы</option>' + groups.map((group) => `<option value="${esc(group.name)}">${esc(group.name)}${group.hosts?.length ? ` (${group.hosts.length})` : ''}</option>`).join('');
-            }
-            const originalOpenAddNodeModal = window.openAddNodeModal;
-            const originalCloseAddNodeModal = window.closeAddNodeModal;
-            const originalEditPlaybook = window.editPlaybook;
-            const originalClosePlaybookModal = window.closePlaybookModal;
-            window.openAddNodeModal = function() { originalOpenAddNodeModal(); renderGroupSelector(); };
-            window.createNode = function() {
-                const name = document.getElementById('new_node_name').value.trim();
-                const keys = (DATA?.template_schemas || {})[NEW_TEMPLATE] || [];
-                if (!name) return document.getElementById('new_node_name').focus();
-                if (!keys.length) return alert('Выберите шаблон параметров.');
-                const values = {}; document.querySelectorAll('[data-new-key]').forEach((input) => values[input.dataset.newKey] = input.value);
-                const group = document.getElementById('new_node_group')?.value || '';
-                api('/add_host', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname: name, node_type: NEW_TEMPLATE, values, group }).then(() => { closeAddNodeModal(); loadMain(); }).catch((error) => alert(error.message));
-            };
             window.togglePlaybookRoles = function(button, name) {
                 const panel = button.closest('.playbook-card').querySelector('.playbook-roles'); const open = panel.hidden;
                 if (open && !panel.dataset.loaded) {
                     panel.innerHTML = '<div class="roles-loading">Загрузка ролей…</div>';
-                    fetch(`/roles?${contextQuery(`&playbook=${encodeURIComponent(name)}`)}`).then((response) => { if (!response.ok) throw Error('Не удалось загрузить роли'); return response.json(); }).then((roles) => { panel.innerHTML = roles.length ? `<div class="roles-title">Роли</div>${roleTree(roles)}` : '<div class="muted">В этом плейбуке роли не указаны.</div>'; panel.dataset.loaded = '1'; smoothPanel(panel, true); }).catch((error) => { panel.innerHTML = `<div class="muted">${esc(error.message)}</div>`; smoothPanel(panel, true); });
+                    fetch(`/roles?project=${encodeURIComponent(CURRENT_PROJECT)}${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}&playbook=${encodeURIComponent(name)}`)
+                        .then((response) => { if (!response.ok) throw Error('Не удалось загрузить роли'); return response.json(); })
+                        .then((roles) => { 
+                            panel.innerHTML = roles.length ? `<div class="roles-title">Роли</div>${roleTree(roles)}` : '<div class="muted">В этом плейбуке роли не указаны.</div>'; 
+                            panel.dataset.loaded = '1'; 
+                            smoothPanel(panel, true); 
+                        })
+                        .catch((error) => { panel.innerHTML = `<div class="muted">${esc(error.message)}</div>`; smoothPanel(panel, true); });
                 } else smoothPanel(panel, open);
                 button.textContent = open ? 'Роли ▾' : 'Роли ▸';
             };
             window.toggleRoleDir = function(button) {
                 const children = button.parentElement.querySelector('.role-children'); const open = children.hidden;
-                if (open) children.querySelectorAll('pre[data-readme-path]:not([data-loaded])').forEach((pre) => { pre.dataset.loaded = '1'; fetch(`/role_file?${contextQuery(`&path=${encodeURIComponent(pre.dataset.readmePath)}`)}`).then((response) => { if (!response.ok) throw Error('Не удалось загрузить README.md'); return response.json(); }).then((data) => pre.textContent = data.content).catch((error) => pre.textContent = error.message); });
-                smoothPanel(children, open); button.querySelector('.role-chevron').textContent = open ? '▾' : '▸';
+                if (open) {
+                    children.querySelectorAll('pre[data-readme-path]:not([data-loaded])').forEach((pre) => { 
+                        pre.dataset.loaded = '1'; 
+                        fetch(`/role_file?project=${encodeURIComponent(CURRENT_PROJECT)}${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}&path=${encodeURIComponent(pre.dataset.readmePath)}`)
+                            .then((response) => { if (!response.ok) throw Error('Не удалось загрузить README.md'); return response.json(); })
+                            .then((data) => { 
+                                pre.textContent = data.content;
+                                const playbookPanel = pre.closest('.playbook-roles');
+                                if (playbookPanel) {
+                                    requestAnimationFrame(() => { playbookPanel.style.maxHeight = playbookPanel.scrollHeight + 'px'; });
+                                }
+                            })
+                            .catch((error) => pre.textContent = error.message); 
+                    });
+                    const playbookPanel = button.closest('.playbook-roles');
+                    if (playbookPanel) {
+                        requestAnimationFrame(() => { playbookPanel.style.maxHeight = playbookPanel.scrollHeight + children.scrollHeight + 'px'; });
+                    }
+                }
+                smoothPanel(children, open); 
+                button.querySelector('.role-chevron').textContent = open ? '▾' : '▸';
             };
             function smoothShow(modal) { if (!modal) return; modal.classList.remove('modal-closing'); modal.hidden = false; }
             function smoothCloseWithOriginal(modal, originalClose) {
