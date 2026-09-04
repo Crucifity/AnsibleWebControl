@@ -5,12 +5,41 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Ansible Web Control</title>
     <link rel="stylesheet" href="/style.css">
+    <style>
+        .node-group-field { margin-top: 16px; }
+        .node-group-field select {
+            appearance: none;
+            -webkit-appearance: none;
+            width: min(100%, 420px);
+            min-width: 0;
+            max-width: 100%;
+            height: 36px;
+            min-height: 36px;
+            box-sizing: border-box;
+            padding: 7px 38px 7px 12px;
+            border-radius: 9px;
+            border: 1px solid rgba(255,255,255,.15);
+            background-color: rgba(0,0,0,.5);
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%23ffffff' stroke-opacity='.65' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            background-size: 12px 8px;
+            color: #fff;
+            color-scheme: dark;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .node-group-field select:focus { outline: none; border-color: rgba(0,210,106,.45); }
+        .node-group-field select option { background: #202020; color: #fff; }
+        .role-children { overflow: hidden; }
+        .playbook-roles.smooth-panel, .role-children.smooth-panel { transition: max-height 220ms ease, opacity 180ms ease; }
+        .autodeploy-card { background: rgba(0,0,0,.34) !important; }
+    </style>
 </head>
 <body>
     <div class="overlay">
         <div id="nav"></div>
         <div id="project_selector"></div>
-
         <div class="page-wrap">
             <div id="object_block" class="block project-context-block">
                 <div class="section-head">
@@ -18,242 +47,169 @@
                     <select id="object_select" onchange="changeObject()"></select>
                 </div>
             </div>
-
             <div id="autodeploy_block"></div>
-
             <div class="workspace-grid">
                 <section class="block workspace-panel nodes-panel">
                     <div class="section-head nodes-section-head">
                         <h3>Узлы</h3>
                         <div id="groups" class="group-strip"></div>
                         <div class="node-toolbar">
-                            <button id="host_select_toggle" type="button" onclick="toggleHostSelection()">
-                                <span class="selection-button-label">Выбрать все узлы</span>
-                            </button>
+                            <button id="host_select_toggle" type="button" onclick="toggleHostSelection()"><span class="selection-button-label">Выбрать все узлы</span></button>
                             <button class="primary" onclick="openAddNodeModal()">Добавить узел</button>
                             <button class="danger" onclick="deleteSelectedNodes()">Удалить выбранные</button>
                         </div>
                     </div>
                     <div id="nodes" class="hosts-list"></div>
                 </section>
-
                 <section class="block workspace-panel playbooks-panel">
                     <div class="section-head">
                         <h3>Плейбуки</h3>
                         <div class="btn-row compact" id="playbook-selection-toolbar">
-                            <button id="playbook_select_toggle" type="button" onclick="togglePlaybookSelection()">
-                                <span class="selection-button-label">Выбрать все плейбуки</span>
-                            </button>
+                            <button id="playbook_select_toggle" type="button" onclick="togglePlaybookSelection()"><span class="selection-button-label">Выбрать все плейбуки</span></button>
                         </div>
                     </div>
                     <div id="playbooks" class="playbook-list"></div>
                 </section>
             </div>
-
             <section class="block execution-panel">
-                <div class="section-head">
-                    <h3>Выполнение</h3>
-                    <span id="run_state">Готов</span>
-                </div>
-                <div class="run-row">
-                    <button class="primary" onclick="runSelected()">Запуск</button>
-                    <button onclick="stopExecution()">Завершить</button>
-                </div>
+                <div class="section-head"><h3>Выполнение</h3><span id="run_state">Готов</span></div>
+                <div class="run-row"><button class="primary" onclick="runSelected()">Запуск</button><button onclick="stopExecution()">Завершить</button></div>
                 <pre id="log" class="log"></pre>
             </section>
         </div>
     </div>
-
     <div id="add_node_modal" class="modal-backdrop" hidden>
         <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="add_node_title">
-            <div class="modal-head">
-                <div>
-                    <div class="modal-kicker">Новый узел</div>
-                    <h3 id="add_node_title">Добавление узла</h3>
-                </div>
-                <button class="modal-close" onclick="closeAddNodeModal()" aria-label="Закрыть">×</button>
-            </div>
+            <div class="modal-head"><div><div class="modal-kicker">Новый узел</div><h3 id="add_node_title">Добавление узла</h3></div><button class="modal-close" onclick="closeAddNodeModal()" aria-label="Закрыть">×</button></div>
             <div class="modal-body">
                 <label class="modal-label" for="new_node_name">Название</label>
                 <input id="new_node_name" class="modal-input" type="text" placeholder="Например, host01" autocomplete="off">
+                <div class="node-group-field" style="margin-top: 16px;">
+                    <div class="group-selector-buttons">
+                        <button type="button" class="group-btn" onclick="toggleGroupSelector()">Выбрать группу ▾</button>
+                        <button type="button" class="group-btn group-btn-create" onclick="openCreateGroupModal()">+ Создать группу</button>
+                    </div>
+                    <div id="group_selector_list" class="group-selector-list" hidden></div>
+                    <div id="selected_groups_display" class="selected-groups-display">
+                        <span class="muted">Группы не выбраны</span>
+                    </div>
+                </div>
                 <div class="modal-label" style="margin-top: 16px;">Шаблон параметров</div>
                 <div id="node_template_tabs" class="node-type-tabs"></div>
                 <div id="new_node_fields" class="node-modal-fields"></div>
             </div>
-            <div class="modal-footer">
-                <button class="modal-secondary" onclick="closeAddNodeModal()">Отмена</button>
-                <button class="primary" onclick="createNode()">Добавить узел</button>
-            </div>
+            <div class="modal-footer"><button class="modal-secondary" onclick="closeAddNodeModal()">Отмена</button><button class="primary" onclick="createNode()">Добавить узел</button></div>
         </div>
     </div>
-
     <div id="playbook_modal" class="modal-backdrop" hidden>
         <div id="playbook_editor_card" class="modal-card playbook-editor-modal" role="dialog" aria-modal="true" aria-labelledby="playbook_modal_title">
-            <div class="modal-head">
-                <div>
-                    <div class="modal-kicker">Редактор плейбука</div>
-                    <h3 id="playbook_modal_title">Плейбук</h3>
-                </div>
-                <button class="modal-close" onclick="closePlaybookModal()" aria-label="Закрыть">×</button>
-            </div>
-            <div class="modal-body playbook-editor-body">
-                <textarea id="playbook_editor" class="playbook-editor" spellcheck="false"></textarea>
-            </div>
-            <div class="modal-footer">
-                <button class="modal-secondary" onclick="closePlaybookModal()">Отмена</button>
-                <button class="primary" onclick="savePlaybookFromModal()">Изменить</button>
-            </div>
+            <div class="modal-head"><div><div class="modal-kicker">Редактор плейбука</div><h3 id="playbook_modal_title">Плейбук</h3></div><button class="modal-close" onclick="closePlaybookModal()" aria-label="Закрыть">×</button></div>
+            <div class="modal-body playbook-editor-body"><textarea id="playbook_editor" class="playbook-editor" spellcheck="false"></textarea></div>
+            <div class="modal-footer"><button class="modal-secondary" onclick="closePlaybookModal()">Отмена</button><button class="primary" onclick="savePlaybookFromModal()">Изменить</button></div>
         </div>
     </div>
-
     <script src="/common.js"></script>
     <script src="/main.js"></script>
     <script>
         (() => {
             const MOTION_MS = 220;
             let closePassthrough = false;
-
             function selectionLabel(button, nextText) {
                 const label = button?.querySelector('.selection-button-label');
                 if (!label || label.textContent === nextText) return;
                 button.classList.add('selection-changing');
-                setTimeout(() => {
-                    label.textContent = nextText;
-                    button.classList.remove('selection-changing');
-                }, 180);
+                setTimeout(() => { label.textContent = nextText; button.classList.remove('selection-changing'); }, 180);
             }
-
             window.updatePlaybookSelectionButton = function() {
-                const button = document.getElementById('playbook_select_toggle');
-                if (!button) return;
+                const button = document.getElementById('playbook_select_toggle'); if (!button) return;
                 const checks = [...document.querySelectorAll('.pb')];
-                const allSelected = checks.length > 0 && checks.every((item) => item.checked);
-                selectionLabel(button, allSelected ? 'Отменить выбор' : 'Выбрать все плейбуки');
+                selectionLabel(button, checks.length > 0 && checks.every((item) => item.checked) ? 'Отменить выбор' : 'Выбрать все плейбуки');
             };
-
             window.togglePlaybookSelection = function() {
-                const checks = [...document.querySelectorAll('.pb')];
-                if (!checks.length) return;
-                const allSelected = checks.every((item) => item.checked);
-                checks.forEach((item) => item.checked = !allSelected);
-                updatePlaybookSelectionButton();
+                const checks = [...document.querySelectorAll('.pb')]; if (!checks.length) return;
+                const allSelected = checks.every((item) => item.checked); checks.forEach((item) => item.checked = !allSelected); updatePlaybookSelectionButton();
             };
-
-            function patchPlaybookToolbar() {
-                const toolbar = document.getElementById('playbook-selection-toolbar');
-                if (!toolbar) return;
-                if (toolbar.children.length !== 1 || toolbar.querySelectorAll('button').length !== 1) {
-                    toolbar.innerHTML = '<button id="playbook_select_toggle" type="button" onclick="togglePlaybookSelection()"><span class="selection-button-label">Выбрать все плейбуки</span></button>';
-                }
-                updatePlaybookSelectionButton();
-            }
-
             const playbookObserver = new MutationObserver(() => updatePlaybookSelectionButton());
             playbookObserver.observe(document.getElementById('playbooks'), { childList: true, subtree: true });
-
             document.addEventListener('change', (event) => {
                 if (event.target.matches('.pb')) updatePlaybookSelectionButton();
             });
-
-            function smoothHide(modal, after) {
-                if (!modal || modal.hidden || modal.classList.contains('modal-closing')) return;
-                modal.classList.add('modal-closing');
-                setTimeout(() => {
-                    modal.hidden = true;
-                    modal.classList.remove('modal-closing');
-                    if (after) after();
-                }, MOTION_MS);
+            function smoothPanel(panel, open) {
+                if (!panel) return; panel.classList.add('smooth-panel');
+                if (open) {
+                    panel.hidden = false; panel.style.maxHeight = '0px'; panel.style.opacity = '0';
+                    requestAnimationFrame(() => { panel.style.maxHeight = `${panel.scrollHeight}px`; panel.style.opacity = '1'; });
+                } else {
+                    panel.style.maxHeight = `${panel.scrollHeight}px`; panel.style.opacity = '1';
+                    requestAnimationFrame(() => { panel.style.maxHeight = '0px'; panel.style.opacity = '0'; });
+                    setTimeout(() => { panel.hidden = true; panel.style.maxHeight = ''; panel.style.opacity = ''; }, MOTION_MS + 20);
+                }
             }
-
+            window.togglePlaybookRoles = function(button, name) {
+                const panel = button.closest('.playbook-card').querySelector('.playbook-roles'); const open = panel.hidden;
+                if (open && !panel.dataset.loaded) {
+                    panel.innerHTML = '<div class="roles-loading">Загрузка ролей…</div>';
+                    fetch(`/roles?project=${encodeURIComponent(CURRENT_PROJECT)}${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}&playbook=${encodeURIComponent(name)}`)
+                        .then((response) => { if (!response.ok) throw Error('Не удалось загрузить роли'); return response.json(); })
+                        .then((roles) => { 
+                            panel.innerHTML = roles.length ? `<div class="roles-title">Роли</div>${roleTree(roles)}` : '<div class="muted">В этом плейбуке роли не указаны.</div>'; 
+                            panel.dataset.loaded = '1'; 
+                            smoothPanel(panel, true); 
+                        })
+                        .catch((error) => { panel.innerHTML = `<div class="muted">${esc(error.message)}</div>`; smoothPanel(panel, true); });
+                } else smoothPanel(panel, open);
+                button.textContent = open ? 'Роли ▾' : 'Роли ▸';
+            };
+            window.toggleRoleDir = function(button) {
+                const children = button.parentElement.querySelector('.role-children'); const open = children.hidden;
+                if (open) {
+                    children.querySelectorAll('pre[data-readme-path]:not([data-loaded])').forEach((pre) => { 
+                        pre.dataset.loaded = '1'; 
+                        fetch(`/role_file?project=${encodeURIComponent(CURRENT_PROJECT)}${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}&path=${encodeURIComponent(pre.dataset.readmePath)}`)
+                            .then((response) => { if (!response.ok) throw Error('Не удалось загрузить README.md'); return response.json(); })
+                            .then((data) => { 
+                                pre.textContent = data.content;
+                                const playbookPanel = pre.closest('.playbook-roles');
+                                if (playbookPanel) {
+                                    requestAnimationFrame(() => { playbookPanel.style.maxHeight = playbookPanel.scrollHeight + 'px'; });
+                                }
+                            })
+                            .catch((error) => pre.textContent = error.message); 
+                    });
+                    const playbookPanel = button.closest('.playbook-roles');
+                    if (playbookPanel) {
+                        requestAnimationFrame(() => { playbookPanel.style.maxHeight = playbookPanel.scrollHeight + children.scrollHeight + 'px'; });
+                    }
+                }
+                smoothPanel(children, open); 
+                button.querySelector('.role-chevron').textContent = open ? '▾' : '▸';
+            };
+            function smoothShow(modal) { if (!modal) return; modal.classList.remove('modal-closing'); modal.hidden = false; }
             function smoothCloseWithOriginal(modal, originalClose) {
                 if (!modal || modal.hidden || modal.classList.contains('modal-closing')) return;
-                modal.classList.add('modal-closing');
-                setTimeout(() => {
-                    modal.classList.remove('modal-closing');
-                    closePassthrough = true;
-                    originalClose();
-                    closePassthrough = false;
-                }, MOTION_MS);
+                modal.classList.add('modal-closing'); setTimeout(() => { modal.classList.remove('modal-closing'); closePassthrough = true; originalClose(); closePassthrough = false; }, MOTION_MS);
             }
-
-            function smoothShow(modal) {
-                if (!modal) return;
-                modal.classList.remove('modal-closing');
-                modal.hidden = false;
-            }
-
-            const originalOpenAddNodeModal = window.openAddNodeModal;
-            const originalCloseAddNodeModal = window.closeAddNodeModal;
-            const originalEditPlaybook = window.editPlaybook;
-            const originalClosePlaybookModal = window.closePlaybookModal;
-
-            window.openAddNodeModal = function() {
-                originalOpenAddNodeModal();
-                smoothShow(document.getElementById('add_node_modal'));
-            };
-
-            window.closeAddNodeModal = function() {
-                if (closePassthrough) return originalCloseAddNodeModal();
-                smoothCloseWithOriginal(document.getElementById('add_node_modal'), originalCloseAddNodeModal);
-            };
-
-            window.editPlaybook = function(name) {
-                originalEditPlaybook(name);
-                smoothShow(document.getElementById('playbook_modal'));
-            };
-
-            window.closePlaybookModal = function() {
-                if (closePassthrough) return originalClosePlaybookModal();
-                smoothCloseWithOriginal(document.getElementById('playbook_modal'), originalClosePlaybookModal);
-            };
-
+            window.closeAddNodeModal = function() { if (closePassthrough) return originalCloseAddNodeModal(); smoothCloseWithOriginal(document.getElementById('add_node_modal'), originalCloseAddNodeModal); };
+            window.editPlaybook = function(name) { originalEditPlaybook(name); smoothShow(document.getElementById('playbook_modal')); };
+            window.closePlaybookModal = function() { if (closePassthrough) return originalClosePlaybookModal(); smoothCloseWithOriginal(document.getElementById('playbook_modal'), originalClosePlaybookModal); };
             document.addEventListener('click', (event) => {
                 if (closePassthrough) return;
                 const button = event.target.closest('#add_node_modal .modal-close, #add_node_modal .modal-secondary, #playbook_modal .modal-close, #playbook_modal .modal-secondary, #run_confirm_modal .modal-close, #run_confirm_modal #run_confirm_cancel');
-                if (!button) return;
-                event.preventDefault();
-                event.stopImmediatePropagation();
-
-                const modal = button.closest('.modal-backdrop');
-                if (!modal) return;
+                if (!button) return; event.preventDefault(); event.stopImmediatePropagation();
+                const modal = button.closest('.modal-backdrop'); if (!modal) return;
                 if (modal.id === 'add_node_modal') return smoothCloseWithOriginal(modal, originalCloseAddNodeModal);
                 if (modal.id === 'playbook_modal') return smoothCloseWithOriginal(modal, originalClosePlaybookModal);
-                smoothHide(modal, () => {
-                    closePassthrough = true;
-                    button.click();
-                    closePassthrough = false;
-                });
+                modal.classList.add('modal-closing'); setTimeout(() => { modal.classList.remove('modal-closing'); closePassthrough = true; button.click(); closePassthrough = false; }, MOTION_MS);
             }, true);
-
             document.addEventListener('click', (event) => {
-                if (closePassthrough) return;
-                const modal = event.target.closest('.modal-backdrop');
-                if (!modal || event.target !== modal) return;
-                if (modal.id === 'add_node_modal') closeAddNodeModal();
-                if (modal.id === 'playbook_modal') closePlaybookModal();
-                if (modal.id === 'run_confirm_modal') smoothHide(modal, () => {
-                    closePassthrough = true;
-                    modal.querySelector('#run_confirm_cancel')?.click();
-                    closePassthrough = false;
-                });
+                if (closePassthrough) return; const modal = event.target.closest('.modal-backdrop'); if (!modal || event.target !== modal) return;
+                if (modal.id === 'add_node_modal') closeAddNodeModal(); if (modal.id === 'playbook_modal') closePlaybookModal(); if (modal.id === 'run_confirm_modal') modal.querySelector('#run_confirm_cancel')?.click();
             });
-
             window.addEventListener('keydown', (event) => {
                 if (event.key !== 'Escape') return;
-                event.preventDefault();
-                event.stopImmediatePropagation();
-                const modals = ['add_node_modal', 'playbook_modal', 'run_confirm_modal']
-                    .map((id) => document.getElementById(id))
-                    .filter((modal) => modal && !modal.hidden);
-                modals.forEach((modal) => {
-                    if (modal.id === 'add_node_modal') return smoothCloseWithOriginal(modal, originalCloseAddNodeModal);
-                    if (modal.id === 'playbook_modal') return smoothCloseWithOriginal(modal, originalClosePlaybookModal);
-                    smoothHide(modal, () => {
-                        closePassthrough = true;
-                        modal.querySelector('#run_confirm_cancel')?.click();
-                        closePassthrough = false;
-                    });
-                });
+                const modals = ['add_node_modal', 'playbook_modal', 'run_confirm_modal'].map((id) => document.getElementById(id)).filter((modal) => modal && !modal.hidden);
+                if (!modals.length) return; event.preventDefault(); event.stopImmediatePropagation();
+                modals.forEach((modal) => { if (modal.id === 'add_node_modal') return smoothCloseWithOriginal(modal, originalCloseAddNodeModal); if (modal.id === 'playbook_modal') return smoothCloseWithOriginal(modal, originalClosePlaybookModal); modal.querySelector('#run_confirm_cancel')?.click(); });
             }, true);
         })();
     </script>

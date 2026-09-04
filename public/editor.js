@@ -48,7 +48,8 @@ function load() {
             document.getElementById('hosts_editor').value = x[0].hosts || '';
             document.getElementById('defaults_editor').value = x[0].defaults || '';
             loadPlaybook();
-        });
+        })
+        .catch((error) => console.error('Ошибка загрузки редактора:', error));
 }
 
 function loadPlaybook() {
@@ -59,7 +60,8 @@ function loadPlaybook() {
         .then((r) => r.json())
         .then((d) => {
             document.getElementById('playbook_editor').value = d.content || '';
-        });
+        })
+        .catch((error) => console.error('Ошибка загрузки плейбука:', error));
 }
 
 function savePlaybook() {
@@ -74,22 +76,40 @@ function savePlaybook() {
         })
     })
         .then((r) => r.json())
-        .then((x) => alert(x.ok ? 'Сохранено' : x.error));
+        .then((x) => alert(x.ok ? 'Сохранено' : (x.error || 'Ошибка сохранения')))
+        .catch((error) => alert('Сетевая ошибка при сохранении: ' + error.message));
 }
 
+// ИСПРАВЛЕНО: Валидация содержимого перед сохранением
 function saveFiles() {
+    const hostsContent = document.getElementById('hosts_editor').value;
+    
+    if (!hostsContent.trim()) {
+        return alert('Ошибка: файл hosts.yml не может быть пустым!');
+    }
+    
+    if (!hostsContent.includes('all:') && !hostsContent.includes('hosts:')) {
+        if (!confirm('Файл не содержит базовой структуры YAML (all:/hosts:). Вы уверены, что хотите сохранить?')) {
+            return;
+        }
+    }
+
     fetch('/save_files', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             project: P,
             object: O,
-            hosts: document.getElementById('hosts_editor').value,
+            hosts: hostsContent,
             defaults: document.getElementById('defaults_editor').value
         })
     })
         .then((r) => r.json())
-        .then((x) => alert(x.ok ? 'Сохранено' : x.error));
+        .then((x) => {
+            if (x.ok) alert('Сохранено');
+            else alert(x.error || 'Ошибка сохранения');
+        })
+        .catch((error) => alert('Сетевая ошибка: ' + error.message));
 }
 
 load();

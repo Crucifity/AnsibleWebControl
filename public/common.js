@@ -25,13 +25,18 @@ function injectNav(active, projects = [], selectedProject = '', selectedObject =
     if (selector) selector.innerHTML = projectSelectorHTML(projects, selectedProject);
 }
 
+// ИСПРАВЛЕНО: Сохраняем параметр object при смене проекта
 function changeProject() {
     const project = document.getElementById('project_select').value;
-    if (project) {
-        window.location.href = `${window.location.pathname}?project=${encodeURIComponent(project)}`;
-    } else {
-        window.location.href = window.location.pathname;
+    const currentObject = getObjectFromURL(); 
+    
+    let url = project ? `${window.location.pathname}?project=${encodeURIComponent(project)}` : window.location.pathname;
+    
+    if (project && currentObject) {
+        url += `&object=${encodeURIComponent(currentObject)}`;
     }
+    
+    window.location.href = url;
 }
 
 function changeObject() {
