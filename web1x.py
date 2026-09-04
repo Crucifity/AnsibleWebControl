@@ -249,37 +249,50 @@ def _group_entry_indexes(lines, hosts_index, end_index, hosts_indent):
             if re.match(rf"^ {{{entry_indent}}}\S.*?:\s*(?:#.*)?(?:\r?\n)?$", lines[index].rstrip("\r\n"))]
 
 def _insert_host_into_group(path, group_name, name):
+    """Добавляет хост в группу. Если группы нет — создаёт её с отступом."""
     if not group_name:
         return
+    
     raw = read(path)
     lines = raw.splitlines(keepends=True)
     hosts_index, end_index, hosts_indent = _group_hosts_bounds(lines, group_name)
     newline = "\r\n" if "\r\n" in raw else "\n"
     
     if hosts_index is None:
+        # Группа не найдена — создаём её в конце файла
+        # Гарантируем пустую строку перед новой группой, если файл не пустой
         if lines and lines[-1].strip():
             lines.append(newline)
+        
         group_block = f"{group_name}:{newline}  hosts:{newline}    {name}:{newline}"
+        # Добавляем пустую строку после нового блока группы для будущих вставок
         lines.append(group_block)
+        lines.append(newline)
         write(path, "".join(lines))
         return
     
+    # Группа существует — добавляем хост
     entry_indexes = _group_entry_indexes(lines, hosts_index, end_index, hosts_indent)
     entry_indent = hosts_indent + 2
-    host_line = f"{' ' * entry_indent}{name}:{newline}"
     
     if entry_indexes:
+        # Вставляем сразу ПОСЛЕ последнего существующего хоста в группе
         last_host_index = entry_indexes[-1]
         insert_at = last_host_index + 1
-        while insert_at < end_index and not lines[insert_at].strip():
-            insert_at += 1
-        if insert_at > 0 and lines[insert_at - 1].strip():
-            host_line = newline + host_line
-    else:
-        insert_at = hosts_index + 1
+        
+        # Пропускаем существующие пустые строки после последнего хоста
         while insert_at < end_index and not lines[insert_at].strip():
             insert_at += 1
             
+        # Формируем строку хоста с пустой строкой ПОСЛЕ него, чтобы отделить от следующей группы
+        host_line = f"{' ' * entry_indent}{name}:{newline}{newline}"
+    else:
+        # Это первый хост в группе, вставляем сразу после "hosts:"
+        insert_at = hosts_index + 1
+        while insert_at < end_index and not lines[insert_at].strip():
+            insert_at += 1
+        host_line = f"{' ' * entry_indent}{name}:{newline}"
+        
     lines.insert(insert_at, host_line)
     write(path, "".join(lines))
 
