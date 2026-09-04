@@ -449,7 +449,6 @@ def delete_host(project, obj, name):
 
     for group in inventory_groups(project, obj):
         _remove_host_from_group(file_paths["hosts"], group["name"], name)
-    _cleanup_empty_groups(file_paths["hosts"])
 
 def save_host(project, obj, old_name, new_name, values):
     file_paths = paths(project, obj)

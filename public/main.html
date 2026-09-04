@@ -114,12 +114,10 @@
         (() => {
             const MOTION_MS = 220;
             let closePassthrough = false;
-            
             // Гарантируем, что функции существуют, даже если main.js не успел их определить
             const originalCloseAddNodeModal = window.closeAddNodeModal || function() { document.getElementById('add_node_modal').hidden = true; };
             const originalClosePlaybookModal = window.closePlaybookModal || function() { document.getElementById('playbook_modal').hidden = true; };
             const originalEditPlaybook = window.editPlaybook || function() {};
-
             function selectionLabel(button, nextText) {
                 const label = button?.querySelector('.selection-button-label');
                 if (!label || label.textContent === nextText) return;
