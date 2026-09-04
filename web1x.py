@@ -269,14 +269,17 @@ def _insert_host_into_group(path, group_name, name):
     host_line = f"{' ' * entry_indent}{name}:{newline}"
     
     if entry_indexes:
-        insert_at = end_index
-        while insert_at > hosts_index + 1 and not lines[insert_at - 1].strip():
-            del lines[insert_at - 1]
-            insert_at -= 1
+        last_host_index = entry_indexes[-1]
+        insert_at = last_host_index + 1
+        while insert_at < end_index and not lines[insert_at].strip():
+            insert_at += 1
+        if insert_at > 0 and lines[insert_at - 1].strip():
+            host_line = newline + host_line
     else:
         insert_at = hosts_index + 1
         while insert_at < end_index and not lines[insert_at].strip():
             insert_at += 1
+            
     lines.insert(insert_at, host_line)
     write(path, "".join(lines))
 

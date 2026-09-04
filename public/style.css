@@ -256,7 +256,6 @@ button.danger { background: rgba(160,50,50,.55); }
 }
 .group-strip:empty { visibility: hidden; }
 
-/* === Dropdown фильтр групп === */
 .group-filter-dropdown { position: relative; display: inline-block; }
 .group-filter-btn {
     padding: 8px 16px;
@@ -323,7 +322,6 @@ button.danger { background: rgba(160,50,50,.55); }
 .playbook-actions { display: flex; flex: 0 0 auto; gap: 8px; align-items: center; justify-content: flex-end; white-space: nowrap; }
 .playbook-actions button { min-height: 34px; box-sizing: border-box; padding: 7px 11px; }
 
-/* === Playbook roles panel === */
 .playbook-roles {
     margin-top: 12px;
     padding: 12px;
@@ -491,7 +489,6 @@ button.danger { background: rgba(160,50,50,.55); }
     #host_select_toggle { width: 190px; min-width: 190px; max-width: 190px; }
 }
 
-/* === Множественный выбор групп (модалка) === */
 .group-selector-buttons { display: flex; gap: 8px; margin-bottom: 8px; }
 .group-btn { flex: 1; padding: 8px 12px; border: 1px solid #444; background: #2a2a2a; color: #eee; border-radius: 6px; cursor: pointer; font-size: 13px; transition: background 0.15s, border-color 0.15s; }
 .group-btn:hover { background: #333; border-color: #666; }

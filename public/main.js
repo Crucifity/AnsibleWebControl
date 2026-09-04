@@ -198,10 +198,11 @@ function openAddNodeModal() {
     setTimeout(() => document.getElementById('new_node_name').focus(), 0);
 }
 
-function closeAddNodeModal() {
+// Явно назначаем на window, чтобы inline-скрипт в main.html мог его перехватить
+window.closeAddNodeModal = function() {
     document.getElementById('add_node_modal').hidden = true;
     closeCreateGroupModal();
-}
+};
 
 function renderTemplateTabs() {
     const tabs = document.getElementById('node_template_tabs');
@@ -237,11 +238,10 @@ function createNode() {
     document.querySelectorAll('[data-new-key]').forEach((input) => values[input.dataset.newKey] = input.value);
     
     api('/add_host', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname: name, values, groups: SELECTED_GROUPS })
-        .then(() => { closeAddNodeModal(); loadMain(); })
+        .then(() => { window.closeAddNodeModal(); loadMain(); })
         .catch((error) => alert(error.message));
 }
 
-// === Dropdown фильтр групп ===
 function renderGroups(groups) {
     const element = document.getElementById('groups');
     if (!groups?.length) {
@@ -279,7 +279,6 @@ function clearGroupFilter() {
     renderNodes();
 }
 
-// === Модальное окно выбора групп ===
 function toggleGroupSelector() {
     const list = document.getElementById('group_selector_list');
     list.hidden = !list.hidden;
@@ -378,13 +377,13 @@ function editPlaybook(name) {
     fetch(`/playbook?${contextQuery(`&name=${encodeURIComponent(name)}`)}`)
         .then((response) => { if (!response.ok) throw Error('Не удалось открыть плейбук'); return response.json(); })
         .then((data) => { editor.value = data.content || ''; editor.readOnly = false; fitPlaybookEditor(); editor.focus(); })
-        .catch((error) => { editor.value = ''; alert(error.message); closePlaybookModal(); });
+        .catch((error) => { editor.value = ''; alert(error.message); window.closePlaybookModal(); });
 }
 
-function closePlaybookModal() {
+window.closePlaybookModal = function() {
     document.getElementById('playbook_modal').hidden = true;
     window.CURRENT_EDITING_PLAYBOOK = '';
-}
+};
 
 function savePlaybookFromModal() {
     const name = window.CURRENT_EDITING_PLAYBOOK;
@@ -395,7 +394,7 @@ function savePlaybookFromModal() {
         .then(async (response) => {
             const data = await response.json();
             if (!response.ok || data.ok === false) throw Error(data.error || 'Не удалось сохранить плейбук');
-            closePlaybookModal();
+            window.closePlaybookModal();
             loadMain();
         }).catch((error) => alert(error.message)).finally(() => editor.disabled = false);
 }
@@ -624,8 +623,8 @@ function refreshLog() {
 
 window.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
-    closeAddNodeModal();
-    closePlaybookModal();
+    window.closeAddNodeModal();
+    window.closePlaybookModal();
     closeCreateGroupModal();
     const modal = document.getElementById('run_confirm_modal');
     if (modal) { modal.hidden = true; CONFIRM_ACTION = null; }
@@ -633,7 +632,7 @@ window.addEventListener('keydown', (event) => {
 
 window.addEventListener('click', (event) => {
     const modal = document.getElementById('add_node_modal');
-    if (event.target === modal) closeAddNodeModal();
+    if (event.target === modal) window.closeAddNodeModal();
 });
 
 window.addEventListener('resize', () => {
