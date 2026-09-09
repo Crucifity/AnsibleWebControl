@@ -34,6 +34,9 @@
         .role-children { overflow: hidden; }
         .playbook-roles.smooth-panel, .role-children.smooth-panel { transition: max-height 220ms ease, opacity 180ms ease; }
         .autodeploy-card { background: rgba(0,0,0,.34) !important; }
+        /* backdrop-filter creates a containing block for fixed descendants;
+           the object dropdown is positioned against the viewport. */
+        .project-context-block { backdrop-filter: none; }
     </style>
 </head>
 <body>
