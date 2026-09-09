@@ -256,7 +256,109 @@ button.danger { background: rgba(160,50,50,.55); }
 }
 .group-strip:empty { visibility: hidden; }
 
+/* === Анимация кнопки выбора группы в модалке === */
+.group-selector-buttons { display: flex; gap: 8px; margin-bottom: 8px; }
+
+.group-btn {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid #444;
+    background: #2a2a2a;
+    color: #eee;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.group-btn:active { transform: scale(0.97); }
+.group-btn:hover { background: #333; border-color: #666; }
+
+.group-btn .arrow {
+    display: inline-block;
+    transition: transform 0.25s ease;
+}
+
+.group-btn.is-open .arrow { transform: rotate(180deg); }
+
+.group-btn-create { background: #1e3a5f; border-color: #2d5a8a; }
+.group-btn-create:hover { background: #2d5a8a; }
+
+.group-selector-list {
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: #1e1e1e;
+    margin-bottom: 0;
+    padding: 0 4px;
+    transition: max-height 0.25s ease-out, opacity 0.2s ease-out, padding 0.25s ease-out, border-color 0.25s ease-out, margin 0.25s ease-out;
+}
+
+.group-selector-list.is-open {
+    max-height: 200px;
+    opacity: 1;
+    border-color: #444;
+    padding: 4px;
+    margin-bottom: 8px;
+    overflow-y: auto;
+}
+
+.group-checkbox-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; cursor: pointer; border-radius: 4px; transition: background 0.1s; }
+.group-checkbox-item:hover { background: #2a2a2a; }
+.group-checkbox-item input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
+
+.selected-groups-display {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-height: 28px;
+    align-items: center;
+}
+
+.selected-group-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px 4px 10px;
+    background: #2d5a8a;
+    color: #fff;
+    border-radius: 10px;
+    font-size: 12px;
+    line-height: 1;
+    margin 2px 0;
+}
+
+.chip-remove {
+    display: inline-flex;
+    align-items: center;
+    width: 14px;
+    min-height: auto;
+    height: auto;
+    padding: 0 2.9px;
+    margin-left: 2px;
+    background: none;
+    border: none;
+    border-radius: 50%;
+    color: #fff;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: bold;
+    line-height: 1;
+    opacity: 0.8;
+    transition: background 0.15s, opacity 0.15s;
+}
+
+.chip-remove:hover { background: rgba(255, 255, 255, 0.3); opacity: 1; }
+
+/* === Анимация выпадающего списка фильтров === */
 .group-filter-dropdown { position: relative; display: inline-block; }
+
 .group-filter-btn {
     padding: 8px 16px;
     background: #2a2a2a;
@@ -268,38 +370,76 @@ button.danger { background: rgba(160,50,50,.55); }
     display: flex;
     align-items: center;
     gap: 8px;
+    transition: background 0.15s, border-color 0.15s;
 }
+
 .group-filter-btn:hover { background: #333; border-color: #666; }
-.group-filter-clear { background: none; border: none; color: #888; cursor: pointer; font-size: 16px; padding: 0 4px; margin-left: 4px; }
-.group-filter-clear:hover { color: #fff; }
+
+.group-filter-arrow {
+    font-size: 10px;
+    transition: transform 0.25s ease;
+}
+
+.group-filter-btn.is-open .group-filter-arrow { transform: rotate(180deg); }
+
+.group-filter-clear {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 0 4px;
+    margin-left: 4px;
+    line-height: 1;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s;
+}
+
+.group-filter-clear:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
 
 .group-filter-list {
     position: absolute;
-    top: 100%;
+    top: calc(100% + 4px);
     left: 0;
-    margin-top: 4px;
     min-width: 200px;
-    max-height: 300px;
-    overflow-y: auto;
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
     background: #1e1e1e;
     border: 1px solid #444;
     border-radius: 6px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     z-index: 1000;
+    transition: max-height 0.25s ease-out, opacity 0.2s ease-out, padding 0.25s ease-out;
+    padding: 0 4px;
 }
-.group-filter-list[hidden] { display: none; }
+
+.group-filter-list.is-open {
+    max-height: 300px;
+    opacity: 1;
+    padding: 4px;
+    overflow-y: auto;
+}
 
 .group-filter-item {
     display: block;
     width: 100%;
-    padding: 10px 16px;
+    padding: 8px 12px;
     background: none;
     border: none;
+    border-radius: 4px;
     color: #eee;
     text-align: left;
     cursor: pointer;
     font-size: 13px;
+    transition: background 0.1s;
 }
+
 .group-filter-item:hover { background: #2a2a2a; }
 .group-filter-item.active { background: #2d5a8a; color: #fff; }
 
@@ -322,12 +462,7 @@ button.danger { background: rgba(160,50,50,.55); }
 .playbook-actions { display: flex; flex: 0 0 auto; gap: 8px; align-items: center; justify-content: flex-end; white-space: nowrap; }
 .playbook-actions button { min-height: 34px; box-sizing: border-box; padding: 7px 11px; }
 
-.playbook-roles {
-    margin-top: 12px;
-    padding: 12px;
-    background: #1a1a1a;
-    border-radius: 6px;
-}
+.playbook-roles { margin-top: 12px; padding: 12px; background: #1a1a1a; border-radius: 6px; }
 .playbook-roles[hidden] { display: none; }
 .playbook-roles:not([hidden]) { animation: panelReveal 220ms ease-out both; }
 
@@ -487,80 +622,4 @@ button.danger { background: rgba(160,50,50,.55); }
     .nodes-section-head .node-toolbar button { flex: 0 0 auto; }
     .playbooks-panel .btn-row.compact button { width: 210px; min-width: 210px; max-width: 210px; flex-basis: 210px; }
     #host_select_toggle { width: 190px; min-width: 190px; max-width: 190px; }
-}
-
-.group-selector-buttons { display: flex; gap: 8px; margin-bottom: 8px; }
-.group-btn { flex: 1; padding: 8px 12px; border: 1px solid #444; background: #2a2a2a; color: #eee; border-radius: 6px; cursor: pointer; font-size: 13px; transition: background 0.15s, border-color 0.15s; }
-.group-btn:hover { background: #333; border-color: #666; }
-.group-btn-create { background: #1e3a5f; border-color: #2d5a8a; }
-.group-btn-create:hover { background: #2d5a8a; }
-.group-selector-list { max-height: 200px; overflow-y: auto; border: 1px solid #444; border-radius: 6px; background: #1e1e1e; margin-bottom: 8px; padding: 4px; }
-.group-checkbox-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; cursor: pointer; border-radius: 4px; transition: background 0.1s; }
-.group-checkbox-item:hover { background: #2a2a2a; }
-.group-checkbox-item input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
-
-.selected-groups-display {
-    display: flex;
-    min-height: 10px;
-    gap: 10px;
-    align-items: center;
-    flex-wrap: wrap;
-    padding: 4px 0;
-    flex-wrap: wrap;
-}
-
-.selected-group-chip {
-    padding: 3px 7px 3px 9px;
-    font-size: 12px;
-    line-height: 1.1;
-    background: #2d5a8a;
-    color: #fff;
-    align-items: center;
-    border-radius: 10px;
-    transition: opacity 0.15s;
-    gap: 6px;
-    margin: 5px 0;
-}
-
-.chip-remove {
-    display: inline-flex;
-    align-items: center;
-    background: none;
-    border: none;
-    color: #fff;
-    cursor: pointer;
-    font-size: 14px;
-    padding: 0 3px;
-    line-height: 1;
-    opacity: 0.5;
-    transition: opacity 0.15s;
-    border-radius: 8px;
-    min-height: auto;
-    height: auto;
-}
-
-.chip-remove:hover {
-    opacity: 1;
-}
-
-#add_node_modal .modal-card {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    max-height: min(760px, calc(100vh - 40px));
-}
-
-#add_node_modal .modal-body {
-    flex: 1;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-}
-
-#add_node_modal #new_node_fields {
-    flex: 1;
-    overflow-y: auto;
-    max-height: none;
-    min-height: 100px;
 }
