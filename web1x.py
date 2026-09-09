@@ -4,7 +4,6 @@ import concurrent.futures
 import json
 import os
 import re
-import socket
 import subprocess
 import threading
 import time
@@ -19,6 +18,7 @@ PUBLIC_DIR = os.path.join(BASE_DIR, "public")
 PROJECTS_ROOT = os.environ.get("ANSIBLE_PROJECTS_ROOT", "/opt/home/projects")
 
 LOG = []
+LOG_OFFSET = 0  # absolute index of LOG[0]; grows as old entries are trimmed
 LOG_LOCK = threading.Lock()
 PROCESSES = []
 PROC_LOCK = threading.Lock()
@@ -96,9 +96,13 @@ def roles_dir(project, obj):
     return os.path.join(directory, "roles") if directory else None
 
 def log(message):
+    global LOG_OFFSET
     with LOG_LOCK:
         LOG.append(f"[{datetime.now():%H:%M:%S}] {message}")
-        del LOG[:-1000]
+        if len(LOG) > 1000:
+            trimmed = len(LOG) - 1000
+            del LOG[:trimmed]
+            LOG_OFFSET += trimmed
 
 def load_inventory(project, obj):
     file_paths = paths(project, obj)
@@ -185,9 +189,7 @@ def scalar(value):
         return value
 
 def _hosts_section_bounds(lines):
-    match_info = next(((index, len(line) - len(line.lstrip(" "))) 
-                       for index, line in enumerate(lines) 
-                       if re.match(r"^ *hosts:\s*(?:#.*)?$", line)), None)
+    match_info = next(((index, len(line) - len(line.lstrip(" "))) for index, line in enumerate(lines) if re.match(r"^ *hosts:\s*(?:#.*)?$", line)), None)
     if match_info is None:
         return None, None, None
     hosts_index, indent = match_info
@@ -204,8 +206,7 @@ def _hosts_section_bounds(lines):
 
 def _host_entry_indexes(lines, hosts_index, end_index, indent):
     entry_indent = indent + 2
-    return [index for index in range(hosts_index + 1, end_index) 
-            if re.match(rf"^ {{{entry_indent}}}\S.*?:\s*(?:#.*)?(?:\r?\n)?$", lines[index])]
+    return [index for index in range(hosts_index + 1, end_index) if re.match(rf"^ {{{entry_indent}}}\S.*?:\s*(?:#.*)?(?:\r?\n)?$", lines[index])]
 
 def _host_name_from_line(line, indent):
     match = re.match(rf"^ {{{indent}}}(\S.*?):\s*(?:#.*)?(?:\r?\n)?$", line.rstrip("\r\n"))
@@ -245,54 +246,35 @@ def _group_hosts_bounds(lines, group_name):
 
 def _group_entry_indexes(lines, hosts_index, end_index, hosts_indent):
     entry_indent = hosts_indent + 2
-    return [index for index in range(hosts_index + 1, end_index) 
-            if re.match(rf"^ {{{entry_indent}}}\S.*?:\s*(?:#.*)?(?:\r?\n)?$", lines[index].rstrip("\r\n"))]
+    return [index for index in range(hosts_index + 1, end_index) if re.match(rf"^ {{{entry_indent}}}\S.*?:\s*(?:#.*)?(?:\r?\n)?$", lines[index].rstrip("\r\n"))]
 
 def _insert_host_into_group(path, group_name, name):
-    """Добавляет хост в группу. Если группы нет — создаёт её."""
     if not group_name:
         return
-    
     raw = read(path)
     lines = raw.splitlines(keepends=True)
     hosts_index, end_index, hosts_indent = _group_hosts_bounds(lines, group_name)
     newline = "\r\n" if "\r\n" in raw else "\n"
-    
     if hosts_index is None:
-        # Группа не найдена — создаём её в конце файла
         if lines and lines[-1].strip():
             lines.append(newline)
-        group_block = f"{group_name}:{newline}  hosts:{newline}    {name}:{newline}"
-        lines.append(group_block)
+        lines.append(f"{group_name}:{newline}  hosts:{newline}    {name}:{newline}")
         lines.append(newline)
         write(path, "".join(lines))
         return
-    
-    # Группа существует — добавляем хост
     entry_indexes = _group_entry_indexes(lines, hosts_index, end_index, hosts_indent)
     entry_indent = hosts_indent + 2
-    
     if entry_indexes:
-        # Вставляем СРАЗУ ПОСЛЕ последнего хоста (без пропуска пустых строк!)
-        last_host_index = entry_indexes[-1]
-        insert_at = last_host_index + 1
-        
-        # Проверяем, есть ли уже пустая строка после последнего хоста
-        has_blank_after = (insert_at < end_index and not lines[insert_at].strip())
-        
-        # Формируем строку: имя хоста + перенос
+        insert_at = entry_indexes[-1] + 1
+        has_blank_after = insert_at < end_index and not lines[insert_at].strip()
         host_line = f"{' ' * entry_indent}{name}:{newline}"
-        
-        # Если после последнего хоста нет пустой строки, добавляем её ПОСЛЕ нового хоста
         if not has_blank_after:
             host_line += newline
     else:
-        # Первый хост в группе
         insert_at = hosts_index + 1
         while insert_at < end_index and not lines[insert_at].strip():
             insert_at += 1
         host_line = f"{' ' * entry_indent}{name}:{newline}"
-        
     lines.insert(insert_at, host_line)
     write(path, "".join(lines))
 
@@ -311,14 +293,10 @@ def _remove_host_from_group(path, group_name, name):
     write(path, "".join(lines))
 
 def _cleanup_empty_groups(path):
-    """Удаляет группы, в которых нет хостов."""
     raw = read(path)
     if not raw.strip():
         return
-    
     lines = raw.splitlines(keepends=True)
-    
-    # Собираем информацию о всех группах
     groups_info = []
     i = 0
     while i < len(lines):
@@ -328,12 +306,10 @@ def _cleanup_empty_groups(path):
             if group_name == "all":
                 i += 1
                 continue
-            
             group_start = i
             group_indent = 0
             has_hosts = False
             group_end = len(lines)
-            
             j = i + 1
             while j < len(lines):
                 next_stripped = lines[j].rstrip("\r\n")
@@ -345,7 +321,6 @@ def _cleanup_empty_groups(path):
                     group_end = j
                     break
                 if next_indent == group_indent + 2 and next_stripped.strip() == "hosts:":
-                    # Проверяем, есть ли хосты
                     k = j + 1
                     while k < len(lines):
                         k_stripped = lines[k].rstrip("\r\n")
@@ -360,30 +335,19 @@ def _cleanup_empty_groups(path):
                             break
                         k += 1
                 j += 1
-            
-            groups_info.append({
-                "name": group_name,
-                "start": group_start,
-                "end": group_end,
-                "has_hosts": has_hosts
-            })
+            groups_info.append({"name": group_name, "start": group_start, "end": group_end, "has_hosts": has_hosts})
             i = group_end
         else:
             i += 1
-    
-    # Удаляем пустые группы (в обратном порядке, чтобы индексы не сдвигались)
     for group in reversed(groups_info):
         if not group["has_hosts"]:
             start = group["start"]
             end = group["end"]
-            # Удаляем также пустые строки перед группой
             while start > 0 and not lines[start - 1].strip():
                 start -= 1
-            # Удаляем пустые строки после группы
             while end < len(lines) and not lines[end].strip():
                 end += 1
             del lines[start:end]
-    
     write(path, "".join(lines))
 
 def add_host(project, obj, name, values, groups=None):
@@ -396,10 +360,8 @@ def add_host(project, obj, name, values, groups=None):
         raise ValueError("Имя узла не указано")
     if name in hosts:
         raise ValueError("Узел уже существует")
-
     normalized_values = {key: scalar(value) for key, value in values.items()}
     hosts[name] = normalized_values
-
     raw = read(file_paths["hosts"])
     lines = raw.splitlines(keepends=True)
     hosts_index, end_index, hosts_indent = _hosts_section_bounds(lines)
@@ -421,7 +383,6 @@ def add_host(project, obj, name, values, groups=None):
         block = _host_yaml_block(name, normalized_values, newline, hosts_indent + 2)
         lines[insert_at:insert_at] = [prefix + block]
         write(file_paths["hosts"], "".join(lines))
-
     for group in (groups or []):
         if group:
             _insert_host_into_group(file_paths["hosts"], group, name)
@@ -435,7 +396,6 @@ def delete_host(project, obj, name):
     if name not in hosts:
         raise ValueError("Узел не найден")
     hosts.pop(name, None)
-
     raw = read(file_paths["hosts"])
     lines = raw.splitlines(keepends=True)
     hosts_index, end_index, hosts_indent = _hosts_section_bounds(lines)
@@ -446,7 +406,6 @@ def delete_host(project, obj, name):
             next_index = next((index for index in entry_indexes if index > target_index), end_index)
             del lines[target_index:next_index]
             write(file_paths["hosts"], "".join(lines))
-
     for group in inventory_groups(project, obj):
         _remove_host_from_group(file_paths["hosts"], group["name"], name)
 
@@ -460,15 +419,12 @@ def save_host(project, obj, old_name, new_name, values):
         raise ValueError("Узел не найден")
     if new_name != old_name and new_name in hosts:
         raise ValueError("Узел с таким именем уже существует")
-
     updated = dict(hosts[old_name]) if isinstance(hosts[old_name], dict) else {}
     for key, value in values.items():
         updated[key] = scalar(value)
-
     raw = read(file_paths["hosts"])
     lines = raw.splitlines(keepends=True)
     hosts_index, end_index, hosts_indent = _hosts_section_bounds(lines)
-    
     if hosts_index is not None:
         entry_indexes = _host_entry_indexes(lines, hosts_index, end_index, hosts_indent)
         target_index = next((index for index in entry_indexes if _host_name_from_line(lines[index], hosts_indent + 2) == old_name), None)
@@ -492,7 +448,6 @@ def save_host(project, obj, old_name, new_name, values):
         hosts.pop(old_name)
         hosts[new_name] = updated
         save_hosts(file_paths["hosts"], data)
-
     if new_name != old_name:
         for group in inventory_groups(project, obj):
             if old_name in group["hosts"]:
@@ -505,11 +460,7 @@ def get_playbooks(project, obj):
     if not directory or not os.path.isdir(directory):
         return []
     excluded = {"hosts.yml", "hosts.yaml", "inventory.yml", "defaults.yml", "defaults.yaml", "ansible.cfg"}
-    return [
-        {"name": name, "path": os.path.join(directory, name), "type": "playbook"}
-        for name in sorted(os.listdir(directory))
-        if os.path.isfile(os.path.join(directory, name)) and name.lower().endswith((".yml", ".yaml")) and name not in excluded
-    ]
+    return [{"name": name, "path": os.path.join(directory, name), "type": "playbook"} for name in sorted(os.listdir(directory)) if os.path.isfile(os.path.join(directory, name)) and name.lower().endswith((".yml", ".yaml")) and name not in excluded]
 
 def playbook_roles(project, obj, playbook_name):
     file_paths = paths(project, obj)
@@ -654,7 +605,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path); query = parse_qs(url.query)
         project = query.get("project", [""])[0]; obj = query.get("object", [""])[0]
-        static = {"/main": "main.html", "/hosts_info": "hosts_info.html", "/editor": "editor.html", "/style.css": "style.css", "/common.js": "common.js", "/main.js": "main.js", "/hosts_info.js": "editor.js", "/5x-fixes.css": "5x-fixes.css", "/5x-fixes.js": "5x-fixes.js", "/3x-fixes.css": "3x-fixes.css", "/3x-fixes.js": "3x-fixes.js", "/status-fix.js": "status-fix.js"}
+        static = {"/main": "main.html", "/hosts_info": "hosts_info.html", "/editor": "editor.html", "/style.css": "style.css", "/common.js": "common.js", "/main.js": "main.js", "/hosts_info.js": "hosts_info.js", "/editor.js": "editor.js"}
         if url.path in static:
             filename = static[url.path]
             content_type = "text/html; charset=utf-8" if filename.endswith(".html") else "text/css; charset=utf-8" if filename.endswith(".css") else "application/javascript; charset=utf-8"
@@ -673,7 +624,10 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/log_new":
             try: start = int(query.get("start", ["0"])[0])
             except ValueError: start = 0
-            with LOG_LOCK: lines = LOG[start:]; next_index = len(LOG)
+            with LOG_LOCK:
+                local_start = max(0, start - LOG_OFFSET)
+                lines = LOG[local_start:]
+                next_index = LOG_OFFSET + len(LOG)
             self.json({"lines": lines, "next": next_index}); return
         if url.path == "/playbook":
             name = safe(query.get("name", [""])[0]); file_paths = paths(project, obj)
@@ -716,7 +670,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.json({"ok": False, "error": "Файл hosts.yml не может быть пустым"}, 400)
                     return
                 file_paths = paths(project, obj)
-                if file_paths: 
+                if file_paths:
                     write(file_paths["hosts"], hosts_content)
                     write(file_paths["defaults"], data.get("defaults", ""))
                 self.json({"ok": True}); return

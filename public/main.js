@@ -29,13 +29,8 @@ function api(path, body) {
     });
 }
 
-function selectedHosts() {
-    return [...document.querySelectorAll('.node-check:checked')].map((item) => item.value);
-}
-
-function selectedPlaybooks() {
-    return [...document.querySelectorAll('.pb:checked')].map((item) => item.value);
-}
+function selectedHosts() { return [...document.querySelectorAll('.node-check:checked')].map((item) => item.value); }
+function selectedPlaybooks() { return [...document.querySelectorAll('.pb:checked')].map((item) => item.value); }
 
 function updateHostSelectionButton() {
     const button = document.getElementById('host_select_toggle');
@@ -57,13 +52,8 @@ function toggleHostSelection() {
     updateHostSelectionButton();
 }
 
-function selectPB(value) {
-    document.querySelectorAll('.pb').forEach((item) => item.checked = value);
-}
-
-function templateLabel(node) {
-    return node.template || node.node_type || 'Узел';
-}
+function selectPB(value) { document.querySelectorAll('.pb').forEach((item) => item.checked = value); }
+function templateLabel(node) { return node.template || node.node_type || 'Узел'; }
 
 function renderNode(node) {
     const hasStatus = Object.prototype.hasOwnProperty.call(DATA.status || {}, node.hostname);
@@ -72,16 +62,9 @@ function renderNode(node) {
     const id = `node-${encodeURIComponent(node.hostname)}`;
     let state, statusClass;
 
-    if (!hasStatus) {
-        state = '<span class="node-status pending"><span class="status-dot status-pending"></span>проверка</span>';
-        statusClass = 'node-pending';
-    } else if (available) {
-        state = '<span class="node-status available"><span class="status-dot status-up"></span>доступен</span>';
-        statusClass = 'node-available';
-    } else {
-        state = '<span class="node-status unavailable"><span class="status-dot status-down"></span>недоступен</span>';
-        statusClass = 'node-unavailable';
-    }
+    if (!hasStatus) { state = '<span class="node-status pending"><span class="status-dot status-pending"></span>проверка</span>'; statusClass = 'node-pending'; } 
+    else if (available) { state = '<span class="node-status available"><span class="status-dot status-up"></span>доступен</span>'; statusClass = 'node-available'; } 
+    else { state = '<span class="node-status unavailable"><span class="status-dot status-down"></span>недоступен</span>'; statusClass = 'node-unavailable'; }
 
     const nameField = `<div class="param-name" title="Имя узла">Имя узла</div><input class="param-value" data-key="hostname" value="${esc(node.hostname)}" readonly>`;
     const fields = params.length
@@ -126,11 +109,7 @@ function animatePanel(body, open) {
     }
 }
 
-function toggleNodeFromHead(event, card) {
-    if (event.target.closest('button, input')) return;
-    toggleNode(card);
-}
-
+function toggleNodeFromHead(event, card) { if (event.target.closest('button, input')) return; toggleNode(card); }
 function toggleNode(card) {
     if (card.dataset.animating === '1') return;
     const body = card.querySelector('.host-body');
@@ -156,10 +135,7 @@ function editNode(event, hostname) {
     card.querySelector('.param-value')?.focus();
 }
 
-function cancelNodeEdit(event) {
-    event.stopPropagation();
-    loadMain();
-}
+function cancelNodeEdit(event) { event.stopPropagation(); loadMain(); }
 
 function saveNode(event, hostname) {
     event.stopPropagation();
@@ -171,11 +147,8 @@ function saveNode(event, hostname) {
         newHostname = hostnameInput.value.trim();
         if (!newHostname) return alert('Имя узла не может быть пустым');
     }
-    card.querySelectorAll('[data-key]').forEach((input) => {
-        if (input.dataset.key !== 'hostname') values[input.dataset.key] = input.value;
-    });
-    api('/update_host', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname, new_hostname: newHostname, values })
-        .then(loadMain).catch((error) => alert(error.message));
+    card.querySelectorAll('[data-key]').forEach((input) => { if (input.dataset.key !== 'hostname') values[input.dataset.key] = input.value; });
+    api('/update_host', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname, new_hostname: newHostname, values }).then(loadMain).catch((error) => alert(error.message));
 }
 
 function deleteSelectedNodes() {
@@ -194,11 +167,10 @@ function openAddNodeModal() {
     renderTemplateTabs();
     updateSelectedGroupsDisplay();
     const list = document.getElementById('group_selector_list');
-    if (list) list.hidden = true;
+    if (list) list.classList.remove('is-open');
     setTimeout(() => document.getElementById('new_node_name').focus(), 0);
 }
 
-// Явно назначаем на window, чтобы inline-скрипт в main.html мог его перехватить
 window.closeAddNodeModal = function() {
     document.getElementById('add_node_modal').hidden = true;
     closeCreateGroupModal();
@@ -219,11 +191,7 @@ function renderTemplateTabs() {
     renderTemplateFields();
 }
 
-function selectTemplate(name) {
-    NEW_TEMPLATE = name;
-    renderTemplateTabs();
-}
-
+function selectTemplate(name) { NEW_TEMPLATE = name; renderTemplateTabs(); }
 function renderTemplateFields() {
     const keys = (DATA.template_schemas || {})[NEW_TEMPLATE] || [];
     document.getElementById('new_node_fields').innerHTML = keys.map((key) => `<label class="new-node-field"><span>${esc(key)}</span><input data-new-key="${esc(key)}" type="text" placeholder="Значение"></label>`).join('');
@@ -236,34 +204,54 @@ function createNode() {
     if (!keys.length) return alert('Выберите шаблон параметров.');
     const values = {};
     document.querySelectorAll('[data-new-key]').forEach((input) => values[input.dataset.newKey] = input.value);
-    
     api('/add_host', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname: name, values, groups: SELECTED_GROUPS })
-        .then(() => { window.closeAddNodeModal(); loadMain(); })
-        .catch((error) => alert(error.message));
+        .then(() => { window.closeAddNodeModal(); loadMain(); }).catch((error) => alert(error.message));
 }
 
+// === Плавный фильтр групп ===
 function renderGroups(groups) {
     const element = document.getElementById('groups');
     if (!groups?.length) {
         element.innerHTML = '<span class="muted">Групп нет</span>';
         return;
     }
+    const wasOpen = element.querySelector('.group-filter-list')?.classList.contains('is-open') || false;
     element.innerHTML = `
         <div class="group-filter-dropdown">
-            <button type="button" class="group-filter-btn" onclick="event.stopPropagation(); toggleGroupFilter()">
-                ${ACTIVE_GROUP ? `<b>Группа:</b> ${esc(ACTIVE_GROUP.name)}` : 'Фильтр по группам ▾'}
-                ${ACTIVE_GROUP ? '<button type="button" class="group-filter-clear" onclick="event.stopPropagation(); clearGroupFilter()">×</button>' : ''}
+            <button type="button" class="group-filter-btn" id="group-filter-btn">
+                ${ACTIVE_GROUP ? `<b>Группа:</b> ${esc(ACTIVE_GROUP.name)}` : 'Фильтр по группам'}
+                <span class="group-filter-arrow">▾</span>
+                ${ACTIVE_GROUP ? '<button type="button" class="group-filter-clear" id="group-filter-clear" title="Сбросить фильтр">×</button>' : ''}
             </button>
-            <div class="group-filter-list" id="group-filter-list" hidden>
-                ${groups.map(group => `<button type="button" class="group-filter-item ${ACTIVE_GROUP?.name === group.name ? 'active' : ''}" onclick="event.stopPropagation(); selectGroupFilter('${esc(group.name)}')">${esc(group.name)}</button>`).join('')}
+            <div class="group-filter-list ${wasOpen ? 'is-open' : ''}" id="group-filter-list">
+                ${groups.map(group => `<button type="button" class="group-filter-item ${ACTIVE_GROUP?.name === group.name ? 'active' : ''}" data-group-name="${esc(group.name)}">${esc(group.name)}</button>`).join('')}
             </div>
         </div>
     `;
 }
 
+// Делегирование событий для надежности
+document.getElementById('groups').addEventListener('click', (e) => {
+    const btn = e.target.closest('#group-filter-btn');
+    if (btn) { e.stopPropagation(); toggleGroupFilter(); return; }
+    const clearBtn = e.target.closest('#group-filter-clear');
+    if (clearBtn) { e.stopPropagation(); clearGroupFilter(); return; }
+    const item = e.target.closest('.group-filter-item');
+    if (item) { e.stopPropagation(); selectGroupFilter(item.dataset.groupName); }
+});
+
 function toggleGroupFilter() {
     const list = document.getElementById('group-filter-list');
-    if (list) list.hidden = !list.hidden;
+    const btn = document.getElementById('group-filter-btn');
+    if (!list) return;
+    const isOpen = list.classList.contains('is-open');
+    if (isOpen) {
+        list.classList.remove('is-open');
+        if (btn) btn.querySelector('.group-filter-arrow').textContent = '▾';
+    } else {
+        list.classList.add('is-open');
+        if (btn) btn.querySelector('.group-filter-arrow').textContent = '▴';
+    }
 }
 
 function selectGroupFilter(name) {
@@ -279,10 +267,20 @@ function clearGroupFilter() {
     renderNodes();
 }
 
+// === Анимированный выбор групп в модалке ===
 function toggleGroupSelector() {
     const list = document.getElementById('group_selector_list');
-    list.hidden = !list.hidden;
-    if (!list.hidden) renderGroupCheckboxes();
+    const btn = document.querySelector('.group-selector-buttons .group-btn');
+    if (!list) return;
+    const isOpen = list.classList.contains('is-open');
+    if (isOpen) {
+        list.classList.remove('is-open');
+        if (btn) btn.classList.remove('is-open');
+    } else {
+        list.classList.add('is-open');
+        if (btn) btn.classList.add('is-open');
+        renderGroupCheckboxes();
+    }
 }
 
 function renderGroupCheckboxes() {
@@ -311,7 +309,7 @@ function removeGroupFromSelection(name) {
     SELECTED_GROUPS = SELECTED_GROUPS.filter(g => g !== name);
     updateSelectedGroupsDisplay();
     const list = document.getElementById('group_selector_list');
-    if (list && !list.hidden) renderGroupCheckboxes();
+    if (list && list.classList.contains('is-open')) renderGroupCheckboxes();
 }
 
 function openCreateGroupModal() {
@@ -339,10 +337,7 @@ function openCreateGroupModal() {
     setTimeout(() => document.getElementById('new_group_name').focus(), 0);
 }
 
-function closeCreateGroupModal() {
-    const modal = document.getElementById('create_group_modal');
-    if (modal) modal.hidden = true;
-}
+function closeCreateGroupModal() { const modal = document.getElementById('create_group_modal'); if (modal) modal.hidden = true; }
 
 function confirmCreateGroup() {
     const name = document.getElementById('new_group_name').value.trim();
@@ -350,19 +345,15 @@ function confirmCreateGroup() {
     if (!/^[a-zA-Z0-9_-]+$/.test(name)) return alert('Название группы может содержать только буквы, цифры, дефис и подчёркивание');
     const allGroups = [...new Set([...(DATA?.groups || []).map(g => g.name), ...NEW_GROUPS_CREATED])];
     if (allGroups.includes(name)) return alert('Группа с таким названием уже существует');
-    
     NEW_GROUPS_CREATED.push(name);
     SELECTED_GROUPS.push(name);
     closeCreateGroupModal();
     const list = document.getElementById('group_selector_list');
-    if (list && !list.hidden) renderGroupCheckboxes();
+    if (list && list.classList.contains('is-open')) renderGroupCheckboxes();
     updateSelectedGroupsDisplay();
 }
 
-function contextQuery(extra = '') {
-    const object = CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : '';
-    return `project=${encodeURIComponent(CURRENT_PROJECT)}${object}${extra}`;
-}
+function contextQuery(extra = '') { const object = CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''; return `project=${encodeURIComponent(CURRENT_PROJECT)}${object}${extra}`; }
 
 function editPlaybook(name) {
     const modal = document.getElementById('playbook_modal');
@@ -380,10 +371,7 @@ function editPlaybook(name) {
         .catch((error) => { editor.value = ''; alert(error.message); window.closePlaybookModal(); });
 }
 
-window.closePlaybookModal = function() {
-    document.getElementById('playbook_modal').hidden = true;
-    window.CURRENT_EDITING_PLAYBOOK = '';
-};
+window.closePlaybookModal = function() { document.getElementById('playbook_modal').hidden = true; window.CURRENT_EDITING_PLAYBOOK = ''; };
 
 function savePlaybookFromModal() {
     const name = window.CURRENT_EDITING_PLAYBOOK;
@@ -409,10 +397,7 @@ function fitPlaybookEditor() {
     card.style.width = `${Math.min(width + 42, window.innerWidth - 40)}px`;
 }
 
-function groupHosts(group) {
-    return new Set((group?.hosts || []).map((host) => typeof host === 'string' ? host : host?.hostname || host?.name));
-}
-
+function groupHosts(group) { return new Set((group?.hosts || []).map((host) => typeof host === 'string' ? host : host?.hostname || host?.name)); }
 function renderNodes() {
     const hosts = ACTIVE_GROUP ? (DATA.hosts || []).filter((node) => groupHosts(ACTIVE_GROUP).has(node.hostname)) : (DATA.hosts || []);
     document.getElementById('nodes').innerHTML = hosts.map(renderNode).join('') || '<div class="empty">Узлов нет</div>';
@@ -453,25 +438,6 @@ function renderPlaybooks(items) {
     `).join('');
 }
 
-function toggleRoleDir(button) {
-    const children = button.parentElement.querySelector('.role-children');
-    const open = !children.hidden;
-    children.hidden = open;
-    button.querySelector('.role-chevron').textContent = open ? '▸' : '▾';
-    if (open) return;
-    children.querySelectorAll('pre[data-readme-path]:not([data-loaded])').forEach((pre) => {
-        pre.dataset.loaded = '1';
-        fetch(`/role_file?${contextQuery(`&path=${encodeURIComponent(pre.dataset.readmePath)}`)}`)
-            .then((response) => { if (!response.ok) throw Error('Не удалось загрузить README.md'); return response.json(); })
-            .then((data) => {
-                pre.textContent = data.content;
-                const panel = pre.closest('.playbook-roles');
-                if (panel) requestAnimationFrame(() => { panel.style.maxHeight = panel.scrollHeight + 'px'; });
-            })
-            .catch((error) => pre.textContent = error.message);
-    });
-}
-
 function openRoleFile(path) {
     fetch(`/role_file?${contextQuery(`&path=${encodeURIComponent(path)}`)}`)
         .then((response) => { if (!response.ok) throw Error('Не удалось открыть файл'); return response.json(); })
@@ -497,9 +463,7 @@ function runSelected() {
     api('/run', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, playbooks, hosts }).catch((error) => alert(error.message));
 }
 
-function stopExecution() {
-    api('/stop', {}).finally(() => { document.getElementById('run_state').textContent = 'Остановлено'; });
-}
+function stopExecution() { api('/stop', {}).finally(() => { document.getElementById('run_state').textContent = 'Остановлено'; }); }
 
 function showConfirmation(title, text, action, actionLabel = 'Запустить', actionClass = 'primary', kicker = 'Подтверждение запуска') {
     let modal = document.getElementById('run_confirm_modal');
@@ -564,7 +528,6 @@ function updateNodeStatuses() {
                 if (!hasStatus) card.classList.add('node-pending');
                 else if (isUp) card.classList.add('node-available');
                 else card.classList.add('node-unavailable');
-                
                 const statusEl = card.querySelector('.node-status');
                 if (statusEl) {
                     if (!hasStatus) { statusEl.className = 'node-status pending'; statusEl.innerHTML = '<span class="status-dot status-pending"></span>проверка'; }
