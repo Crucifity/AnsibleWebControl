@@ -166,8 +166,25 @@ def inventory_groups(project, obj):
                 groups[name] = sorted(collect(value))
     return [{"name": name, "hosts": hosts} for name, hosts in groups.items()]
 
+class InventoryDumper(yaml.SafeDumper):
+    pass
+
+def _represent_none_as_empty(dumper, value):
+    return dumper.represent_scalar("tag:yaml.org,2002:null", "")
+
+InventoryDumper.add_representer(type(None), _represent_none_as_empty)
+
 def save_hosts(path, data):
-    write(path, yaml.safe_dump(data, allow_unicode=True, sort_keys=False, default_flow_style=False))
+    dumped = yaml.dump(data, Dumper=InventoryDumper, allow_unicode=True, sort_keys=False, default_flow_style=False)
+    lines = dumped.splitlines(keepends=True)
+    if len(lines) > 1:
+        formatted = []
+        for index, line in enumerate(lines):
+            if index and line and not line.startswith((" ", "\t")) and formatted and formatted[-1].strip():
+                formatted.append("\n")
+            formatted.append(line)
+        dumped = "".join(formatted)
+    write(path, dumped)
 
 def scalar(value):
     if not isinstance(value, str):
@@ -260,9 +277,6 @@ def _insert_host_into_group(path, group_name, name):
     entry_indent = hosts_indent + 2
     if entry_indexes:
         insert_at = entry_indexes[-1] + 1
-        while insert_at < end_index and not lines[insert_at].strip():
-            del lines[insert_at]
-            end_index -= 1
         lines.insert(insert_at, f"{' ' * entry_indent}{name}:{newline}")
     else:
         insert_at = hosts_index + 1
