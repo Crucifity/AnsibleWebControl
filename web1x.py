@@ -401,7 +401,9 @@ def add_host(project, obj, name, values, groups=None):
         newline = "\r\n" if "\r\n" in raw else "\n"
         entry_indexes = _host_entry_indexes(lines, hosts_index, end_index, hosts_indent)
         if entry_indexes:
-            insert_at = entry_indexes[-1] + 1
+            insert_at = end_index
+            while insert_at > hosts_index + 1 and not lines[insert_at - 1].strip():
+                insert_at -= 1
         else:
             insert_at = hosts_index + 1
         block = _host_yaml_block(name, normalized_values, newline, hosts_indent + 2)
