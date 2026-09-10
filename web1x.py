@@ -230,6 +230,12 @@ def _host_yaml_block(name, values, newline, indent):
         block = block.replace("\n", newline)
     return "".join(f"{' ' * indent}{line}" if line.strip() else line for line in block.splitlines(keepends=True))
 
+def _delete_host_block(lines, target_index, next_index):
+    delete_end = next_index
+    while delete_end > target_index + 1 and not lines[delete_end - 1].strip():
+        delete_end -= 1
+    del lines[target_index:delete_end]
+
 def _group_hosts_bounds(lines, group_name):
     escaped = re.escape(group_name)
     for group_index, line in enumerate(lines):
@@ -238,6 +244,7 @@ def _group_hosts_bounds(lines, group_name):
         if not match:
             continue
         group_indent = len(match.group(1))
+        hosts_index = None
         for index in range(group_index + 1, len(lines)):
             current_stripped = lines[index].rstrip("\r\n")
             indent = len(current_stripped) - len(current_stripped.lstrip(" ")) if current_stripped else group_indent + 1
@@ -277,12 +284,9 @@ def _insert_host_into_group(path, group_name, name):
     entry_indent = hosts_indent + 2
     if entry_indexes:
         insert_at = entry_indexes[-1] + 1
-        lines.insert(insert_at, f"{' ' * entry_indent}{name}:{newline}")
     else:
         insert_at = hosts_index + 1
-        while insert_at < end_index and not lines[insert_at].strip():
-            insert_at += 1
-        lines.insert(insert_at, f"{' ' * entry_indent}{name}:{newline}")
+    lines.insert(insert_at, f"{' ' * entry_indent}{name}:{newline}")
     write(path, "".join(lines))
 
 def _remove_host_from_group(path, group_name, name):
@@ -296,7 +300,7 @@ def _remove_host_from_group(path, group_name, name):
     if target is None:
         return
     next_index = next((index for index in entry_indexes if index > target), end_index)
-    del lines[target:next_index]
+    _delete_host_block(lines, target, next_index)
     write(path, "".join(lines))
 
 def _group_is_empty(value):
@@ -397,13 +401,9 @@ def add_host(project, obj, name, values, groups=None):
         newline = "\r\n" if "\r\n" in raw else "\n"
         entry_indexes = _host_entry_indexes(lines, hosts_index, end_index, hosts_indent)
         if entry_indexes:
-            insert_at = end_index
-            while insert_at > hosts_index + 1 and not lines[insert_at - 1].strip():
-                insert_at -= 1
+            insert_at = entry_indexes[-1] + 1
         else:
             insert_at = hosts_index + 1
-            while insert_at < end_index and not lines[insert_at].strip():
-                insert_at += 1
         block = _host_yaml_block(name, normalized_values, newline, hosts_indent + 2)
         lines[insert_at:insert_at] = [block]
         write(file_paths["hosts"], "".join(lines))
@@ -428,7 +428,7 @@ def delete_host(project, obj, name):
         target_index = next((index for index in entry_indexes if _host_name_from_line(lines[index], hosts_indent + 2) == name), None)
         if target_index is not None:
             next_index = next((index for index in entry_indexes if index > target_index), end_index)
-            del lines[target_index:next_index]
+            _delete_host_block(lines, target_index, next_index)
             write(file_paths["hosts"], "".join(lines))
     for group in inventory_groups(project, obj):
         _remove_host_from_group(file_paths["hosts"], group["name"], name)
@@ -455,12 +455,10 @@ def save_host(project, obj, old_name, new_name, values):
         target_index = next((index for index in entry_indexes if _host_name_from_line(lines[index], hosts_indent + 2) == old_name), None)
         if target_index is not None:
             next_index = next((index for index in entry_indexes if index > target_index), end_index)
-            del lines[target_index:next_index]
+            _delete_host_block(lines, target_index, next_index)
             normalized_values = {key: scalar(value) for key, value in values.items()}
             newline = "\r\n" if "\r\n" in raw else "\n"
             insert_at = target_index
-            while insert_at < end_index and not lines[insert_at].strip():
-                insert_at += 1
             prefix = newline if (insert_at > hosts_index + 1 and lines[insert_at - 1].strip()) else ""
             block = _host_yaml_block(new_name, normalized_values, newline, hosts_indent + 2)
             lines[insert_at:insert_at] = [prefix + block]
