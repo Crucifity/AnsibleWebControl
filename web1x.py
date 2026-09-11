@@ -230,11 +230,26 @@ def _host_yaml_block(name, values, newline, indent):
         block = block.replace("\n", newline)
     return "".join(f"{' ' * indent}{line}" if line.strip() else line for line in block.splitlines(keepends=True))
 
+def _entries_use_blank_separator(lines, entry_indexes):
+    for index in entry_indexes[1:]:
+        if not lines[index - 1].strip():
+            return True
+    return False
+
 def _delete_host_block(lines, target_index, next_index):
-    delete_end = next_index
-    while delete_end > target_index + 1 and not lines[delete_end - 1].strip():
-        delete_end -= 1
-    del lines[target_index:delete_end]
+    entry_end = target_index + 1
+    while entry_end < next_index and lines[entry_end].strip():
+        entry_end += 1
+    has_pre_blank = target_index > 0 and not lines[target_index - 1].strip()
+    has_post_blank = entry_end < next_index
+    if has_pre_blank and has_post_blank:
+        # Разделители есть с обеих сторон удаляемого узла: оставляем только
+        # тот, что был перед ним, а сам блок вместе с "хвостовой" пустой
+        # строкой убираем целиком, иначе после соседних строк останется
+        # сразу два пустых промежутка.
+        del lines[target_index:next_index]
+    else:
+        del lines[target_index:entry_end]
 
 def _group_hosts_bounds(lines, group_name):
     escaped = re.escape(group_name)
@@ -310,21 +325,26 @@ def _group_is_empty(value):
     children = value.get("children")
     return not (isinstance(hosts, dict) and hosts) and not (isinstance(children, dict) and children)
 
-def _prune_empty_groups(value):
+def _prune_empty_groups(value, changed):
     if not isinstance(value, dict):
         return False
     children = value.get("children")
     if isinstance(children, dict):
         for name in list(children):
             child = children[name]
-            _prune_empty_groups(child)
+            _prune_empty_groups(child, changed)
             if _group_is_empty(child):
                 del children[name]
+                changed.append(True)
         if not children:
-            value.pop("children", None)
+            if "children" in value:
+                value.pop("children", None)
+                changed.append(True)
     hosts = value.get("hosts")
     if isinstance(hosts, dict) and not hosts:
-        value.pop("hosts", None)
+        if "hosts" in value:
+            value.pop("hosts", None)
+            changed.append(True)
     return _group_is_empty(value)
 
 def _cleanup_empty_groups(path):
@@ -338,23 +358,28 @@ def _cleanup_empty_groups(path):
         return
     if not isinstance(data, dict):
         return
+    changed = []
     for name in list(data):
         if name == "all":
             all_group = data.get(name)
             if isinstance(all_group, dict) and isinstance(all_group.get("children"), dict):
                 children = all_group["children"]
                 for child_name in list(children):
-                    _prune_empty_groups(children[child_name])
+                    _prune_empty_groups(children[child_name], changed)
                     if _group_is_empty(children[child_name]):
                         del children[child_name]
+                        changed.append(True)
                 if not children:
                     all_group.pop("children", None)
+                    changed.append(True)
             continue
         if isinstance(data[name], dict) and ("hosts" in data[name] or "children" in data[name]):
-            _prune_empty_groups(data[name])
+            _prune_empty_groups(data[name], changed)
             if _group_is_empty(data[name]):
                 del data[name]
-    save_hosts(path, data)
+                changed.append(True)
+    if changed:
+        save_hosts(path, data)
 
 def delete_group(project, obj, group_name):
     file_paths = paths(project, obj)
@@ -404,23 +429,22 @@ def add_host(project, obj, name, values, groups=None):
             insert_at = end_index
             while insert_at > hosts_index + 1 and not lines[insert_at - 1].strip():
                 insert_at -= 1
+            separator = [newline] if _entries_use_blank_separator(lines, entry_indexes) and lines[insert_at - 1].strip() else []
         else:
             insert_at = hosts_index + 1
+            separator = []
         block = _host_yaml_block(name, normalized_values, newline, hosts_indent + 2)
-        lines[insert_at:insert_at] = [block]
+        lines[insert_at:insert_at] = separator + [block]
         write(file_paths["hosts"], "".join(lines))
     for group in (groups or []):
         if group:
             _insert_host_into_group(file_paths["hosts"], group, name)
 
-def delete_host(project, obj, name):
-    file_paths = paths(project, obj)
-    if not file_paths:
-        raise ValueError("Объект не найден")
+def _delete_host_no_cleanup(project, obj, file_paths, name):
     data = load_inventory(project, obj)
     hosts = data.get("all", {}).get("hosts", {}) if isinstance(data, dict) else {}
     if name not in hosts:
-        raise ValueError("Узел не найден")
+        raise ValueError(f"Узел «{name}» не найден")
     hosts.pop(name, None)
     raw = read(file_paths["hosts"])
     lines = raw.splitlines(keepends=True)
@@ -434,7 +458,27 @@ def delete_host(project, obj, name):
             write(file_paths["hosts"], "".join(lines))
     for group in inventory_groups(project, obj):
         _remove_host_from_group(file_paths["hosts"], group["name"], name)
+
+def delete_host(project, obj, name):
+    file_paths = paths(project, obj)
+    if not file_paths:
+        raise ValueError("Объект не найден")
+    _delete_host_no_cleanup(project, obj, file_paths, name)
     _cleanup_empty_groups(file_paths["hosts"])
+
+def delete_hosts(project, obj, names):
+    file_paths = paths(project, obj)
+    if not file_paths:
+        raise ValueError("Объект не найден")
+    errors = []
+    for name in names:
+        try:
+            _delete_host_no_cleanup(project, obj, file_paths, name)
+        except ValueError as error:
+            errors.append(str(error))
+    _cleanup_empty_groups(file_paths["hosts"])
+    if errors:
+        raise ValueError("; ".join(errors))
 
 def save_host(project, obj, old_name, new_name, values):
     file_paths = paths(project, obj)
@@ -457,13 +501,17 @@ def save_host(project, obj, old_name, new_name, values):
         target_index = next((index for index in entry_indexes if _host_name_from_line(lines[index], hosts_indent + 2) == old_name), None)
         if target_index is not None:
             next_index = next((index for index in entry_indexes if index > target_index), end_index)
+            spaced = _entries_use_blank_separator(lines, entry_indexes)
             _delete_host_block(lines, target_index, next_index)
             normalized_values = {key: scalar(value) for key, value in values.items()}
             newline = "\r\n" if "\r\n" in raw else "\n"
             insert_at = target_index
             prefix = newline if (insert_at > hosts_index + 1 and lines[insert_at - 1].strip()) else ""
             block = _host_yaml_block(new_name, normalized_values, newline, hosts_indent + 2)
-            lines[insert_at:insert_at] = [prefix + block]
+            new_lines = [prefix + block]
+            if spaced and insert_at < len(lines) and lines[insert_at].strip():
+                new_lines.append(newline)
+            lines[insert_at:insert_at] = new_lines
             write(file_paths["hosts"], "".join(lines))
         else:
             hosts.pop(old_name)
@@ -478,6 +526,23 @@ def save_host(project, obj, old_name, new_name, values):
             if old_name in group["hosts"]:
                 _remove_host_from_group(file_paths["hosts"], group["name"], old_name)
                 _insert_host_into_group(file_paths["hosts"], group["name"], new_name)
+        _cleanup_empty_groups(file_paths["hosts"])
+
+def set_host_groups(project, obj, hostname, groups):
+    file_paths = paths(project, obj)
+    if not file_paths:
+        raise ValueError("Объект не найден")
+    if groups is None:
+        return
+    desired = {group for group in groups if group}
+    current = {group["name"] for group in inventory_groups(project, obj) if hostname in group["hosts"]}
+    to_add = desired - current
+    to_remove = current - desired
+    for group in to_add:
+        _insert_host_into_group(file_paths["hosts"], group, hostname)
+    for group in to_remove:
+        _remove_host_from_group(file_paths["hosts"], group, hostname)
+    if to_remove:
         _cleanup_empty_groups(file_paths["hosts"])
 
 def get_playbooks(project, obj):
@@ -552,22 +617,23 @@ def host_up(ip):
     except OSError:
         return False
 
+def _check_node(node):
+    return node["hostname"], host_up(node["ip"])
+
 def status_worker():
     global HOST_STATUS
-    while True:
-        statuses = {}
-        for project in get_projects():
-            for obj in (get_objects(project) or [None]):
-                key = obj or ""
-                nodes = parse_hosts(project, obj)
-                def check_node(node):
-                    return node["hostname"], host_up(node["ip"])
-                with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-                    results = dict(executor.map(check_node, nodes))
-                statuses.setdefault(project, {})[key] = results
-        with STATUS_LOCK:
-            HOST_STATUS = statuses
-        time.sleep(10)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+        while True:
+            statuses = {}
+            for project in get_projects():
+                for obj in (get_objects(project) or [None]):
+                    key = obj or ""
+                    nodes = parse_hosts(project, obj)
+                    results = dict(executor.map(_check_node, nodes))
+                    statuses.setdefault(project, {})[key] = results
+            with STATUS_LOCK:
+                HOST_STATUS = statuses
+            time.sleep(10)
 
 def status(project, obj):
     with STATUS_LOCK:
@@ -630,7 +696,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path); query = parse_qs(url.query)
         project = query.get("project", [""])[0]; obj = query.get("object", [""])[0]
-        static = {"/main": "main.html", "/hosts_info": "hosts_info.html", "/editor": "editor.html", "/style.css": "style.css", "/common.js": "common.js", "/main.js": "main.js", "/hosts_info.js": "hosts_info.js", "/editor.js": "editor.js"}
+        static = {"/main": "main.html", "/style.css": "style.css", "/common.js": "common.js", "/main.js": "main.js"}
         if url.path in static:
             filename = static[url.path]
             content_type = "text/html; charset=utf-8" if filename.endswith(".html") else "text/css; charset=utf-8" if filename.endswith(".css") else "application/javascript; charset=utf-8"
@@ -657,9 +723,6 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/playbook":
             name = safe(query.get("name", [""])[0]); file_paths = paths(project, obj)
             self.json({"name": name, "content": read(os.path.join(file_paths["object_dir"], name)) if file_paths else ""}); return
-        if url.path == "/files":
-            file_paths = paths(project, obj)
-            self.json({"hosts": read(file_paths["hosts"]) if file_paths else "", "defaults": read(file_paths["defaults"]) if file_paths else ""}); return
         self.send_error(404)
 
     def do_POST(self):
@@ -674,7 +737,11 @@ class Handler(BaseHTTPRequestHandler):
                 threading.Thread(target=run_autodeploy, args=(project, data.get("hosts", [])), daemon=True).start(); self.json({"ok": True}); return
             if self.path == "/stop": stop(); self.json({"ok": True}); return
             if self.path == "/update_host":
-                save_host(project, obj, data.get("hostname", ""), data.get("new_hostname", data.get("hostname", "")), data.get("values", {})); self.json({"ok": True}); return
+                new_hostname = data.get("new_hostname", data.get("hostname", ""))
+                save_host(project, obj, data.get("hostname", ""), new_hostname, data.get("values", {}))
+                if "groups" in data:
+                    set_host_groups(project, obj, new_hostname, data.get("groups", []))
+                self.json({"ok": True}); return
             if self.path == "/add_host":
                 groups = data.get("groups", [])
                 if not isinstance(groups, list):
@@ -691,15 +758,11 @@ class Handler(BaseHTTPRequestHandler):
                 file_paths = paths(project, obj)
                 if file_paths: write(os.path.join(file_paths["object_dir"], safe(data.get("name"))), data.get("content", ""))
                 self.json({"ok": True}); return
-            if self.path == "/save_files":
-                hosts_content = data.get("hosts", "")
-                if not hosts_content.strip():
-                    self.json({"ok": False, "error": "Файл hosts.yml не может быть пустым"}, 400)
-                    return
-                file_paths = paths(project, obj)
-                if file_paths:
-                    write(file_paths["hosts"], hosts_content)
-                    write(file_paths["defaults"], data.get("defaults", ""))
+            if self.path == "/delete_hosts":
+                names = data.get("hostnames", [])
+                if not isinstance(names, list):
+                    names = [names] if names else []
+                delete_hosts(project, obj, names)
                 self.json({"ok": True}); return
         except (OSError, ValueError) as error:
             self.json({"ok": False, "error": str(error)}, 500); return

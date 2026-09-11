@@ -52,8 +52,8 @@ function toggleHostSelection() {
     updateHostSelectionButton();
 }
 
-function selectPB(value) { document.querySelectorAll('.pb').forEach((item) => item.checked = value); }
 function templateLabel(node) { return node.template || node.node_type || 'Узел'; }
+function nodeGroupNames(hostname) { return (DATA?.groups || []).filter((group) => groupHosts(group).has(hostname)).map((group) => group.name); }
 
 function renderNode(node) {
     const hasStatus = Object.prototype.hasOwnProperty.call(DATA.status || {}, node.hostname);
@@ -71,6 +71,15 @@ function renderNode(node) {
         ? nameField + params.map(([key, value]) => `<div class="param-name" title="${esc(key)}">${esc(key)}</div><input class="param-value" data-key="${esc(key)}" value="${esc(value)}" readonly>`).join('')
         : nameField + '<div class="empty" style="grid-column: 1 / -1;">Дополнительных параметров нет</div>';
 
+    const memberOf = new Set(nodeGroupNames(node.hostname));
+    const allGroups = DATA?.groups || [];
+    const groupsField = allGroups.length
+        ? `<div class="node-groups-field">
+            <div class="node-groups-label">Группы</div>
+            <div class="node-groups-list">${allGroups.map((group) => `<label class="node-group-checkbox"><input type="checkbox" class="node-group-check" value="${esc(group.name)}" disabled ${memberOf.has(group.name) ? 'checked' : ''}><span>${esc(group.name)}</span></label>`).join('')}</div>
+          </div>`
+        : '';
+
     return `
         <div class="host-card node-card ${statusClass}" id="${id}" data-hostname="${esc(node.hostname)}">
             <div class="host-head" onclick="toggleNodeFromHead(event, this.closest('.node-card'))">
@@ -86,6 +95,7 @@ function renderNode(node) {
             </div>
             <div class="host-body" hidden>
                 <div class="param-grid">${fields}</div>
+                ${groupsField}
                 <div class="host-footer">
                     <span class="edit-note">${esc(templateLabel(node))} · изменения сохраняются в hosts.yml</span>
                     <button class="edit-save primary" onclick="saveNode(event, '${esc(node.hostname)}')">Сохранить</button>
@@ -132,6 +142,7 @@ function editNode(event, hostname) {
         setTimeout(() => card.dataset.animating = '0', 240);
     }
     card.querySelectorAll('.param-value').forEach((input) => input.readOnly = false);
+    card.querySelectorAll('.node-group-check').forEach((input) => input.disabled = false);
     card.querySelector('.param-value')?.focus();
 }
 
@@ -148,14 +159,15 @@ function saveNode(event, hostname) {
         if (!newHostname) return alert('Имя узла не может быть пустым');
     }
     card.querySelectorAll('[data-key]').forEach((input) => { if (input.dataset.key !== 'hostname') values[input.dataset.key] = input.value; });
-    api('/update_host', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname, new_hostname: newHostname, values }).then(loadMain).catch((error) => alert(error.message));
+    const groups = [...card.querySelectorAll('.node-group-check:checked')].map((input) => input.value);
+    api('/update_host', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname, new_hostname: newHostname, values, groups }).then(loadMain).catch((error) => alert(error.message));
 }
 
 function deleteSelectedNodes() {
     const hosts = selectedHosts();
     if (!hosts.length) return alert('Выберите узлы для удаления.');
     showConfirmation('Удалить выбранные узлы?', `<strong>Узлы:</strong><br>${hosts.map(esc).join('<br>')}<br><br>Это изменит hosts.yml.`,
-        () => hosts.reduce((promise, hostname) => promise.then(() => api('/delete_host', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname })), Promise.resolve())
+        () => api('/delete_hosts', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostnames: hosts })
             .then(loadMain).catch((error) => alert(error.message)), 'Удалить', 'danger', 'Подтверждение удаления');
 }
 
