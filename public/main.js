@@ -52,8 +52,8 @@ function toggleHostSelection() {
     updateHostSelectionButton();
 }
 
-function selectPB(value) { document.querySelectorAll('.pb').forEach((item) => item.checked = value); }
 function templateLabel(node) { return node.template || node.node_type || 'Узел'; }
+function nodeGroupNames(hostname) { return (DATA?.groups || []).filter((group) => groupHosts(group).has(hostname)).map((group) => group.name); }
 
 function renderNode(node) {
     const hasStatus = Object.prototype.hasOwnProperty.call(DATA.status || {}, node.hostname);
@@ -62,14 +62,23 @@ function renderNode(node) {
     const id = `node-${encodeURIComponent(node.hostname)}`;
     let state, statusClass;
 
-    if (!hasStatus) { state = '<span class="node-status pending"><span class="status-dot status-pending"></span>проверка</span>'; statusClass = 'node-pending'; } 
-    else if (available) { state = '<span class="node-status available"><span class="status-dot status-up"></span>доступен</span>'; statusClass = 'node-available'; } 
+    if (!hasStatus) { state = '<span class="node-status pending"><span class="status-dot status-pending"></span>проверка</span>'; statusClass = 'node-pending'; }
+    else if (available) { state = '<span class="node-status available"><span class="status-dot status-up"></span>доступен</span>'; statusClass = 'node-available'; }
     else { state = '<span class="node-status unavailable"><span class="status-dot status-down"></span>недоступен</span>'; statusClass = 'node-unavailable'; }
 
     const nameField = `<div class="param-name" title="Имя узла">Имя узла</div><input class="param-value" data-key="hostname" value="${esc(node.hostname)}" readonly>`;
     const fields = params.length
         ? nameField + params.map(([key, value]) => `<div class="param-name" title="${esc(key)}">${esc(key)}</div><input class="param-value" data-key="${esc(key)}" value="${esc(value)}" readonly>`).join('')
         : nameField + '<div class="empty" style="grid-column: 1 / -1;">Дополнительных параметров нет</div>';
+
+    const memberOf = new Set(nodeGroupNames(node.hostname));
+    const allGroups = DATA?.groups || [];
+    const groupsField = allGroups.length
+        ? `<div class="node-groups-field">
+            <div class="node-groups-label">Группы</div>
+            <div class="node-groups-list">${allGroups.map((group) => `<label class="node-group-checkbox"><input type="checkbox" class="node-group-check" value="${esc(group.name)}" disabled ${memberOf.has(group.name) ? 'checked' : ''}><span>${esc(group.name)}</span></label>`).join('')}</div>
+          </div>`
+        : '';
 
     return `
         <div class="host-card node-card ${statusClass}" id="${id}" data-hostname="${esc(node.hostname)}">
@@ -86,6 +95,7 @@ function renderNode(node) {
             </div>
             <div class="host-body" hidden>
                 <div class="param-grid">${fields}</div>
+                ${groupsField}
                 <div class="host-footer">
                     <span class="edit-note">${esc(templateLabel(node))} · изменения сохраняются в hosts.yml</span>
                     <button class="edit-save primary" onclick="saveNode(event, '${esc(node.hostname)}')">Сохранить</button>
@@ -132,6 +142,7 @@ function editNode(event, hostname) {
         setTimeout(() => card.dataset.animating = '0', 240);
     }
     card.querySelectorAll('.param-value').forEach((input) => input.readOnly = false);
+    card.querySelectorAll('.node-group-check').forEach((input) => input.disabled = false);
     card.querySelector('.param-value')?.focus();
 }
 
@@ -148,14 +159,15 @@ function saveNode(event, hostname) {
         if (!newHostname) return alert('Имя узла не может быть пустым');
     }
     card.querySelectorAll('[data-key]').forEach((input) => { if (input.dataset.key !== 'hostname') values[input.dataset.key] = input.value; });
-    api('/update_host', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname, new_hostname: newHostname, values }).then(loadMain).catch((error) => alert(error.message));
+    const groups = [...card.querySelectorAll('.node-group-check:checked')].map((input) => input.value);
+    api('/update_host', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname, new_hostname: newHostname, values, groups }).then(loadMain).catch((error) => alert(error.message));
 }
 
 function deleteSelectedNodes() {
     const hosts = selectedHosts();
     if (!hosts.length) return alert('Выберите узлы для удаления.');
     showConfirmation('Удалить выбранные узлы?', `<strong>Узлы:</strong><br>${hosts.map(esc).join('<br>')}<br><br>Это изменит hosts.yml.`,
-        () => hosts.reduce((promise, hostname) => promise.then(() => api('/delete_host', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname })), Promise.resolve())
+        () => api('/delete_hosts', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostnames: hosts })
             .then(loadMain).catch((error) => alert(error.message)), 'Удалить', 'danger', 'Подтверждение удаления');
 }
 
@@ -208,7 +220,7 @@ function createNode() {
         .then(() => { window.closeAddNodeModal(); loadMain(); }).catch((error) => alert(error.message));
 }
 
-// === Плавный фильтр групп ===
+// === Фильтр групп ===
 function renderGroups(groups) {
     const element = document.getElementById('groups');
     if (!groups?.length) {
@@ -218,11 +230,13 @@ function renderGroups(groups) {
     const wasOpen = element.querySelector('.group-filter-list')?.classList.contains('is-open') || false;
     element.innerHTML = `
         <div class="group-filter-dropdown">
-            <button type="button" class="group-filter-btn" id="group-filter-btn">
-                ${ACTIVE_GROUP ? `<b>Группа:</b> ${esc(ACTIVE_GROUP.name)}` : 'Фильтр по группам'}
-                <span class="group-filter-arrow">▾</span>
+            <div class="group-filter-control">
+                <button type="button" class="group-filter-btn" id="group-filter-btn">
+                    ${ACTIVE_GROUP ? `<b>Группа:</b> ${esc(ACTIVE_GROUP.name)}` : 'Фильтр по группам'}
+                    <span class="group-filter-arrow">▾</span>
+                </button>
                 ${ACTIVE_GROUP ? '<button type="button" class="group-filter-clear" id="group-filter-clear" title="Сбросить фильтр">×</button>' : ''}
-            </button>
+            </div>
             <div class="group-filter-list ${wasOpen ? 'is-open' : ''}" id="group-filter-list">
                 ${groups.map(group => `<button type="button" class="group-filter-item ${ACTIVE_GROUP?.name === group.name ? 'active' : ''}" data-group-name="${esc(group.name)}">${esc(group.name)}</button>`).join('')}
             </div>
@@ -230,12 +244,11 @@ function renderGroups(groups) {
     `;
 }
 
-// Делегирование событий для надежности
 document.getElementById('groups').addEventListener('click', (e) => {
-    const btn = e.target.closest('#group-filter-btn');
-    if (btn) { e.stopPropagation(); toggleGroupFilter(); return; }
     const clearBtn = e.target.closest('#group-filter-clear');
     if (clearBtn) { e.stopPropagation(); clearGroupFilter(); return; }
+    const btn = e.target.closest('#group-filter-btn');
+    if (btn) { e.stopPropagation(); toggleGroupFilter(); return; }
     const item = e.target.closest('.group-filter-item');
     if (item) { e.stopPropagation(); selectGroupFilter(item.dataset.groupName); }
 });
@@ -245,13 +258,8 @@ function toggleGroupFilter() {
     const btn = document.getElementById('group-filter-btn');
     if (!list) return;
     const isOpen = list.classList.contains('is-open');
-    if (isOpen) {
-        list.classList.remove('is-open');
-        if (btn) btn.querySelector('.group-filter-arrow').textContent = '▾';
-    } else {
-        list.classList.add('is-open');
-        if (btn) btn.querySelector('.group-filter-arrow').textContent = '▴';
-    }
+    list.classList.toggle('is-open', !isOpen);
+    if (btn) btn.querySelector('.group-filter-arrow').textContent = isOpen ? '▾' : '▴';
 }
 
 function selectGroupFilter(name) {
@@ -265,6 +273,46 @@ function clearGroupFilter() {
     ACTIVE_GROUP = null;
     renderGroups(DATA.groups || []);
     renderNodes();
+}
+
+function openDeleteGroupModal() {
+    const groups = DATA?.groups || [];
+    if (!groups.length) return alert('Нет групп для удаления.');
+    let modal = document.getElementById('delete_group_modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'delete_group_modal';
+        modal.className = 'modal-backdrop';
+        modal.hidden = true;
+        modal.innerHTML = `
+            <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="delete_group_title">
+                <div class="modal-head"><div><div class="modal-kicker">Управление группами</div><h3 id="delete_group_title">Удалить группу</h3></div><button class="modal-close" type="button" onclick="closeDeleteGroupModal()">×</button></div>
+                <div class="modal-body"><div id="delete_group_list" class="delete-group-list"></div></div>
+                <div class="modal-footer"><button type="button" class="modal-secondary" onclick="closeDeleteGroupModal()">Отмена</button></div>
+            </div>`;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', (event) => { if (event.target === modal) closeDeleteGroupModal(); });
+    }
+    const list = modal.querySelector('#delete_group_list');
+    list.innerHTML = groups.map((group) => `<button type="button" class="delete-group-item" onclick="requestDeleteGroup('${esc(group.name)}')"><span>${esc(group.name)}</span><span class="muted">${group.hosts?.length || 0} узл.</span></button>`).join('');
+    modal.hidden = false;
+}
+
+function closeDeleteGroupModal() {
+    const modal = document.getElementById('delete_group_modal');
+    if (modal) modal.hidden = true;
+}
+
+function requestDeleteGroup(name) {
+    closeDeleteGroupModal();
+    const group = (DATA?.groups || []).find((item) => item.name === name);
+    if (!group) return;
+    const hosts = group.hosts || [];
+    showConfirmation('Удалить группу?', `<strong>Группа:</strong> ${esc(name)}<br><strong>Узлов в группе:</strong> ${hosts.length}<br><br>Сами узлы не будут удалены. Из hosts.yml будет удалён только блок группы.`,
+        () => api('/delete_group', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, group: name }).then(() => {
+            if (ACTIVE_GROUP?.name === name) ACTIVE_GROUP = null;
+            loadMain();
+        }).catch((error) => alert(error.message)), 'Удалить группу', 'danger', 'Подтверждение удаления группы');
 }
 
 // === Анимированный выбор групп в модалке ===
@@ -589,6 +637,7 @@ window.addEventListener('keydown', (event) => {
     window.closeAddNodeModal();
     window.closePlaybookModal();
     closeCreateGroupModal();
+    closeDeleteGroupModal();
     const modal = document.getElementById('run_confirm_modal');
     if (modal) { modal.hidden = true; CONFIRM_ACTION = null; }
 });

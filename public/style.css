@@ -313,6 +313,16 @@ button.danger { background: rgba(160,50,50,.55); }
 .group-checkbox-item:hover { background: #2a2a2a; }
 .group-checkbox-item input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
 
+.node-groups-field { margin-top: 14px; }
+.node-groups-label { color: rgba(255,255,255,.70); font-size: 13px; margin-bottom: 6px; }
+.node-groups-list { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.node-group-checkbox { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px; font-size: 13px; color: rgba(255,255,255,.75); cursor: default; }
+.host-card.editing .node-group-checkbox { cursor: pointer; }
+.host-card.editing .node-group-checkbox:hover { background: #2a2a2a; }
+.node-group-checkbox input[type="checkbox"] { width: 15px; height: 15px; }
+.node-group-checkbox input[type="checkbox"]:disabled { cursor: default; opacity: .75; }
+.node-group-checkbox input[type="checkbox"]:not(:disabled) { cursor: pointer; }
+
 .selected-groups-display {
     display: flex;
     flex-wrap: wrap;
