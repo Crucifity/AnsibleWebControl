@@ -19,14 +19,19 @@ function api(path, body) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
-    }).then(async (response) => {
-        const data = await response.json();
-        if (!response.ok || data.ok === false) throw Error(data.error || 'Ошибка');
-        return data;
-    }).catch((error) => {
-        alert('Сетевая ошибка: ' + error.message);
-        throw error;
-    });
+    })
+        // Настоящий сбой сети (сервер недоступен, нет соединения и т.п.) — здесь
+        // просто превращаем его в обычную ошибку с понятным текстом; выводить
+        // её должен вызывающий код (он и так везде делает .catch(...)), а не
+        // сама api() — иначе для серверных ошибок вида "узел уже существует"
+        // человек видел бы окно ошибки дважды.
+        .catch(() => { throw new Error('Сервер недоступен. Проверьте соединение и попробуйте ещё раз.'); })
+        .then(async (response) => {
+            let data = {};
+            try { data = await response.json(); } catch { /* пустой или нечитаемый ответ — сработает проверка ниже */ }
+            if (!response.ok || data.ok === false) throw new Error(data.error || 'Ошибка');
+            return data;
+        });
 }
 
 function selectedHosts() { return [...document.querySelectorAll('.node-check:checked')].map((item) => item.value); }
@@ -41,7 +46,7 @@ function updateHostSelectionButton() {
     const nextText = allSelected ? 'Отменить выбор' : 'Выбрать все узлы';
     if (label.textContent === nextText) return;
     button.classList.add('selection-changing');
-    setTimeout(() => { label.textContent = nextText; button.classList.remove('selection-changing'); }, 180);
+    setTimeout(() => { label.textContent = nextText; button.classList.remove('selection-changing'); }, ANIM.LABEL_FADE_MS);
 }
 
 function toggleHostSelection() {
@@ -55,6 +60,102 @@ function toggleHostSelection() {
 function templateLabel(node) { return node.template || node.node_type || 'Узел'; }
 function nodeGroupNames(hostname) { return (DATA?.groups || []).filter((group) => groupHosts(group).has(hostname)).map((group) => group.name); }
 
+// Значение hwtype — не свободный текст, а выбор из имён .j2-файлов,
+// которые бэкенд нашёл в соответствующей папке проекта/объекта (см.
+// DATA.hwtype_options, приходит вместе с остальными данными в /data).
+// Рисуется как собственный выпадающий список (см. toggleHwtypeDropdown
+// ниже), а не нативный <select> — так он выглядит в общем стиле остальных
+// кастомных списков в приложении и умеет анимацию открытия/закрытия,
+// чего нативный select не позволяет. Реальное значение хранится в
+// невидимом input[type=hidden] с тем же data-key/data-new-key, что и у
+// остальных полей — так saveNode()/createNode() читают его точно так же,
+// как обычный текстовый параметр.
+function renderHwtypeField(currentValue, keyAttr = 'data-key', enabled = false) {
+    const label = currentValue || (enabled ? 'Выбрать…' : '—');
+    return `<div class="hwtype-field">
+        <input type="hidden" ${keyAttr}="${esc(HWTYPE_PARAM_NAME)}" value="${esc(currentValue || '')}">
+        <button type="button" class="param-value hwtype-toggle" ${enabled ? '' : 'disabled'} onclick="toggleHwtypeDropdown(event, this)"><span class="hwtype-toggle-label">${esc(label)}</span><span class="hwtype-toggle-arrow">▾</span></button>
+    </div>`;
+}
+
+// Общий (один на всю страницу) выпадающий список для всех полей hwtype —
+// подставляется под тот toggle, по которому кликнули, и позиционируется
+// через getBoundingClientRect(). Через один и тот же плавающий элемент,
+// а не отдельный список на каждое поле, потому что он вставлен в самый
+// конец <body>: так он всегда рисуется поверх любых прокручиваемых
+// панелей и модалок (см. также #iso_panel ниже — та же идея).
+let HWTYPE_DROPDOWN_TARGET = null;
+
+function ensureHwtypeDropdown() {
+    let dropdown = document.getElementById('hwtype_dropdown');
+    if (dropdown) return dropdown;
+    dropdown = document.createElement('div');
+    dropdown.id = 'hwtype_dropdown';
+    dropdown.className = 'hwtype-dropdown';
+    document.body.appendChild(dropdown);
+    dropdown.addEventListener('click', (event) => event.stopPropagation());
+    return dropdown;
+}
+
+function positionHwtypeDropdown(toggle, dropdown) {
+    const rect = toggle.getBoundingClientRect();
+    dropdown.style.left = `${rect.left}px`;
+    dropdown.style.top = `${rect.bottom + 5}px`;
+    dropdown.style.width = `${rect.width}px`;
+}
+
+function closeHwtypeDropdown() {
+    const dropdown = document.getElementById('hwtype_dropdown');
+    if (dropdown) dropdown.classList.remove('is-open');
+    HWTYPE_DROPDOWN_TARGET?.toggleButton.classList.remove('is-open');
+    HWTYPE_DROPDOWN_TARGET = null;
+}
+
+function toggleHwtypeDropdown(event, toggle) {
+    event.stopPropagation();
+    if (toggle.disabled) return;
+    const dropdown = ensureHwtypeDropdown();
+    const reopeningSameField = dropdown.classList.contains('is-open') && HWTYPE_DROPDOWN_TARGET?.toggleButton === toggle;
+    closeHwtypeDropdown();
+    if (reopeningSameField) return;
+
+    const hiddenInput = toggle.closest('.hwtype-field').querySelector('input[type="hidden"]');
+    const currentValue = hiddenInput.value;
+    const options = new Set(DATA?.hwtype_options || []);
+    if (currentValue) options.add(currentValue);
+    dropdown.innerHTML = [...options].sort().map((option) => `<button type="button" class="hwtype-option ${option === currentValue ? 'active' : ''}" onclick="selectHwtypeOption(event, '${esc(option)}')">${esc(option)}</button>`).join('')
+        || '<div class="muted" style="padding:8px 10px;">Нет доступных значений</div>';
+
+    HWTYPE_DROPDOWN_TARGET = { hiddenInput, toggleButton: toggle };
+    positionHwtypeDropdown(toggle, dropdown);
+    dropdown.classList.add('is-open');
+    toggle.classList.add('is-open');
+}
+
+function selectHwtypeOption(event, value) {
+    event.stopPropagation();
+    if (!HWTYPE_DROPDOWN_TARGET) return;
+    const { hiddenInput, toggleButton } = HWTYPE_DROPDOWN_TARGET;
+    hiddenInput.value = value;
+    toggleButton.querySelector('.hwtype-toggle-label').textContent = value;
+    // dispatchEvent, а не просто присвоение .value — чтобы сработал
+    // делегированный слушатель 'change' в editNode() и кнопка "Сохранить"
+    // стала активной, как и при правке обычных текстовых полей.
+    hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+    closeHwtypeDropdown();
+}
+
+document.addEventListener('click', closeHwtypeDropdown);
+window.addEventListener('resize', () => { if (HWTYPE_DROPDOWN_TARGET) positionHwtypeDropdown(HWTYPE_DROPDOWN_TARGET.toggleButton, document.getElementById('hwtype_dropdown')); });
+window.addEventListener('scroll', () => { if (HWTYPE_DROPDOWN_TARGET) positionHwtypeDropdown(HWTYPE_DROPDOWN_TARGET.toggleButton, document.getElementById('hwtype_dropdown')); }, true);
+
+// Строит карточку одного узла: строка-заголовок со статусом/чекбоксом
+// и сворачиваемое тело с параметрами и списком групп. Сама карточка
+// рендерится один раз в HTML-строку; переключение "открыто/закрыто" и
+// режим редактирования управляются уже после вставки в DOM (см. editNode) —
+// здесь только разметка. Клик по строке-заголовку отмечает чекбокс узла;
+// раскрыть карточку для просмотра/правки параметров можно только кнопкой
+// «Изменить».
 function renderNode(node) {
     const hasStatus = Object.prototype.hasOwnProperty.call(DATA.status || {}, node.hostname);
     const available = hasStatus ? DATA.status[node.hostname] === true : null;
@@ -68,7 +169,7 @@ function renderNode(node) {
 
     const nameField = `<div class="param-name" title="Имя узла">Имя узла</div><input class="param-value" data-key="hostname" value="${esc(node.hostname)}" readonly>`;
     const fields = params.length
-        ? nameField + params.map(([key, value]) => `<div class="param-name" title="${esc(key)}">${esc(key)}</div><input class="param-value" data-key="${esc(key)}" value="${esc(value)}" readonly>`).join('')
+        ? nameField + params.map(([key, value]) => `<div class="param-name" title="${esc(key)}">${esc(key)}</div>${key === HWTYPE_PARAM_NAME ? renderHwtypeField(value) : `<input class="param-value" data-key="${esc(key)}" value="${esc(value)}" readonly>`}`).join('')
         : nameField + '<div class="empty" style="grid-column: 1 / -1;">Дополнительных параметров нет</div>';
 
     const memberOf = new Set(nodeGroupNames(node.hostname));
@@ -98,7 +199,7 @@ function renderNode(node) {
                 ${groupsField}
                 <div class="host-footer">
                     <span class="edit-note">${esc(templateLabel(node))} · изменения сохраняются в hosts.yml</span>
-                    <button class="edit-save primary" onclick="saveNode(event, '${esc(node.hostname)}')">Сохранить</button>
+                    <button class="edit-save primary" disabled onclick="saveNode(event, '${esc(node.hostname)}')">Сохранить</button>
                     <button class="edit-save" onclick="cancelNodeEdit(event)">Отмена</button>
                 </div>
             </div>
@@ -106,6 +207,12 @@ function renderNode(node) {
     `;
 }
 
+// Плавно разворачивает/сворачивает блок body через max-height + opacity
+// (обычный "height: auto" нельзя анимировать, поэтому используется реальная
+// высота содержимого — body.scrollHeight — как целевое значение).
+// Тайминги transition здесь не связаны с ANIM.PANEL_TOGGLE_MS ниже: тот
+// таймаут чуть больше (240мс против 220/180мс transition), чтобы сначала
+// гарантированно доиграла CSS-анимация, а уже потом снялся флаг "animating".
 function animatePanel(body, open) {
     body.style.overflow = 'hidden';
     body.style.transition = 'max-height 220ms ease, opacity 180ms ease';
@@ -115,35 +222,43 @@ function animatePanel(body, open) {
     } else {
         body.style.maxHeight = `${body.scrollHeight}px`; body.style.opacity = '1';
         requestAnimationFrame(() => { body.style.maxHeight = '0px'; body.style.opacity = '0'; });
-        setTimeout(() => { body.hidden = true; body.style.maxHeight = ''; body.style.opacity = ''; body.style.overflow = ''; }, 230);
+        setTimeout(() => { body.hidden = true; body.style.maxHeight = ''; body.style.opacity = ''; body.style.overflow = ''; }, ANIM.BODY_COLLAPSE_MS);
     }
 }
 
-function toggleNodeFromHead(event, card) { if (event.target.closest('button, input')) return; toggleNode(card); }
-function toggleNode(card) {
-    if (card.dataset.animating === '1') return;
-    const body = card.querySelector('.host-body');
-    const open = body.hidden;
-    card.dataset.animating = '1';
-    animatePanel(body, open);
-    card.querySelector('.node-expand').textContent = open ? '▾' : '▸';
-    setTimeout(() => card.dataset.animating = '0', 240);
+// Клик по строке узла (вне чекбокса и кнопки «Изменить») теперь просто
+// отмечает/снимает чекбокс — раскрыть карточку для просмотра параметров
+// можно только явно, кнопкой «Изменить» (см. editNode).
+function toggleNodeFromHead(event, card) {
+    if (event.target.closest('button, input, select')) return;
+    const checkbox = card.querySelector('.node-check');
+    if (!checkbox) return;
+    checkbox.checked = !checkbox.checked;
+    updateHostSelectionButton();
 }
 
 function editNode(event, hostname) {
     event.stopPropagation();
     const card = document.getElementById(`node-${encodeURIComponent(hostname)}`);
+    if (card.classList.contains('editing')) return; // уже редактируем — повторный клик ничего не делает
     const body = card.querySelector('.host-body');
     card.classList.add('editing');
     if (body.hidden) {
         card.dataset.animating = '1';
         animatePanel(body, true);
         card.querySelector('.node-expand').textContent = '▾';
-        setTimeout(() => card.dataset.animating = '0', 240);
+        setTimeout(() => card.dataset.animating = '0', ANIM.PANEL_TOGGLE_MS);
     }
-    card.querySelectorAll('.param-value').forEach((input) => input.readOnly = false);
+    card.querySelectorAll('.param-value').forEach((input) => { input.readOnly = false; input.disabled = false; });
     card.querySelectorAll('.node-group-check').forEach((input) => input.disabled = false);
     card.querySelector('.param-value')?.focus();
+
+    // Пока ничего не поменяли — кнопка «Сохранить» неактивна (серая); как
+    // только человек тронул любое поле, параметр или группу — включаем её.
+    const saveBtn = card.querySelector('.edit-save.primary');
+    const markChanged = () => { saveBtn.disabled = false; };
+    body.addEventListener('input', markChanged);
+    body.addEventListener('change', markChanged);
 }
 
 function cancelNodeEdit(event) { event.stopPropagation(); loadMain(); }
@@ -160,14 +275,14 @@ function saveNode(event, hostname) {
     }
     card.querySelectorAll('[data-key]').forEach((input) => { if (input.dataset.key !== 'hostname') values[input.dataset.key] = input.value; });
     const groups = [...card.querySelectorAll('.node-group-check:checked')].map((input) => input.value);
-    api('/update_host', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname, new_hostname: newHostname, values, groups }).then(loadMain).catch((error) => alert(error.message));
+    api(API.UPDATE_HOST, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname, new_hostname: newHostname, values, groups }).then(loadMain).catch((error) => alert(error.message));
 }
 
 function deleteSelectedNodes() {
     const hosts = selectedHosts();
     if (!hosts.length) return alert('Выберите узлы для удаления.');
     showConfirmation('Удалить выбранные узлы?', `<strong>Узлы:</strong><br>${hosts.map(esc).join('<br>')}<br><br>Это изменит hosts.yml.`,
-        () => api('/delete_hosts', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostnames: hosts })
+        () => api(API.DELETE_HOSTS, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostnames: hosts })
             .then(loadMain).catch((error) => alert(error.message)), 'Удалить', 'danger', 'Подтверждение удаления');
 }
 
@@ -176,15 +291,16 @@ function openAddNodeModal() {
     SELECTED_GROUPS = [];
     NEW_GROUPS_CREATED = [];
     document.getElementById('add_node_modal').hidden = false;
+    document.body.classList.add('no-scroll');
     renderTemplateTabs();
-    updateSelectedGroupsDisplay();
-    const list = document.getElementById('group_selector_list');
-    if (list) list.classList.remove('is-open');
+    renderGroupButtons();
+    document.querySelector('#add_node_modal .node-params-panel')?.scrollTo(0, 0);
     setTimeout(() => document.getElementById('new_node_name').focus(), 0);
 }
 
 window.closeAddNodeModal = function() {
     document.getElementById('add_node_modal').hidden = true;
+    document.body.classList.remove('no-scroll');
     closeCreateGroupModal();
 };
 
@@ -199,14 +315,23 @@ function renderTemplateTabs() {
         return;
     }
     if (!schemas[NEW_TEMPLATE]) NEW_TEMPLATE = names[0];
-    tabs.innerHTML = names.map((name) => `<button type="button" class="node-type-tab ${name === NEW_TEMPLATE ? 'active' : ''}" onclick="selectTemplate('${esc(name)}')"><span class="node-type-title">${esc(name)}</span><span class="node-type-desc">${schemas[name].length} параметров</span></button>`).join('');
+    tabs.innerHTML = names.map((name) => `<button type="button" class="node-type-tab ${name === NEW_TEMPLATE ? 'active' : ''}" onclick="selectTemplate('${esc(name)}')"><span class="node-type-title">${esc(name)}</span><span class="node-type-desc">${schemas[name].length}</span></button>`).join('');
     renderTemplateFields();
 }
 
-function selectTemplate(name) { NEW_TEMPLATE = name; renderTemplateTabs(); }
+function selectTemplate(name) {
+    NEW_TEMPLATE = name;
+    renderTemplateTabs();
+    // После выбора шаблона показываем панель сначала — иначе если до этого
+    // проскроллили вниз (например, шаблон был в конце списка), список
+    // параметров открывается уже прокрученным и первый параметр не виден.
+    document.querySelector('#add_node_modal .node-params-panel')?.scrollTo(0, 0);
+}
 function renderTemplateFields() {
     const keys = (DATA.template_schemas || {})[NEW_TEMPLATE] || [];
-    document.getElementById('new_node_fields').innerHTML = keys.map((key) => `<label class="new-node-field"><span>${esc(key)}</span><input data-new-key="${esc(key)}" type="text" placeholder="Значение"></label>`).join('');
+    document.getElementById('new_node_fields').innerHTML = keys.map((key) => key === HWTYPE_PARAM_NAME
+        ? `<label class="new-node-field"><span>${esc(key)}</span>${renderHwtypeField('', 'data-new-key', true)}</label>`
+        : `<label class="new-node-field"><span>${esc(key)}</span><input data-new-key="${esc(key)}" type="text" placeholder="Значение"></label>`).join('');
 }
 
 function createNode() {
@@ -216,8 +341,36 @@ function createNode() {
     if (!keys.length) return alert('Выберите шаблон параметров.');
     const values = {};
     document.querySelectorAll('[data-new-key]').forEach((input) => values[input.dataset.newKey] = input.value);
-    api('/add_host', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname: name, values, groups: SELECTED_GROUPS })
-        .then(() => { window.closeAddNodeModal(); loadMain(); }).catch((error) => alert(error.message));
+    api(API.ADD_HOST, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname: name, values, groups: SELECTED_GROUPS })
+        .then(() => { window.closeAddNodeModal(); loadMain(); })
+        .catch((error) => showErrorModal('Не удалось добавить узел', esc(error.message)));
+}
+
+// Простое информационное модальное окно с одной кнопкой "Понятно" — для
+// ошибок, которые требуют внимания человека, но не нужно ничего
+// подтверждать/выбирать (в отличие от showConfirmation).
+function showErrorModal(title, text) {
+    let modal = document.getElementById('error_modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'error_modal';
+        modal.className = 'modal-backdrop';
+        modal.hidden = true;
+        modal.innerHTML = `
+            <div class="modal-card error-modal-card" role="dialog" aria-modal="true" aria-labelledby="error_modal_title">
+                <div class="modal-head"><div><h3 id="error_modal_title"></h3></div><button class="modal-close" type="button">×</button></div>
+                <div class="modal-body"><div id="error_modal_text" class="run-confirm-text"></div></div>
+                <div class="modal-footer"><button type="button" class="primary" id="error_modal_ok">Понятно</button></div>
+            </div>`;
+        document.body.appendChild(modal);
+        const close = () => { modal.hidden = true; };
+        modal.querySelector('.modal-close').onclick = close;
+        modal.querySelector('#error_modal_ok').onclick = close;
+        modal.addEventListener('click', (event) => { if (event.target === modal) close(); });
+    }
+    modal.querySelector('#error_modal_title').textContent = title;
+    modal.querySelector('#error_modal_text').innerHTML = text;
+    modal.hidden = false;
 }
 
 // === Фильтр групп ===
@@ -275,89 +428,47 @@ function clearGroupFilter() {
     renderNodes();
 }
 
-function openDeleteGroupModal() {
-    const groups = DATA?.groups || [];
-    if (!groups.length) return alert('Нет групп для удаления.');
-    let modal = document.getElementById('delete_group_modal');
-    if (!modal) {
-        modal = document.createElement('div');
-        modal.id = 'delete_group_modal';
-        modal.className = 'modal-backdrop';
-        modal.hidden = true;
-        modal.innerHTML = `
-            <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="delete_group_title">
-                <div class="modal-head"><div><div class="modal-kicker">Управление группами</div><h3 id="delete_group_title">Удалить группу</h3></div><button class="modal-close" type="button" onclick="closeDeleteGroupModal()">×</button></div>
-                <div class="modal-body"><div id="delete_group_list" class="delete-group-list"></div></div>
-                <div class="modal-footer"><button type="button" class="modal-secondary" onclick="closeDeleteGroupModal()">Отмена</button></div>
-            </div>`;
-        document.body.appendChild(modal);
-        modal.addEventListener('click', (event) => { if (event.target === modal) closeDeleteGroupModal(); });
-    }
-    const list = modal.querySelector('#delete_group_list');
-    list.innerHTML = groups.map((group) => `<button type="button" class="delete-group-item" onclick="requestDeleteGroup('${esc(group.name)}')"><span>${esc(group.name)}</span><span class="muted">${group.hosts?.length || 0} узл.</span></button>`).join('');
-    modal.hidden = false;
+// Удаление группы теперь работает через те же кнопки-переключатели, что и
+// назначение групп новому узлу: сначала человек выделяет (синим) одну или
+// несколько групп в списке выше, затем жмёт "Удалить группу" — и видит
+// подтверждение с именами узлов, которые в этих группах состоят.
+function requestDeleteSelectedGroups() {
+    if (!SELECTED_GROUPS.length) return alert('Сначала выберите группу для удаления — нажмите на неё в списке выше.');
+    const groupsData = DATA?.groups || [];
+    const targets = SELECTED_GROUPS.map((name) => groupsData.find((group) => group.name === name) || { name, hosts: [] });
+    const text = targets.map((group) => `<strong>${esc(group.name)}</strong>: ${group.hosts?.length ? group.hosts.map(esc).join(', ') : 'узлов нет'}`).join('<br>')
+        + '<br><br>Сами узлы не будут удалены. Из hosts.yml будет удалён только блок группы.';
+    showConfirmation(targets.length > 1 ? 'Удалить группы?' : 'Удалить группу?', text,
+        () => Promise.all(targets.map((group) => api(API.DELETE_GROUP, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, group: group.name })))
+            .then(() => {
+                const deletedNames = new Set(targets.map((group) => group.name));
+                if (ACTIVE_GROUP && deletedNames.has(ACTIVE_GROUP.name)) ACTIVE_GROUP = null;
+                SELECTED_GROUPS = SELECTED_GROUPS.filter((name) => !deletedNames.has(name));
+                NEW_GROUPS_CREATED = NEW_GROUPS_CREATED.filter((name) => !deletedNames.has(name));
+                return loadMain();
+            })
+            .then(() => renderGroupButtons())
+            .catch((error) => alert(error.message)),
+        targets.length > 1 ? 'Удалить группы' : 'Удалить группу', 'danger', 'Подтверждение удаления группы');
 }
 
-function closeDeleteGroupModal() {
-    const modal = document.getElementById('delete_group_modal');
-    if (modal) modal.hidden = true;
-}
-
-function requestDeleteGroup(name) {
-    closeDeleteGroupModal();
-    const group = (DATA?.groups || []).find((item) => item.name === name);
-    if (!group) return;
-    const hosts = group.hosts || [];
-    showConfirmation('Удалить группу?', `<strong>Группа:</strong> ${esc(name)}<br><strong>Узлов в группе:</strong> ${hosts.length}<br><br>Сами узлы не будут удалены. Из hosts.yml будет удалён только блок группы.`,
-        () => api('/delete_group', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, group: name }).then(() => {
-            if (ACTIVE_GROUP?.name === name) ACTIVE_GROUP = null;
-            loadMain();
-        }).catch((error) => alert(error.message)), 'Удалить группу', 'danger', 'Подтверждение удаления группы');
-}
-
-// === Анимированный выбор групп в модалке ===
-function toggleGroupSelector() {
+// === Выбор групп в модалке добавления узла ===
+// Все группы сразу показаны как кнопки-переключатели (без выпадающего
+// списка): белая — не выбрана, синяя — выбрана. Клик по кнопке сразу
+// добавляет/убирает группу из списка на создаваемый узел.
+function renderGroupButtons() {
     const list = document.getElementById('group_selector_list');
-    const btn = document.querySelector('.group-selector-buttons .group-btn');
     if (!list) return;
-    const isOpen = list.classList.contains('is-open');
-    if (isOpen) {
-        list.classList.remove('is-open');
-        if (btn) btn.classList.remove('is-open');
-    } else {
-        list.classList.add('is-open');
-        if (btn) btn.classList.add('is-open');
-        renderGroupCheckboxes();
-    }
-}
-
-function renderGroupCheckboxes() {
-    const list = document.getElementById('group_selector_list');
     const allGroups = [...new Set([...(DATA?.groups || []).map(g => g.name), ...NEW_GROUPS_CREATED])];
     list.innerHTML = allGroups.length
-        ? allGroups.map(name => `<label class="group-checkbox-item"><input type="checkbox" value="${esc(name)}" ${SELECTED_GROUPS.includes(name) ? 'checked' : ''} onchange="toggleGroupSelection('${esc(name)}')"><span>${esc(name)}</span></label>`).join('')
-        : '<div class="muted" style="padding: 8px;">Нет доступных групп. Создайте первую!</div>';
+        ? allGroups.map(name => `<button type="button" class="group-toggle-btn ${SELECTED_GROUPS.includes(name) ? 'active' : ''}" onclick="toggleGroupSelection('${esc(name)}')">${esc(name)}</button>`).join('')
+        : '<span class="muted">Нет доступных групп. Создайте первую!</span>';
 }
 
 function toggleGroupSelection(name) {
     if (SELECTED_GROUPS.includes(name)) SELECTED_GROUPS = SELECTED_GROUPS.filter(g => g !== name);
     else SELECTED_GROUPS.push(name);
-    updateSelectedGroupsDisplay();
-}
-
-function updateSelectedGroupsDisplay() {
-    const display = document.getElementById('selected_groups_display');
-    if (!display) return;
-    display.innerHTML = SELECTED_GROUPS.length
-        ? SELECTED_GROUPS.map(name => `<span class="selected-group-chip">${esc(name)}<button type="button" class="chip-remove" onclick="removeGroupFromSelection('${esc(name)}')">×</button></span>`).join('')
-        : '<span class="muted">Группы не выбраны</span>';
-}
-
-function removeGroupFromSelection(name) {
-    SELECTED_GROUPS = SELECTED_GROUPS.filter(g => g !== name);
-    updateSelectedGroupsDisplay();
-    const list = document.getElementById('group_selector_list');
-    if (list && list.classList.contains('is-open')) renderGroupCheckboxes();
+    renderGroupButtons();
 }
 
 function openCreateGroupModal() {
@@ -396,9 +507,7 @@ function confirmCreateGroup() {
     NEW_GROUPS_CREATED.push(name);
     SELECTED_GROUPS.push(name);
     closeCreateGroupModal();
-    const list = document.getElementById('group_selector_list');
-    if (list && list.classList.contains('is-open')) renderGroupCheckboxes();
-    updateSelectedGroupsDisplay();
+    renderGroupButtons();
 }
 
 function contextQuery(extra = '') { const object = CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''; return `project=${encodeURIComponent(CURRENT_PROJECT)}${object}${extra}`; }
@@ -413,7 +522,7 @@ function editPlaybook(name) {
     editor.value = 'Загрузка…';
     editor.readOnly = true;
     modal.hidden = false;
-    fetch(`/playbook?${contextQuery(`&name=${encodeURIComponent(name)}`)}`)
+    fetch(`${API.PLAYBOOK}?${contextQuery(`&name=${encodeURIComponent(name)}`)}`)
         .then((response) => { if (!response.ok) throw Error('Не удалось открыть плейбук'); return response.json(); })
         .then((data) => { editor.value = data.content || ''; editor.readOnly = false; fitPlaybookEditor(); editor.focus(); })
         .catch((error) => { editor.value = ''; alert(error.message); window.closePlaybookModal(); });
@@ -426,7 +535,7 @@ function savePlaybookFromModal() {
     const editor = document.getElementById('playbook_editor');
     if (!name || !editor) return;
     editor.disabled = true;
-    fetch('/save_playbook', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ project: CURRENT_PROJECT, object: CURRENT_OBJECT, name, content: editor.value }) })
+    fetch(API.SAVE_PLAYBOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ project: CURRENT_PROJECT, object: CURRENT_OBJECT, name, content: editor.value }) })
         .then(async (response) => {
             const data = await response.json();
             if (!response.ok || data.ok === false) throw Error(data.error || 'Не удалось сохранить плейбук');
@@ -487,7 +596,7 @@ function renderPlaybooks(items) {
 }
 
 function openRoleFile(path) {
-    fetch(`/role_file?${contextQuery(`&path=${encodeURIComponent(path)}`)}`)
+    fetch(`${API.ROLE_FILE}?${contextQuery(`&path=${encodeURIComponent(path)}`)}`)
         .then((response) => { if (!response.ok) throw Error('Не удалось открыть файл'); return response.json(); })
         .then((data) => {
             const windowRef = window.open('', '_blank');
@@ -500,7 +609,7 @@ function openRoleFile(path) {
 function runAutodeploy() {
     const hosts = selectedHosts();
     document.getElementById('run_state').textContent = '● Выполняется';
-    api('/run_autodeploy', { project: CURRENT_PROJECT, hosts }).catch((error) => alert(error.message));
+    api(API.RUN_AUTODEPLOY, { project: CURRENT_PROJECT, hosts }).catch((error) => alert(error.message));
 }
 
 function runSelected() {
@@ -508,11 +617,15 @@ function runSelected() {
     const hosts = selectedHosts();
     if (!playbooks.length) return alert('Выберите хотя бы один плейбук');
     document.getElementById('run_state').textContent = '● Выполняется';
-    api('/run', { project: CURRENT_PROJECT, object: CURRENT_OBJECT, playbooks, hosts }).catch((error) => alert(error.message));
+    api(API.RUN, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, playbooks, hosts }).catch((error) => alert(error.message));
 }
 
-function stopExecution() { api('/stop', {}).finally(() => { document.getElementById('run_state').textContent = 'Остановлено'; }); }
+function stopExecution() { api(API.STOP, {}).finally(() => { document.getElementById('run_state').textContent = 'Остановлено'; }); }
 
+// Универсальное модальное окно "точно хотите выполнить действие?" — одно
+// на всё приложение (создаётся при первом вызове и переиспользуется).
+// action выполняется только по нажатию основной кнопки; закрытие любым
+// другим способом (крестик/Отмена/клик по фону/Esc) ничего не запускает.
 function showConfirmation(title, text, action, actionLabel = 'Запустить', actionClass = 'primary', kicker = 'Подтверждение запуска') {
     let modal = document.getElementById('run_confirm_modal');
     if (!modal) {
@@ -538,6 +651,13 @@ function showConfirmation(title, text, action, actionLabel = 'Запустить
     modal.hidden = false;
 }
 
+// Кнопки "Выполнить" / "Автодеплой" в разметке вызывают runSelected()/
+// runAutodeploy() напрямую через onclick, но перед реальным запуском мы
+// хотим показать подтверждение. Вместо переписывания каждой кнопки здесь
+// стоит один перехватчик кликов на уровне document (в фазе capture — то
+// есть раньше, чем сработает сам onclick), который по атрибуту onclick
+// узнаёт "это кнопка запуска?", гасит оригинальный клик и вместо него
+// показывает showConfirmation(...).
 function interceptRunButtons() {
     document.addEventListener('click', (event) => {
         const button = event.target.closest('button');
@@ -559,10 +679,105 @@ function interceptRunButtons() {
     }, true);
 }
 
+// === Инфопанель вверху страницы: DHCP, TFTP, ISO-образы ===
+// Не привязана к текущему проекту/объекту — общая информация о сервере,
+// опрашивается независимо от остальных данных (см. SYSTEM_STATUS_POLL_INTERVAL_MS).
+let SYSTEM_STATUS_DATA = null;
+let ISO_PANEL_OPEN = false;
+
+function formatBytes(bytes) {
+    if (!bytes) return '0 Б';
+    const units = ['Б', 'КБ', 'МБ', 'ГБ', 'ТБ'];
+    const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    const value = bytes / Math.pow(1024, exponent);
+    return `${exponent === 0 ? value : value.toFixed(1)} ${units[exponent]}`;
+}
+
+function serviceStatusItem(label, info) {
+    const stateClass = info?.active ? 'is-active' : (info?.state === 'unknown' ? 'is-unknown' : 'is-inactive');
+    const stateText = info?.active ? 'активен' : (info?.state === 'unknown' ? 'не удалось проверить' : 'не активен');
+    const serviceName = info?.service ? ` (${esc(info.service)})` : '';
+    return `<span class="system-status-item ${stateClass}"><span class="status-dot"></span><span class="system-status-label">${esc(label)}</span><span class="system-status-state">${stateText}${serviceName}</span></span>`;
+}
+
+function renderSystemStatus() {
+    const bar = document.getElementById('system_status_bar');
+    if (!bar || !SYSTEM_STATUS_DATA) return;
+    const { dhcp, tftp, iso } = SYSTEM_STATUS_DATA;
+    const isoLabel = iso?.exists
+        ? `ISO-образы: ${iso.count} (${formatBytes(iso.total_size)})`
+        : 'ISO-образы: папка не найдена';
+    bar.innerHTML = `
+        ${serviceStatusItem('DHCP', dhcp)}
+        ${serviceStatusItem('TFTP', tftp)}
+        <button type="button" id="iso_toggle_btn" class="system-status-item iso-toggle ${ISO_PANEL_OPEN ? 'is-open' : ''}" onclick="toggleIsoPanel(event)">${esc(isoLabel)} <span class="iso-toggle-arrow">▾</span></button>
+    `;
+    renderIsoPanel();
+    if (ISO_PANEL_OPEN) positionIsoPanel();
+}
+
+// Список ISO-образов — плавающая панель поверх остального контента (как
+// и выпадающий список hwtype), а не обычный блок в потоке документа —
+// иначе её открытие сдвигало бы всё, что расположено ниже.
+function renderIsoPanel() {
+    const panel = document.getElementById('iso_panel');
+    const iso = SYSTEM_STATUS_DATA?.iso;
+    if (!panel || !iso) return;
+    panel.innerHTML = !iso.exists
+        ? `<div class="muted">Папка ${esc(iso.directory)} не найдена на сервере.</div>`
+        : !iso.files.length
+            ? `<div class="muted">В ${esc(iso.directory)} и подпапках ISO-образов не найдено.</div>`
+            : `<div class="iso-panel-path">${esc(iso.directory)}</div><div class="iso-list">${iso.files.map((file) => `<div class="iso-item"><span class="iso-item-path" title="${esc(file.path)}">${esc(file.path)}</span><span class="iso-item-size">${formatBytes(file.size)}</span><span class="iso-item-date">${esc(file.modified)}</span></div>`).join('')}</div>`;
+}
+
+function positionIsoPanel() {
+    const button = document.getElementById('iso_toggle_btn');
+    const panel = document.getElementById('iso_panel');
+    if (!button || !panel) return;
+    const rect = button.getBoundingClientRect();
+    panel.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - panel.offsetWidth - 8))}px`;
+    panel.style.top = `${rect.bottom + 6}px`;
+}
+
+function toggleIsoPanel(event) {
+    event?.stopPropagation();
+    if (ISO_PANEL_OPEN) { closeIsoPanel(); return; }
+    ISO_PANEL_OPEN = true;
+    document.getElementById('iso_toggle_btn')?.classList.add('is-open');
+    const panel = document.getElementById('iso_panel');
+    panel?.classList.add('is-open');
+    positionIsoPanel();
+}
+
+function closeIsoPanel() {
+    ISO_PANEL_OPEN = false;
+    document.getElementById('iso_panel')?.classList.remove('is-open');
+    document.getElementById('iso_toggle_btn')?.classList.remove('is-open');
+}
+
+document.addEventListener('click', (event) => {
+    if (!ISO_PANEL_OPEN) return;
+    if (event.target.closest('#iso_panel, #iso_toggle_btn')) return;
+    closeIsoPanel();
+});
+window.addEventListener('resize', () => { if (ISO_PANEL_OPEN) positionIsoPanel(); });
+window.addEventListener('scroll', () => { if (ISO_PANEL_OPEN) positionIsoPanel(); }, true);
+
+function loadSystemStatus() {
+    fetch(`${API.SYSTEM_STATUS}?_=${Date.now()}`)
+        .then((response) => response.json())
+        .then((data) => { SYSTEM_STATUS_DATA = data; renderSystemStatus(); })
+        .catch(() => {}); // это вспомогательная инфопанель — не мешаем работе остальной страницы, если она недоступна
+}
+
+// Лёгкое обновление "доступен/недоступен" без перезагрузки всей страницы —
+// вызывается по таймеру (см. STATUS_POLL_INTERVAL_MS внизу файла) и просто
+// точечно красит уже существующие карточки узлов, не трогая остальной DOM.
+
 function updateNodeStatuses() {
     if (!CURRENT_PROJECT) return;
     const query = `?project=${encodeURIComponent(CURRENT_PROJECT)}${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}&_=${Date.now()}`;
-    fetch(`/status${query}`)
+    fetch(`${API.STATUS}${query}`)
         .then((response) => response.json())
         .then((status) => {
             if (!DATA) return;
@@ -586,9 +801,15 @@ function updateNodeStatuses() {
         }).catch(() => {});
 }
 
+// Главная точка входа: подтягивает данные текущего проекта/объекта с
+// сервера и перерисовывает всю страницу (узлы, группы, плейбуки,
+// автодеплой). Вызывается при загрузке страницы и после любого действия,
+// которое меняет hosts.yml (добавление/удаление/переименование узла,
+// смена групп и т.д.) — простое и надёжное решение вместо точечного
+// обновления конкретных фрагментов DOM.
 function loadMain() {
     const objectParam = CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : '';
-    fetch(`/data?project=${encodeURIComponent(CURRENT_PROJECT)}${objectParam}&_=${Date.now()}`)
+    return fetch(`${API.DATA}?project=${encodeURIComponent(CURRENT_PROJECT)}${objectParam}&_=${Date.now()}`)
         .then((response) => response.json())
         .then((data) => {
             DATA = data;
@@ -620,7 +841,7 @@ function loadMain() {
 }
 
 function refreshLog() {
-    fetch(`/log_new?start=${logIndex}`)
+    fetch(`${API.LOG_NEW}?start=${logIndex}`)
         .then((response) => response.json())
         .then((data) => {
             const element = document.getElementById('log');
@@ -637,7 +858,8 @@ window.addEventListener('keydown', (event) => {
     window.closeAddNodeModal();
     window.closePlaybookModal();
     closeCreateGroupModal();
-    closeDeleteGroupModal();
+    closeHwtypeDropdown();
+    closeIsoPanel();
     const modal = document.getElementById('run_confirm_modal');
     if (modal) { modal.hidden = true; CONFIRM_ACTION = null; }
 });
@@ -655,5 +877,7 @@ window.addEventListener('resize', () => {
 interceptRunButtons();
 loadMain();
 refreshLog();
-setInterval(refreshLog, 1000);
-setInterval(updateNodeStatuses, 10000);
+loadSystemStatus();
+setInterval(refreshLog, LOG_POLL_INTERVAL_MS);
+setInterval(updateNodeStatuses, STATUS_POLL_INTERVAL_MS);
+setInterval(loadSystemStatus, SYSTEM_STATUS_POLL_INTERVAL_MS);

@@ -203,8 +203,8 @@ function injectProjectSelectorStyles() {
         .object-option:hover, .object-option.active { background: rgba(45,90,138,.75); transform: none; }
 
         .playbook-card { overflow: visible; }
-        .playbook-roles,
-        .role-children {
+        .playbook-roles:not(.smooth-panel),
+        .role-children:not(.smooth-panel) {
             width: 100%;
             max-width: none;
             box-sizing: border-box;
@@ -222,26 +222,16 @@ function injectProjectSelectorStyles() {
             content: 'Файлы плейбука';
             font: 600 13px Arial, sans-serif;
         }
-
-        #add_node_modal .modal-card {
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-        #add_node_modal .modal-head,
-        #add_node_modal .modal-footer { flex: 0 0 auto; }
-        #add_node_modal .modal-body {
-            min-height: 0;
-            overflow: hidden;
-        }
-        #add_node_modal .node-modal-fields {
-            min-height: 0;
-            overflow-y: auto;
-        }
     `;
     document.head.appendChild(style);
 }
 
+// Настоящий <select> плохо стилизуется в браузере (нельзя покрасить его
+// выпадающий список), поэтому мы прячем оригинальный select внутрь обёртки
+// и рисуем поверх свою кнопку + список — а сам select оставляем в DOM как
+// источник истины (на нём же продолжает работать changeObject() из main.html).
+// positionObjectSelectorList просто выставляет position:fixed-координаты
+// списка по факту размеров и положения кнопки на экране.
 function positionObjectSelectorList(wrap, list) {
     if (!wrap || !list) return;
     const button = wrap.querySelector('.object-select-button');
@@ -322,6 +312,15 @@ function enhanceObjectSelector() {
     sync();
 }
 
+// В main.html роль-кнопки размечены обычным onclick="toggleRoleDir(this)" /
+// onclick="togglePlaybookRoles(...)" — но никаких глобальных функций с
+// такими именами не существует. Вместо этого здесь на document вешается
+// один слушатель клика в фазе CAPTURE (последний аргумент addEventListener
+// = true), который перехватывает клик РАНЬШЕ, чем браузер успевает дойти
+// до самого onclick-атрибута элемента, гасит его (stopImmediatePropagation)
+// и сам делает плавное разворачивание/загрузку — как будто onclick никогда
+// не срабатывал. Это позволяет анимировать раскрытие без переписывания
+// разметки в main.html.
 function injectRoleAndModalBehavior() {
     if (document.documentElement.dataset.awcRoleModalFix === '1') return;
     document.documentElement.dataset.awcRoleModalFix = '1';
@@ -351,9 +350,20 @@ function injectRoleAndModalBehavior() {
                 updateRoleAncestors(panel);
             });
             setTimeout(() => {
+                // Класс "smooth-panel" снимаем сразу после анимации — иначе
+                // панель навсегда останется в режиме "высота ограничена
+                // инлайновым style", и любое последующее асинхронное изменение
+                // содержимого (README, дерево ролей) не сможет корректно
+                // вписаться, если мы не пересчитаем его точь-в-точь. Без этого
+                // класса в покое снова действует запасное правило "высота не
+                // ограничена", так что контент всегда виден целиком.
+                panel.classList.remove('smooth-panel');
+                panel.style.maxHeight = '';
+                panel.style.opacity = '';
+                panel.style.overflow = '';
                 panel.dataset.animating = '0';
                 updateRoleAncestors(panel);
-            }, 240);
+            }, ANIM.PANEL_TOGGLE_MS);
         } else {
             panel.style.overflow = 'hidden';
             panel.style.maxHeight = `${panel.scrollHeight}px`;
@@ -364,19 +374,20 @@ function injectRoleAndModalBehavior() {
             });
             setTimeout(() => {
                 panel.hidden = true;
+                panel.classList.remove('smooth-panel');
                 panel.style.maxHeight = '';
                 panel.style.opacity = '';
                 panel.style.overflow = '';
                 panel.dataset.animating = '0';
                 updateRoleAncestors(panel);
-            }, 240);
+            }, ANIM.PANEL_TOGGLE_MS);
         }
     }
 
     function loadRoleReadmes(children) {
         children.querySelectorAll('pre[data-readme-path]:not([data-loaded])').forEach((pre) => {
             pre.dataset.loaded = '1';
-            fetch(`/role_file?project=${encodeURIComponent(CURRENT_PROJECT)}${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}&path=${encodeURIComponent(pre.dataset.readmePath)}`)
+            fetch(`${API.ROLE_FILE}?project=${encodeURIComponent(CURRENT_PROJECT)}${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}&path=${encodeURIComponent(pre.dataset.readmePath)}`)
                 .then((response) => { if (!response.ok) throw Error('Не удалось загрузить README.md'); return response.json(); })
                 .then((data) => {
                     pre.textContent = data.content;
@@ -405,7 +416,7 @@ function injectRoleAndModalBehavior() {
         if (open && !panel.dataset.loaded) {
             panel.innerHTML = '<div class="roles-loading">Загрузка ролей…</div>';
             animateRolePanel(panel, true);
-            fetch(`/roles?project=${encodeURIComponent(CURRENT_PROJECT)}${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}&playbook=${encodeURIComponent(name)}`)
+            fetch(`${API.ROLES}?project=${encodeURIComponent(CURRENT_PROJECT)}${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}&playbook=${encodeURIComponent(name)}`)
                 .then((response) => { if (!response.ok) throw Error('Не удалось загрузить роли'); return response.json(); })
                 .then((roles) => {
                     panel.innerHTML = roles.length ? `<div class="roles-title">Роли</div>${roleTree(roles)}` : '<div class="muted">В этом плейбуке роли не указаны.</div>';

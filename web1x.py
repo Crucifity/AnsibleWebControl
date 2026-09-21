@@ -1,4 +1,26 @@
 #!/usr/bin/env python3
+"""
+AnsibleWebControl — простой веб-интерфейс для запуска Ansible-плейбуков
+и редактирования inventory-файлов (hosts.yml) через браузер.
+
+Никаких фреймворков: это один процесс на http.server.HTTPServer, который
+раздаёт статику из public/ и отвечает на несколько JSON-эндпоинтов (см.
+Handler.do_GET / Handler.do_POST в конце файла).
+
+Самая нетривиальная часть файла — набор функций с префиксом "_", которые
+редактируют hosts.yml НЕ через yaml.dump(), а построчно (regex + работа со
+списком строк). Это сделано намеренно: если просто загрузить YAML в
+словарь, поправить и сохранить через yaml.dump(), теряются все комментарии
+и пустые строки, которые администратор мог расставить вручную для
+читаемости. Поэтому добавление/удаление/переименование одного узла или
+изменение членства в группе стараются менять только нужные строки файла,
+а полная пересборка через save_hosts() используется лишь как запасной
+вариант, когда точечная правка невозможна или структура файла нетипична.
+
+Все "жёстко прибитые" значения (пути, имена файлов, порт сервера, тайминги
+и т.п.) вынесены в constants.py — начните оттуда, если нужно что-то
+перенастроить.
+"""
 
 import concurrent.futures
 import json
@@ -13,9 +35,44 @@ from urllib.parse import parse_qs, urlparse
 
 import yaml
 
+from constants import (
+    ANSIBLE_CFG_FILE_NAME,
+    AUTODEPLOY_DIR_NAME,
+    AUTODEPLOY_PLAYBOOK_NAME,
+    BACKGROUND_IMAGE_NAME,
+    DEFAULT_PROJECTS_ROOT,
+    DEFAULTS_FILE_CANDIDATES,
+    DHCP_PORT,
+    DHCP_SERVICE_CANDIDATES,
+    HOSTS_FILE_CANDIDATES,
+    HWTYPE_FILE_EXTENSION,
+    HWTYPE_HDD_DIR_NAME,
+    HWTYPE_PART_RELATIVE_PATH,
+    ISO_DIR,
+    ISO_FILE_EXTENSION,
+    LOG_MAX_LINES,
+    NODE_TEMPLATES_BY_PARAM_COUNT,
+    NON_PLAYBOOK_FILE_NAMES,
+    OBJECTS_DIR_NAME,
+    PING_PACKET_COUNT,
+    PING_TIMEOUT_SECONDS,
+    PLAYBOOKS_DIR_NAME,
+    PUBLIC_DIR_NAME,
+    ROLES_DIR_NAME,
+    SERVER_HOST,
+    SERVER_PORT,
+    STATIC_ROUTES,
+    STATUS_POLL_INTERVAL_SECONDS,
+    STATUS_THREAD_POOL_SIZE,
+    SYSTEM_CHECK_TIMEOUT_SECONDS,
+    SYSTEM_STATUS_POLL_INTERVAL_SECONDS,
+    TFTP_PORT,
+    TFTP_SERVICE_CANDIDATES,
+)
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PUBLIC_DIR = os.path.join(BASE_DIR, "public")
-PROJECTS_ROOT = os.environ.get("ANSIBLE_PROJECTS_ROOT", "/opt/home/projects")
+PUBLIC_DIR = os.path.join(BASE_DIR, PUBLIC_DIR_NAME)
+PROJECTS_ROOT = os.environ.get("ANSIBLE_PROJECTS_ROOT", DEFAULT_PROJECTS_ROOT)
 
 LOG = []
 LOG_OFFSET = 0
@@ -24,14 +81,12 @@ PROCESSES = []
 PROC_LOCK = threading.Lock()
 HOST_STATUS = {}
 STATUS_LOCK = threading.Lock()
+SYSTEM_STATUS = {"dhcp": None, "tftp": None, "iso": None}
+SYSTEM_STATUS_LOCK = threading.Lock()
 
-TEMPLATES = {
-    14: "Хост шаблон-1",
-    13: "Хост шаблон-2",
-    11: "МД шаблон-1",
-    5: "МД шаблон-2",
-    7: "СИ шаблон-1",
-}
+# Шаблоны параметров узла — вынесены в constants.py, чтобы их можно было
+# найти и поправить, не копаясь в логике classify_node() ниже.
+TEMPLATES = NODE_TEMPLATES_BY_PARAM_COUNT
 
 def safe(value):
     return os.path.basename(value or "")
@@ -40,7 +95,7 @@ def project_dir(project):
     return os.path.join(PROJECTS_ROOT, safe(project)) if project else None
 
 def single_project(project):
-    return bool(project and os.path.isdir(os.path.join(project_dir(project), "playbooks")))
+    return bool(project and os.path.isdir(os.path.join(project_dir(project), PLAYBOOKS_DIR_NAME)))
 
 def get_projects():
     if not os.path.isdir(PROJECTS_ROOT):
@@ -50,17 +105,17 @@ def get_projects():
 def get_objects(project):
     if single_project(project):
         return []
-    directory = os.path.join(project_dir(project) or "", "object")
+    directory = os.path.join(project_dir(project) or "", OBJECTS_DIR_NAME)
     if not os.path.isdir(directory):
         return []
     return sorted(name for name in os.listdir(directory) if os.path.isdir(os.path.join(directory, name)))
 
 def object_dir(project, obj):
     if single_project(project):
-        return os.path.join(project_dir(project), "playbooks")
+        return os.path.join(project_dir(project), PLAYBOOKS_DIR_NAME)
     if not project or not obj or obj not in get_objects(project):
         return None
-    return os.path.join(project_dir(project), "object", safe(obj))
+    return os.path.join(project_dir(project), OBJECTS_DIR_NAME, safe(obj))
 
 def read(path):
     try:
@@ -78,24 +133,66 @@ def paths(project, obj):
     directory = object_dir(project, obj)
     if not directory:
         return None
-    def first(names):
-        for name in names:
-            path = os.path.join(directory, name)
+    def first_existing(candidate_names):
+        for candidate_name in candidate_names:
+            path = os.path.join(directory, candidate_name)
             if os.path.isfile(path):
                 return path
-        return os.path.join(directory, names[0])
-    return {"object_dir": directory, "hosts": first(["hosts.yml", "hosts.yaml", "hosts", "inventory.yml"]), "defaults": first(["defaults.yml", "defaults.yaml", "defaults"]), "cfg": os.path.join(directory, "ansible.cfg")}
+        return os.path.join(directory, candidate_names[0])
+    return {
+        "object_dir": directory,
+        "hosts": first_existing(HOSTS_FILE_CANDIDATES),
+        "defaults": first_existing(DEFAULTS_FILE_CANDIDATES),
+        "cfg": os.path.join(directory, ANSIBLE_CFG_FILE_NAME),
+    }
 
 def roles_dir(project, obj):
     directory = object_dir(project, obj)
-    return os.path.join(directory, "roles") if directory else None
+    return os.path.join(directory, ROLES_DIR_NAME) if directory else None
+
+def _find_subdir(root, name):
+    """Ищет поддиректорию с именем `name` где-то внутри `root`, на любом
+    уровне вложенности, и возвращает путь к первой найденной. Используется
+    вместо жёстко заданного пути, потому что заранее не известно, на какой
+    именно глубине лежит нужная папка."""
+    if not root or not os.path.isdir(root):
+        return None
+    for dirpath, dirnames, _ in os.walk(root):
+        if name in dirnames:
+            return os.path.join(dirpath, name)
+    return None
+
+def hwtype_options(project, obj):
+    """Список доступных значений параметра hwtype — это имена .j2-файлов
+    (без расширения) в специальной поддиректории:
+    - для проекта без объектов — папка "hdd" где-то внутри autodeploy/
+      (там же, где лежит сам файл autodeploy.yml) — точное расположение
+      заранее не известно, поэтому ищем по имени рекурсивно;
+    - для проекта с объектами — фиксированный путь внутри каталога объекта:
+      roles/pxe_prepare/templates/part (расположение здесь точно известно,
+      поэтому просто подставляем путь, без обхода дерева).
+    Если подходящая папка не найдена, возвращается пустой список — тогда
+    на фронтенде выпадающий список hwtype будет содержать только текущее
+    значение узла (если оно есть).
+    """
+    if single_project(project):
+        root = os.path.join(project_dir(project) or "", AUTODEPLOY_DIR_NAME)
+        directory = _find_subdir(root, HWTYPE_HDD_DIR_NAME)
+    else:
+        object_root = object_dir(project, obj)
+        directory = os.path.join(object_root, *HWTYPE_PART_RELATIVE_PATH) if object_root else None
+        if directory and not os.path.isdir(directory):
+            directory = None
+    if not directory:
+        return []
+    return sorted(os.path.splitext(name)[0] for name in os.listdir(directory) if name.lower().endswith(HWTYPE_FILE_EXTENSION) and os.path.isfile(os.path.join(directory, name)))
 
 def log(message):
     global LOG_OFFSET
     with LOG_LOCK:
         LOG.append(f"[{datetime.now():%H:%M:%S}] {message}")
-        if len(LOG) > 1000:
-            trimmed = len(LOG) - 1000
+        if len(LOG) > LOG_MAX_LINES:
+            trimmed = len(LOG) - LOG_MAX_LINES
             del LOG[:trimmed]
             LOG_OFFSET += trimmed
 
@@ -113,6 +210,14 @@ def load_hosts(project, obj):
     return load_inventory(project, obj).get("all", {}).get("hosts", {}) or {}
 
 def classify_node(params):
+    """Определяет тип и название шаблона узла по количеству его параметров.
+
+    Это единственный признак классификации — сами имена/значения параметров
+    не анализируются (см. constants.NODE_TEMPLATES_BY_PARAM_COUNT). Если
+    нужного количества параметров нет в справочнике, используется запасной
+    вариант по последнему параметру, а если и он не подошёл — узел считается
+    "неизвестным" и получает общее имя "Узел".
+    """
     keys = list(params) if isinstance(params, dict) else []
     count = len(keys)
     if count in TEMPLATES:
@@ -134,9 +239,14 @@ def parse_hosts(project, obj):
         result.append({"hostname": name, "parameters": params, "node_type": node_type, "template": template, "ip": params.get("ansible_host", params.get("ip", ""))})
     return result
 
-def template_schemas(project, obj):
+def template_schemas(project, obj, nodes=None):
+    """Схема параметров каждого шаблона: {имя_шаблона: [ключи параметров]}.
+
+    Принимает необязательный `nodes` — уже готовый список узлов (например,
+    от parse_hosts()), чтобы не парсить hosts.yml второй раз, если он уже
+    был прочитан рядом (см. использование в do_GET "/data")."""
     schemas = {}
-    for node in parse_hosts(project, obj):
+    for node in nodes if nodes is not None else parse_hosts(project, obj):
         template = node["template"]
         if template not in ("Хост", "МД", "Узел") and template not in schemas:
             schemas[template] = list(node["parameters"])
@@ -187,6 +297,13 @@ def save_hosts(path, data):
     write(path, dumped)
 
 def scalar(value):
+    """Приводит строку из HTML-формы к «естественному» YAML-типу.
+
+    Веб-форма всегда присылает значения параметров как строки; чтобы в
+    hosts.yml не оседало "true" в кавычках вместо булева true, здесь
+    строка распознаётся как bool/null/int, где это уместно, а в остальных
+    случаях остаётся строкой как есть.
+    """
     if not isinstance(value, str):
         return value
     stripped = value.strip()
@@ -201,6 +318,13 @@ def scalar(value):
         return value
 
 def _hosts_section_bounds(lines):
+    """Находит секцию `hosts:` в файле инвентаря по списку его строк.
+
+    Возвращает (индекс_строки_с_"hosts:", индекс_конца_секции, отступ_в_пробелах).
+    Концом секции считается первая непустая строка с отступом не больше,
+    чем у самой строки "hosts:" (т.е. следующий ключ того же уровня —
+    например, "children:" — или конец файла).
+    """
     match_info = next(((index, len(line) - len(line.lstrip(" "))) for index, line in enumerate(lines) if re.match(r"^ *hosts:\s*(?:#.*)?$", line)), None)
     if match_info is None:
         return None, None, None
@@ -217,41 +341,74 @@ def _hosts_section_bounds(lines):
     return hosts_index, end_index, indent
 
 def _host_entry_indexes(lines, hosts_index, end_index, indent):
+    """Возвращает индексы строк с именами хостов внутри секции hosts:.
+
+    Каждая такая строка на 2 пробела глубже самой "hosts:" и выглядит как
+    "    имя_хоста:" (без вложенных списков/значений на той же строке).
+    """
     entry_indent = indent + 2
     return [index for index in range(hosts_index + 1, end_index) if re.match(rf"^ {{{entry_indent}}}\S.*?:\s*(?:#.*)?(?:\r?\n)?$", lines[index])]
 
 def _host_name_from_line(line, indent):
+    """Извлекает имя хоста из строки вида "  имя_хоста:" на заданном отступе."""
     match = re.match(rf"^ {{{indent}}}(\S.*?):\s*(?:#.*)?(?:\r?\n)?$", line.rstrip("\r\n"))
     return match.group(1) if match else None
 
 def _host_yaml_block(name, values, newline, indent):
+    """Строит YAML-блок одного хоста (имя + параметры) с нужным отступом.
+
+    Используется и при добавлении нового хоста, и при переименовании —
+    в обоих случаях старый/новый блок вставляется в файл построчно, а не
+    через полную пересборку YAML.
+    """
     block = yaml.safe_dump({name: values}, allow_unicode=True, sort_keys=False, default_flow_style=False)
     if newline != "\n":
         block = block.replace("\n", newline)
     return "".join(f"{' ' * indent}{line}" if line.strip() else line for line in block.splitlines(keepends=True))
 
 def _entries_use_blank_separator(lines, entry_indexes):
+    """Проверяет, разделены ли уже существующие записи хостов пустой строкой.
+
+    Нужно, чтобы при добавлении/переименовании хоста сохранить тот же
+    визуальный стиль файла: если администратор разделял хосты пустыми
+    строками — новый хост тоже получит такой отступ; если файл компактный
+    (без пустых строк) — компактность сохранится.
+    """
     for index in entry_indexes[1:]:
         if not lines[index - 1].strip():
             return True
     return False
 
 def _delete_host_block(lines, target_index, next_index):
+    """Удаляет из списка строк блок одного хоста, сохраняя ровно один
+    разделитель между соседями (а не два и не ноль).
+
+    Если пустая строка есть и до, и после удаляемого блока — оставляем
+    только ту, что была до него, а сам блок вместе с "хвостовой" пустой
+    строкой убираем целиком, иначе после соседних записей останется
+    сразу два пустых промежутка. Если разделитель только с одной стороны
+    (или отсутствует вовсе) — трогаем исключительно содержимое блока.
+    """
     entry_end = target_index + 1
     while entry_end < next_index and lines[entry_end].strip():
         entry_end += 1
     has_pre_blank = target_index > 0 and not lines[target_index - 1].strip()
     has_post_blank = entry_end < next_index
     if has_pre_blank and has_post_blank:
-        # Разделители есть с обеих сторон удаляемого узла: оставляем только
-        # тот, что был перед ним, а сам блок вместе с "хвостовой" пустой
-        # строкой убираем целиком, иначе после соседних строк останется
-        # сразу два пустых промежутка.
         del lines[target_index:next_index]
     else:
         del lines[target_index:entry_end]
 
-def _group_hosts_bounds(lines, group_name):
+def _group_subsection_bounds(lines, group_name, key):
+    """Находит подсекцию `key:` (обычно "hosts" или "children") внутри блока
+    группы `group_name` и возвращает (индекс_строки_key, индекс_конца, отступ).
+
+    Группа ищется как строка "имя_группы:" с отступом 0 или 4 пробела —
+    то есть либо на верхнем уровне файла, либо на один уровень вложенности
+    внутри "all: children:". Конец подсекции — первая строка внутри блока
+    группы с отступом не больше, чем у самой строки "key:" (её "сосед",
+    например соседняя подсекция "children:" на той же глубине).
+    """
     escaped = re.escape(group_name)
     for group_index, line in enumerate(lines):
         stripped = line.rstrip("\r\n")
@@ -259,30 +416,63 @@ def _group_hosts_bounds(lines, group_name):
         if not match:
             continue
         group_indent = len(match.group(1))
-        hosts_index = None
         for index in range(group_index + 1, len(lines)):
             current_stripped = lines[index].rstrip("\r\n")
             indent = len(current_stripped) - len(current_stripped.lstrip(" ")) if current_stripped else group_indent + 1
             if current_stripped and indent <= group_indent:
                 break
-            if indent == group_indent + 2 and current_stripped.strip() == "hosts:":
-                hosts_index = index
+            if indent == group_indent + 2 and current_stripped.strip() == f"{key}:":
+                section_indent = indent
                 end_index = len(lines)
                 for end in range(index + 1, len(lines)):
                     value = lines[end].rstrip("\r\n")
                     if value.strip():
                         value_indent = len(value) - len(value.lstrip(" "))
-                        if value_indent <= group_indent:
+                        if value_indent <= section_indent:
                             end_index = end
                             break
-                return hosts_index, end_index, indent
+                return index, end_index, section_indent
+    return None, None, None
+
+def _group_hosts_bounds(lines, group_name):
+    """То же, что _group_subsection_bounds(..., "hosts") — самый частый случай."""
+    return _group_subsection_bounds(lines, group_name, "hosts")
+
+def _group_block_bounds(lines, group_name):
+    """Находит границы ВСЕГО блока группы (заголовок + все его подсекции),
+    в отличие от _group_subsection_bounds, которая ищет только одну
+    подсекцию внутри него. Используется, когда группу нужно убрать из
+    файла целиком (она осталась без единого хоста)."""
+    escaped = re.escape(group_name)
+    for index, line in enumerate(lines):
+        stripped = line.rstrip("\r\n")
+        match = re.match(r"^( {0,4})" + escaped + r":\s*(?:#.*)?$", stripped)
+        if not match:
+            continue
+        indent = len(match.group(1))
+        end_index = len(lines)
+        for end in range(index + 1, len(lines)):
+            value = lines[end].rstrip("\r\n")
+            if value.strip():
+                value_indent = len(value) - len(value.lstrip(" "))
+                if value_indent <= indent:
+                    end_index = end
+                    break
+        return index, end_index, indent
     return None, None, None
 
 def _group_entry_indexes(lines, hosts_index, end_index, hosts_indent):
+    """Аналог _host_entry_indexes, но для списка хостов внутри группы."""
     entry_indent = hosts_indent + 2
     return [index for index in range(hosts_index + 1, end_index) if re.match(rf"^ {{{entry_indent}}}\S.*?:\s*(?:#.*)?(?:\r?\n)?$", lines[index].rstrip("\r\n"))]
 
 def _insert_host_into_group(path, group_name, name):
+    """Добавляет хост в список hosts: группы group_name, построчно.
+
+    Если такой группы в файле ещё нет — дописывает новый блок группы в
+    конец файла. Если группа уже есть — вставляет хост последней записью
+    в её существующий список.
+    """
     if not group_name:
         return
     raw = read(path)
@@ -305,6 +495,8 @@ def _insert_host_into_group(path, group_name, name):
     write(path, "".join(lines))
 
 def _remove_host_from_group(path, group_name, name):
+    """Убирает хост из списка hosts: конкретной группы (построчно,
+    с сохранением форматирования — см. _delete_host_block)."""
     raw = read(path)
     lines = raw.splitlines(keepends=True)
     hosts_index, end_index, hosts_indent = _group_hosts_bounds(lines, group_name)
@@ -318,6 +510,34 @@ def _remove_host_from_group(path, group_name, name):
     _delete_host_block(lines, target, next_index)
     write(path, "".join(lines))
 
+def _remove_group_block(path, group_name):
+    """Полностью убирает блок группы (её заголовок + всё содержимое), не трогая
+    остальной файл — в отличие от полного save_hosts(), это не переписывает
+    hosts.yml целиком и не теряет ручное форматирование (пустые строки) у
+    остальных групп и у секции hosts:."""
+    raw = read(path)
+    lines = raw.splitlines(keepends=True)
+    start, end, _ = _group_block_bounds(lines, group_name)
+    if start is None:
+        return False
+    del lines[start:end]
+    write(path, "".join(lines))
+    return True
+
+def _remove_group_subsection(path, group_name, key):
+    """Убирает только подсекцию (hosts: или children:) внутри блока группы,
+    сама группа при этом остаётся (у неё есть другое непустое содержимое)."""
+    raw = read(path)
+    lines = raw.splitlines(keepends=True)
+    start, end, _ = _group_subsection_bounds(lines, group_name, key)
+    if start is None:
+        return False
+    del lines[start:end]
+    write(path, "".join(lines))
+    return True
+
+
+
 def _group_is_empty(value):
     if not isinstance(value, dict):
         return True
@@ -325,29 +545,37 @@ def _group_is_empty(value):
     children = value.get("children")
     return not (isinstance(hosts, dict) and hosts) and not (isinstance(children, dict) and children)
 
-def _prune_empty_groups(value, changed):
+def _prune_empty_groups(value):
     if not isinstance(value, dict):
         return False
     children = value.get("children")
     if isinstance(children, dict):
         for name in list(children):
             child = children[name]
-            _prune_empty_groups(child, changed)
+            _prune_empty_groups(child)
             if _group_is_empty(child):
                 del children[name]
-                changed.append(True)
         if not children:
-            if "children" in value:
-                value.pop("children", None)
-                changed.append(True)
+            value.pop("children", None)
     hosts = value.get("hosts")
-    if isinstance(hosts, dict) and not hosts:
-        if "hosts" in value:
-            value.pop("hosts", None)
-            changed.append(True)
+    if not (isinstance(hosts, dict) and hosts) and "hosts" in value:
+        value.pop("hosts", None)
     return _group_is_empty(value)
 
 def _cleanup_empty_groups(path):
+    """Убирает из hosts.yml группы, оставшиеся без единого хоста после
+    удаления/переименования узлов.
+
+    Загружает файл через YAML (только для АНАЛИЗА — понять, какие группы
+    и подсекции опустели), а затем правит сам файл точечно, построчно:
+    удаляет только те блоки/подсекции, которые реально нужно убрать,
+    не трогая остальной hosts.yml. Так пустые строки и форматирование
+    у ХОСТОВ и у других групп не теряются.
+
+    Полная пересборка файла через save_hosts() используется только как
+    аварийный запасной вариант — если точечная правка почему-то не
+    удалась (например, из-за нетипичной вложенности групп).
+    """
     raw = read(path)
     if not raw.strip():
         return
@@ -358,30 +586,79 @@ def _cleanup_empty_groups(path):
         return
     if not isinstance(data, dict):
         return
-    changed = []
+
+    remove_blocks = []
+    remove_subsections = []
+
+    def plan(name, value):
+        orphan_keys = {key for key in ("hosts", "children") if key in value and not (isinstance(value[key], dict) and value[key])}
+        _prune_empty_groups(value)
+        if _group_is_empty(value):
+            remove_blocks.append(name)
+            return
+        for key in orphan_keys:
+            remove_subsections.append((name, key))
+
+    nested_names = set()
+    all_group = data.get("all")
+    if isinstance(all_group, dict) and isinstance(all_group.get("children"), dict):
+        children = all_group["children"]
+        nested_names = set(children)
+        for child_name in list(children):
+            plan(child_name, children[child_name])
+            if child_name in remove_blocks:
+                del children[child_name]
+        if not children:
+            all_group.pop("children", None)
+
     for name in list(data):
         if name == "all":
-            all_group = data.get(name)
-            if isinstance(all_group, dict) and isinstance(all_group.get("children"), dict):
-                children = all_group["children"]
-                for child_name in list(children):
-                    _prune_empty_groups(children[child_name], changed)
-                    if _group_is_empty(children[child_name]):
-                        del children[child_name]
-                        changed.append(True)
-                if not children:
-                    all_group.pop("children", None)
-                    changed.append(True)
             continue
-        if isinstance(data[name], dict) and ("hosts" in data[name] or "children" in data[name]):
-            _prune_empty_groups(data[name], changed)
-            if _group_is_empty(data[name]):
+        value = data[name]
+        if isinstance(value, dict) and ("hosts" in value or "children" in value):
+            plan(name, value)
+            if name in remove_blocks:
                 del data[name]
-                changed.append(True)
-    if changed:
+
+    if not remove_blocks and not remove_subsections:
+        return
+
+    # Точечно правим только то, что реально нужно поправить, вместо полной
+    # пересборки всего файла — так остальные группы и секция hosts: сохраняют
+    # своё ручное форматирование (например, пустые строки между хостами).
+    fallback = False
+    for name, key in remove_subsections:
+        if not _remove_group_subsection(path, name, key):
+            fallback = True
+    for name in remove_blocks:
+        if not _remove_group_block(path, name):
+            fallback = True
+
+    removed_nested = nested_names & set(remove_blocks)
+    if removed_nested and not fallback:
+        raw_after = read(path)
+        try:
+            data_after = yaml.safe_load(raw_after) or {}
+        except yaml.YAMLError:
+            data_after = None
+        if isinstance(data_after, dict):
+            all_after = data_after.get("all")
+            if isinstance(all_after, dict) and not all_after.get("children"):
+                _remove_group_subsection(path, "all", "children")
+
+    if fallback:
+        # Точечное редактирование не удалось (например, из-за совпадения
+        # имён групп на разных уровнях вложенности) — подстраховываемся
+        # полной пересборкой, чтобы файл не остался в неконсистентном виде.
         save_hosts(path, data)
 
 def delete_group(project, obj, group_name):
+    """Удаляет группу целиком — как топ-уровневую, так и вложенную под
+    all.children — построчно, не трогая остальной hosts.yml (см.
+    _remove_group_block). В отличие от _cleanup_empty_groups, здесь группа
+    удаляется по явному запросу пользователя независимо от того, пуста
+    она или нет — вместе с ней "теряют дом" и её хосты (сами хосты в
+    секции all.hosts не трогаются, удаляется только блок группы)."""
     file_paths = paths(project, obj)
     if not file_paths:
         raise ValueError("Объект не найден")
@@ -391,19 +668,39 @@ def delete_group(project, obj, group_name):
     data = load_inventory(project, obj)
     if not isinstance(data, dict):
         raise ValueError("Inventory пуст или повреждён")
-    removed = False
-    if group_name in data and isinstance(data[group_name], dict) and ("hosts" in data[group_name] or "children" in data[group_name]):
-        del data[group_name]
-        removed = True
+
+    exists_top_level = isinstance(data.get(group_name), dict) and ("hosts" in data[group_name] or "children" in data[group_name])
     all_group = data.get("all")
-    if isinstance(all_group, dict) and isinstance(all_group.get("children"), dict) and group_name in all_group["children"]:
-        del all_group["children"][group_name]
-        removed = True
-        if not all_group["children"]:
-            all_group.pop("children", None)
-    if not removed:
+    nested_children = all_group.get("children") if isinstance(all_group, dict) else None
+    exists_nested = isinstance(nested_children, dict) and group_name in nested_children
+    if not exists_top_level and not exists_nested:
         raise ValueError("Группа не найдена")
-    save_hosts(file_paths["hosts"], data)
+
+    if not _remove_group_block(file_paths["hosts"], group_name):
+        # Точечная правка не удалась (нетипичная структура файла) —
+        # подстраховываемся полной пересборкой, чтобы группа всё равно
+        # была удалена корректно.
+        if group_name in data:
+            del data[group_name]
+        if isinstance(nested_children, dict) and group_name in nested_children:
+            del nested_children[group_name]
+            if not nested_children:
+                all_group.pop("children", None)
+        save_hosts(file_paths["hosts"], data)
+        return
+
+    if exists_nested:
+        # Группа была вложена под all.children — если после её удаления
+        # там больше ничего не осталось, убираем и саму пустую "children:".
+        raw_after = read(file_paths["hosts"])
+        try:
+            data_after = yaml.safe_load(raw_after) or {}
+        except yaml.YAMLError:
+            data_after = None
+        if isinstance(data_after, dict):
+            all_after = data_after.get("all")
+            if isinstance(all_after, dict) and not all_after.get("children"):
+                _remove_group_subsection(file_paths["hosts"], "all", "children")
 
 def add_host(project, obj, name, values, groups=None):
     file_paths = paths(project, obj)
@@ -413,9 +710,22 @@ def add_host(project, obj, name, values, groups=None):
     hosts = data.setdefault("all", {}).setdefault("hosts", {})
     if not name:
         raise ValueError("Имя узла не указано")
-    if name in hosts:
-        raise ValueError("Узел уже существует")
     normalized_values = {key: scalar(value) for key, value in values.items()}
+
+    # Проверяем совпадение и по имени узла, и по ansible_host — второе
+    # тоже фактически означает дубликат (один и тот же адрес под другим
+    # именем), просто заметить это можно только сравнив параметры.
+    conflicts = []
+    if name in hosts:
+        conflicts.append(f"именем «{name}»")
+    ansible_host = normalized_values.get("ansible_host")
+    if ansible_host not in (None, ""):
+        owner = next((existing_name for existing_name, existing_values in hosts.items() if existing_name != name and isinstance(existing_values, dict) and existing_values.get("ansible_host") == ansible_host), None)
+        if owner:
+            conflicts.append(f"ansible_host «{ansible_host}» (уже используется узлом «{owner}»)")
+    if conflicts:
+        raise ValueError("Узел с таким " + " и ".join(conflicts) + " уже существует")
+
     hosts[name] = normalized_values
     raw = read(file_paths["hosts"])
     lines = raw.splitlines(keepends=True)
@@ -549,8 +859,7 @@ def get_playbooks(project, obj):
     directory = object_dir(project, obj)
     if not directory or not os.path.isdir(directory):
         return []
-    excluded = {"hosts.yml", "hosts.yaml", "inventory.yml", "defaults.yml", "defaults.yaml", "ansible.cfg"}
-    return [{"name": name, "path": os.path.join(directory, name), "type": "playbook"} for name in sorted(os.listdir(directory)) if os.path.isfile(os.path.join(directory, name)) and name.lower().endswith((".yml", ".yaml")) and name not in excluded]
+    return [{"name": name, "path": os.path.join(directory, name), "type": "playbook"} for name in sorted(os.listdir(directory)) if os.path.isfile(os.path.join(directory, name)) and name.lower().endswith((".yml", ".yaml")) and name not in NON_PLAYBOOK_FILE_NAMES]
 
 def playbook_roles(project, obj, playbook_name):
     file_paths = paths(project, obj)
@@ -607,13 +916,13 @@ def role_file(project, obj, relative_path):
     return path if path.startswith(root + os.sep) and os.path.isfile(path) else None
 
 def autodeploy(project):
-    path = os.path.join(project_dir(project) or "", "autodeploy", "autodeploy.yml")
+    path = os.path.join(project_dir(project) or "", AUTODEPLOY_DIR_NAME, AUTODEPLOY_PLAYBOOK_NAME)
     return path if os.path.isfile(path) else None
 
 def host_up(ip):
     if not ip: return False
     try:
-        return subprocess.run(["ping", "-c", "1", "-W", "1", str(ip)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+        return subprocess.run(["ping", "-c", str(PING_PACKET_COUNT), "-W", str(PING_TIMEOUT_SECONDS), str(ip)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
     except OSError:
         return False
 
@@ -622,7 +931,7 @@ def _check_node(node):
 
 def status_worker():
     global HOST_STATUS
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=STATUS_THREAD_POOL_SIZE) as executor:
         while True:
             statuses = {}
             for project in get_projects():
@@ -633,11 +942,105 @@ def status_worker():
                     statuses.setdefault(project, {})[key] = results
             with STATUS_LOCK:
                 HOST_STATUS = statuses
-            time.sleep(10)
+            time.sleep(STATUS_POLL_INTERVAL_SECONDS)
 
 def status(project, obj):
     with STATUS_LOCK:
         return dict(HOST_STATUS.get(project, {}).get(obj or "", {}))
+
+def _service_state(name):
+    """Спрашивает systemd о состоянии сервиса `name`. Возвращает строку
+    состояния ("active", "inactive", "failed" и т.п.) или None, если
+    systemd о таком сервисе вообще не знает (например, не установлен) —
+    в этом случае имеет смысл проверить кандидата дальше по списку."""
+    try:
+        result = subprocess.run(
+            ["systemctl", "is-active", name],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, timeout=SYSTEM_CHECK_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    state = result.stdout.strip()
+    # "unknown"/"" — systemd не нашёл юнит с таким именем вообще.
+    return state if state and state != "unknown" else None
+
+def _port_is_listening(port, proto="udp"):
+    """Запасной способ проверки, если systemd недоступен или ни один из
+    кандидатов сервисов не найден: смотрим, слушает ли что-нибудь
+    указанный UDP/TCP-порт (стандартный порт DHCP — 67, TFTP — 69)."""
+    flag = "-u" if proto == "udp" else "-t"
+    try:
+        result = subprocess.run(
+            ["ss", flag, "-l", "-n"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, timeout=SYSTEM_CHECK_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return any(f":{port} " in line or line.rstrip().endswith(f":{port}") for line in result.stdout.splitlines())
+
+def _daemon_status(service_candidates, port, proto="udp"):
+    """Общая логика для dhcp_status()/tftp_status(): сначала пытаемся
+    опознать сервис через systemd (это даёт понятное имя и состояние —
+    "active"/"failed"/...), а если ни один кандидат не найден, проверяем
+    хотя бы сам факт, что порт слушается кем-то."""
+    for name in service_candidates:
+        state = _service_state(name)
+        if state is not None:
+            return {"service": name, "state": state, "active": state == "active", "checked_via": "systemd"}
+    listening = _port_is_listening(port, proto)
+    if listening is None:
+        return {"service": None, "state": "unknown", "active": False, "checked_via": "none"}
+    return {"service": None, "state": "active" if listening else "inactive", "active": listening, "checked_via": "port"}
+
+def dhcp_status():
+    return _daemon_status(DHCP_SERVICE_CANDIDATES, DHCP_PORT, "udp")
+
+def tftp_status():
+    return _daemon_status(TFTP_SERVICE_CANDIDATES, TFTP_PORT, "udp")
+
+def iso_inventory():
+    """Рекурсивно собирает список .iso-файлов в ISO_DIR (включая все
+    подпапки). Путь к каждому файлу отдаётся относительно ISO_DIR, чтобы
+    не светить на фронтенде абсолютный путь на диске сервера."""
+    if not os.path.isdir(ISO_DIR):
+        return {"exists": False, "directory": ISO_DIR, "count": 0, "total_size": 0, "files": []}
+    files = []
+    for dirpath, _, filenames in os.walk(ISO_DIR):
+        for filename in filenames:
+            if not filename.lower().endswith(ISO_FILE_EXTENSION):
+                continue
+            full_path = os.path.join(dirpath, filename)
+            try:
+                size = os.path.getsize(full_path)
+                mtime = os.path.getmtime(full_path)
+            except OSError:
+                continue
+            files.append({
+                "name": filename,
+                "path": os.path.relpath(full_path, ISO_DIR).replace(os.sep, "/"),
+                "size": size,
+                "modified": datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M"),
+            })
+    files.sort(key=lambda item: item["path"].lower())
+    return {"exists": True, "directory": ISO_DIR, "count": len(files), "total_size": sum(item["size"] for item in files), "files": files}
+
+def system_status_worker():
+    """Фоновый поток, отдельный от status_worker (там опрашиваются узлы
+    проектов раз в STATUS_POLL_INTERVAL_SECONDS) — эти проверки не привязаны
+    ни к какому проекту и обновляются реже, поскольку состояние DHCP/TFTP и
+    набор ISO-образов меняется значительно нечаще, чем доступность узлов."""
+    global SYSTEM_STATUS
+    while True:
+        snapshot = {"dhcp": dhcp_status(), "tftp": tftp_status(), "iso": iso_inventory()}
+        with SYSTEM_STATUS_LOCK:
+            SYSTEM_STATUS = snapshot
+        time.sleep(SYSTEM_STATUS_POLL_INTERVAL_SECONDS)
+
+def system_status():
+    with SYSTEM_STATUS_LOCK:
+        return dict(SYSTEM_STATUS)
 
 def run_playbook(command, project, obj, name, cwd, cfg, label=None):
     title = label or name
@@ -696,15 +1099,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         url = urlparse(self.path); query = parse_qs(url.query)
         project = query.get("project", [""])[0]; obj = query.get("object", [""])[0]
-        static = {"/main": "main.html", "/style.css": "style.css", "/common.js": "common.js", "/main.js": "main.js"}
-        if url.path in static:
-            filename = static[url.path]
+        if url.path in STATIC_ROUTES:
+            filename = STATIC_ROUTES[url.path]
             content_type = "text/html; charset=utf-8" if filename.endswith(".html") else "text/css; charset=utf-8" if filename.endswith(".css") else "application/javascript; charset=utf-8"
             self.file(os.path.join(PUBLIC_DIR, filename), content_type); return
-        if url.path == "/background": self.file(os.path.join(BASE_DIR, "logo.png"), "image/png"); return
+        if url.path == "/background": self.file(os.path.join(BASE_DIR, BACKGROUND_IMAGE_NAME), "image/png"); return
         if url.path == "/data":
             hosts = parse_hosts(project, obj); auto = autodeploy(project)
-            self.json({"projects": get_projects(), "objects": get_objects(project), "single_object_mode": single_project(project), "selected_project": project, "selected_object": obj, "hosts": hosts, "status": status(project, obj), "groups": inventory_groups(project, obj), "template_schemas": template_schemas(project, obj), "playbooks": get_playbooks(project, obj), "autodeploy": bool(auto), "autodeploy_playbook": "autodeploy.yml" if auto else None}); return
+            self.json({"projects": get_projects(), "objects": get_objects(project), "single_object_mode": single_project(project), "selected_project": project, "selected_object": obj, "hosts": hosts, "status": status(project, obj), "groups": inventory_groups(project, obj), "template_schemas": template_schemas(project, obj, hosts), "playbooks": get_playbooks(project, obj), "autodeploy": bool(auto), "autodeploy_playbook": AUTODEPLOY_PLAYBOOK_NAME if auto else None, "hwtype_options": hwtype_options(project, obj)}); return
         if url.path == "/roles":
             playbook = query.get("playbook", [""])[0]; self.json(playbook_roles(project, obj, playbook) if playbook else []); return
         if url.path == "/role_file":
@@ -712,6 +1114,7 @@ class Handler(BaseHTTPRequestHandler):
             if not path: self.send_error(404); return
             self.json({"path": query.get("path", [""])[0], "content": read(path), "name": os.path.basename(path)}); return
         if url.path == "/status": self.json(status(project, obj)); return
+        if url.path == "/system_status": self.json(system_status()); return
         if url.path == "/log_new":
             try: start = int(query.get("start", ["0"])[0])
             except ValueError: start = 0
@@ -770,4 +1173,5 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     threading.Thread(target=status_worker, daemon=True).start()
-    HTTPServer(("0.0.0.0", 8000), Handler).serve_forever()
+    threading.Thread(target=system_status_worker, daemon=True).start()
+    HTTPServer((SERVER_HOST, SERVER_PORT), Handler).serve_forever()
