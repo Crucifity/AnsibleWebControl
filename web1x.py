@@ -1209,15 +1209,28 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         url = urlparse(self.path); query = parse_qs(url.query)
-        project = query.get("project", [""])[0]; obj = query.get("object", [""])[0]
+        project = query.get("project", [""])[0]
+        obj = query.get("object", [""])[0]
+        # Корень панели и /main открывают интерфейс без обязательных query-параметров.
+        # Если проект/объект не переданы, выбираем первый доступный контекст,
+        # но URL при этом не меняем.
+        if url.path == "/":
+            self.file(os.path.join(PUBLIC_DIR, STATIC_ROUTES["/main"]), "text/html; charset=utf-8"); return
         if url.path in STATIC_ROUTES:
             filename = STATIC_ROUTES[url.path]
             content_type = "text/html; charset=utf-8" if filename.endswith(".html") else "text/css; charset=utf-8" if filename.endswith(".css") else "application/javascript; charset=utf-8"
             self.file(os.path.join(PUBLIC_DIR, filename), content_type); return
         if url.path == "/background": self.file(os.path.join(BASE_DIR, BACKGROUND_IMAGE_NAME), "image/png"); return
         if url.path == "/data":
+            projects = get_projects()
+            if not project and projects:
+                project = projects[0]
+            objects = get_objects(project)
+            single_object_mode = single_project(project)
+            if not single_object_mode and not obj and objects:
+                obj = objects[0]
             hosts = parse_hosts(project, obj); auto = autodeploy(project)
-            self.json({"projects": get_projects(), "objects": get_objects(project), "single_object_mode": single_project(project), "selected_project": project, "selected_object": obj, "hosts": hosts, "status": status(project, obj), "groups": inventory_groups(project, obj), "template_schemas": template_schemas(project, obj, hosts), "playbooks": get_playbooks(project, obj), "autodeploy": bool(auto), "autodeploy_playbook": AUTODEPLOY_PLAYBOOK_NAME if auto else None, "hwtype_options": hwtype_options(project, obj)}); return
+            self.json({"projects": projects, "objects": objects, "single_object_mode": single_object_mode, "selected_project": project, "selected_object": obj, "hosts": hosts, "status": status(project, obj), "groups": inventory_groups(project, obj), "template_schemas": template_schemas(project, obj, hosts), "playbooks": get_playbooks(project, obj), "autodeploy": bool(auto), "autodeploy_playbook": AUTODEPLOY_PLAYBOOK_NAME if auto else None, "hwtype_options": hwtype_options(project, obj)}); return
         if url.path == "/roles":
             playbook = query.get("playbook", [""])[0]; self.json(playbook_roles(project, obj, playbook) if playbook else []); return
         if url.path == "/role_file":
