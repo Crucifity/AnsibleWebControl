@@ -1,4 +1,4 @@
-const CURRENT_PROJECT = getProjectFromURL();
+let CURRENT_PROJECT = getProjectFromURL();
 let CURRENT_OBJECT = getObjectFromURL();
 let DATA = null;
 let logIndex = 0;
@@ -923,6 +923,11 @@ function loadMain() {
         .then((response) => response.json())
         .then((data) => {
             DATA = data;
+            // При открытии панели без query-параметров сервер выбирает первый
+            // доступный проект/объект. Сохраняем этот контекст только в памяти:
+            // адрес остаётся чистым — / или /main без project/object.
+            CURRENT_PROJECT = data.selected_project || CURRENT_PROJECT;
+            CURRENT_OBJECT = data.selected_object || '';
             const objectBlock = document.getElementById('object_block');
             if (data.single_object_mode) {
                 CURRENT_OBJECT = '';
@@ -930,11 +935,6 @@ function loadMain() {
             } else {
                 if (objectBlock) objectBlock.style.display = '';
                 const objects = data.objects || [];
-                if (!CURRENT_OBJECT && objects.length) {
-                    CURRENT_OBJECT = objects[0];
-                    history.replaceState({}, '', `/main?project=${encodeURIComponent(CURRENT_PROJECT)}&object=${encodeURIComponent(CURRENT_OBJECT)}`);
-                    return loadMain();
-                }
                 const select = document.getElementById('object_select');
                 if (select) select.innerHTML = objects.map((object) => `<option value="${esc(object)}" ${object === CURRENT_OBJECT ? 'selected' : ''}>${esc(object)}</option>`).join('');
             }
