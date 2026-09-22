@@ -120,6 +120,23 @@ SYSTEM_STATUS_POLL_INTERVAL_SECONDS = 30
 # для проекта без объектов, — расположение здесь известно точно).
 HWTYPE_PART_RELATIVE_PATH = (ROLES_DIR_NAME, "pxe_prepare", "templates", HWTYPE_PART_DIR_NAME)
 
+# === NMAP: обнаружение DHCP-серверов в сети (режим прослушки) ==============
+# Пока включён "режим прослушки", фоновый поток раз в NMAP_SCAN_INTERVAL_SECONDS
+# запускает NMAP_COMMAND — по умолчанию это NSE-скрипт dhcp-discover: nmap
+# рассылает широковещательный DHCPDISCOVER и собирает ответы DHCP-серверов
+# в локальной сети (какой IP предлагают, какой шлюз, время аренды и т.п.).
+# Команде обычно нужны root-права (сырые сокеты) — отсюда "sudo" в начале;
+# если у пользователя, из-под которого запущен web1x.py, нет sudo без
+# пароля на nmap, команда завершится ошибкой — это будет видно в
+# "сыром" выводе nmap прямо в окне NMAP.
+NMAP_COMMAND = ["sudo", "nmap", "--script", "dhcp-discover", "--script-args", "dhcp-discover.requests={all}"]
+NMAP_SCAN_INTERVAL_SECONDS = 15
+NMAP_SCAN_TIMEOUT_SECONDS = 60
+
+# Какие строки из вывода dhcp-discover нас интересуют — вида "Поле: значение"
+# внутри каждого блока "Response N of M:".
+DHCP_DISCOVER_FIELDS = ["IP Offered", "DHCP Message Type", "Server Identifier", "Router", "Subnet Mask", "Domain Name Server", "Domain Name", "IP Address Lease Time"]
+
 # === Классификация узлов по шаблону ==========================================
 
 # Ключ — количество параметров узла в hosts.yml, значение — читаемое имя

@@ -25,6 +25,9 @@ const API = {
     DELETE_HOST: '/delete_host',
     DELETE_HOSTS: '/delete_hosts',
     DELETE_GROUP: '/delete_group',
+    NMAP_START: '/nmap_start',
+    NMAP_STOP: '/nmap_stop',
+    NMAP_STATUS: '/nmap_status',
 };
 
 // --- Интервалы опроса сервера (мс) ------------------------------------------
@@ -35,6 +38,10 @@ const STATUS_POLL_INTERVAL_MS = 10000;
 // Соответствует SYSTEM_STATUS_POLL_INTERVAL_SECONDS в backend/constants.py —
 // DHCP/TFTP/ISO обновляются реже, чем доступность узлов.
 const SYSTEM_STATUS_POLL_INTERVAL_MS = 30000;
+// Пока открыто окно NMAP и включён режим прослушки, список устройств
+// обновляется заметно чаще — это активный "живой" процесс, за которым
+// человек в этот момент специально наблюдает.
+const NMAP_POLL_INTERVAL_MS = 3000;
 
 // --- Прочие константы ---------------------------------------------------
 // Имя параметра узла, значение которого выбирается из списка (см.

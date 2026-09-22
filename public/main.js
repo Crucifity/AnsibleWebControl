@@ -139,7 +139,7 @@ function selectHwtypeOption(event, value) {
     hiddenInput.value = value;
     toggleButton.querySelector('.hwtype-toggle-label').textContent = value;
     // dispatchEvent, а не просто присвоение .value — чтобы сработал
-    // делегированный слушатель 'change' в editNode() и кнопка "Сохранить"
+    // делегированный слушатель 'change' в openNodeEdit() и кнопка "Сохранить"
     // стала активной, как и при правке обычных текстовых полей.
     hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
     closeHwtypeDropdown();
@@ -192,7 +192,7 @@ function renderNode(node) {
                     <span class="node-ip">${esc(node.ip || '—')}</span>
                     <span class="node-template">${esc(templateLabel(node))}</span>
                 </div>
-                <button class="node-edit" onclick="editNode(event, '${esc(node.hostname)}')">Изменить</button>
+                <button class="node-edit" onclick="toggleNodeEdit(event, '${esc(node.hostname)}')">Изменить</button>
             </div>
             <div class="host-body" hidden>
                 <div class="param-grid">${fields}</div>
@@ -200,7 +200,6 @@ function renderNode(node) {
                 <div class="host-footer">
                     <span class="edit-note">${esc(templateLabel(node))} · изменения сохраняются в hosts.yml</span>
                     <button class="edit-save primary" disabled onclick="saveNode(event, '${esc(node.hostname)}')">Сохранить</button>
-                    <button class="edit-save" onclick="cancelNodeEdit(event)">Отмена</button>
                 </div>
             </div>
         </div>
@@ -237,10 +236,18 @@ function toggleNodeFromHead(event, card) {
     updateHostSelectionButton();
 }
 
-function editNode(event, hostname) {
+// Кнопка «Изменить»/«Отмена» в шапке узла теперь одна на оба действия:
+// раскрывает форму параметров и сама превращается в кнопку отмены — вместо
+// прежней отдельной кнопки «Отмена» в подвале карточки.
+function toggleNodeEdit(event, hostname) {
     event.stopPropagation();
     const card = document.getElementById(`node-${encodeURIComponent(hostname)}`);
-    if (card.classList.contains('editing')) return; // уже редактируем — повторный клик ничего не делает
+    if (card.dataset.animating === '1') return;
+    if (card.classList.contains('editing')) closeNodeEdit(card);
+    else openNodeEdit(card);
+}
+
+function openNodeEdit(card) {
     const body = card.querySelector('.host-body');
     card.classList.add('editing');
     if (body.hidden) {
@@ -249,19 +256,64 @@ function editNode(event, hostname) {
         card.querySelector('.node-expand').textContent = '▾';
         setTimeout(() => card.dataset.animating = '0', ANIM.PANEL_TOGGLE_MS);
     }
-    card.querySelectorAll('.param-value').forEach((input) => { input.readOnly = false; input.disabled = false; });
-    card.querySelectorAll('.node-group-check').forEach((input) => input.disabled = false);
+    card.querySelectorAll('.param-value').forEach((el) => { el.readOnly = false; el.disabled = false; });
+    card.querySelectorAll('.node-group-check').forEach((el) => el.disabled = false);
+    // Запоминаем исходные значения — без похода на сервер откатить к ним
+    // всё при отмене (см. closeNodeEdit).
+    card.querySelectorAll('[data-key]').forEach((el) => { el.dataset.original = el.value; });
+    card.querySelectorAll('.node-group-check').forEach((el) => { el.dataset.originalChecked = el.checked ? '1' : '0'; });
     card.querySelector('.param-value')?.focus();
 
-    // Пока ничего не поменяли — кнопка «Сохранить» неактивна (серая); как
-    // только человек тронул любое поле, параметр или группу — включаем её.
+    const editBtn = card.querySelector('.node-edit');
+    editBtn.textContent = 'Отмена';
+    editBtn.classList.remove('has-changes');
+
     const saveBtn = card.querySelector('.edit-save.primary');
-    const markChanged = () => { saveBtn.disabled = false; };
+    saveBtn.disabled = true;
+
+    // Пока ничего не поменяли — «Сохранить» неактивна, а «Отмена» синяя.
+    // Как только человек тронул любое поле, параметр или группу — включаем
+    // «Сохранить» и красим «Отмена» в красный (напоминание, что отмена
+    // отбросит эти правки).
+    const markChanged = () => { saveBtn.disabled = false; editBtn.classList.add('has-changes'); };
     body.addEventListener('input', markChanged);
     body.addEventListener('change', markChanged);
+    card._markChanged = markChanged;
 }
 
-function cancelNodeEdit(event) { event.stopPropagation(); loadMain(); }
+function closeNodeEdit(card) {
+    const body = card.querySelector('.host-body');
+
+    // Откатываем все поля к значениям на момент открытия — отмена должна
+    // именно отменять правки, а не просто прятать форму с ними.
+    card.querySelectorAll('[data-key]').forEach((el) => { if (el.dataset.original !== undefined) el.value = el.dataset.original; });
+    card.querySelectorAll('.node-group-check').forEach((el) => { el.checked = el.dataset.originalChecked === '1'; });
+    card.querySelectorAll('.hwtype-field').forEach((field) => {
+        const hidden = field.querySelector('input[type="hidden"]');
+        const label = field.querySelector('.hwtype-toggle-label');
+        if (hidden && label) label.textContent = hidden.value || '—';
+    });
+
+    if (card._markChanged) {
+        body.removeEventListener('input', card._markChanged);
+        body.removeEventListener('change', card._markChanged);
+        card._markChanged = null;
+    }
+
+    card.dataset.animating = '1';
+    animatePanel(body, false);
+    card.querySelector('.node-expand').textContent = '▸';
+    setTimeout(() => card.dataset.animating = '0', ANIM.PANEL_TOGGLE_MS);
+
+    card.classList.remove('editing');
+    card.querySelectorAll('.param-value').forEach((el) => { el.readOnly = true; el.disabled = true; });
+    card.querySelectorAll('.node-group-check').forEach((el) => el.disabled = true);
+
+    const editBtn = card.querySelector('.node-edit');
+    editBtn.textContent = 'Изменить';
+    editBtn.classList.remove('has-changes');
+    card.querySelector('.edit-save.primary').disabled = true;
+}
 
 function saveNode(event, hostname) {
     event.stopPropagation();
@@ -701,7 +753,7 @@ function serviceStatusItem(label, info) {
 }
 
 function renderSystemStatus() {
-    const bar = document.getElementById('system_status_bar');
+    const bar = document.getElementById('system_status_dynamic');
     if (!bar || !SYSTEM_STATUS_DATA) return;
     const { dhcp, tftp, iso } = SYSTEM_STATUS_DATA;
     const isoLabel = iso?.exists
@@ -768,6 +820,64 @@ function loadSystemStatus() {
         .then((response) => response.json())
         .then((data) => { SYSTEM_STATUS_DATA = data; renderSystemStatus(); })
         .catch(() => {}); // это вспомогательная инфопанель — не мешаем работе остальной страницы, если она недоступна
+}
+
+// === NMAP: обнаружение узлов в сети (режим прослушки) ===
+// Модалка открывается по кнопке "NMAP" в шапке страницы. Пока она открыта,
+// список устройств обновляется по таймеру (см. NMAP_POLL_INTERVAL_MS) —
+// таймер стартует при открытии и обязательно останавливается при закрытии,
+// чтобы не дёргать сервер, когда никто не смотрит на список.
+let NMAP_POLL_TIMER = null;
+
+function openNmapModal() {
+    document.getElementById('nmap_modal').hidden = false;
+    document.body.classList.add('no-scroll');
+    refreshNmapStatus();
+    NMAP_POLL_TIMER = setInterval(refreshNmapStatus, NMAP_POLL_INTERVAL_MS);
+}
+
+function closeNmapModal() {
+    document.getElementById('nmap_modal').hidden = true;
+    document.body.classList.remove('no-scroll');
+    if (NMAP_POLL_TIMER) { clearInterval(NMAP_POLL_TIMER); NMAP_POLL_TIMER = null; }
+}
+
+function startNmapListening() {
+    document.getElementById('nmap_start_btn').disabled = true;
+    api(API.NMAP_START, {}).then(refreshNmapStatus).catch((error) => { document.getElementById('nmap_start_btn').disabled = false; alert(error.message); });
+}
+
+function stopNmapListening() {
+    document.getElementById('nmap_stop_btn').disabled = true;
+    api(API.NMAP_STOP, {}).then(refreshNmapStatus).catch((error) => alert(error.message));
+}
+
+function refreshNmapStatus() {
+    fetch(`${API.NMAP_STATUS}?_=${Date.now()}`)
+        .then((response) => response.json())
+        .then(renderNmapStatus)
+        .catch(() => {});
+}
+
+function renderNmapStatus(data) {
+    const startBtn = document.getElementById('nmap_start_btn');
+    const stopBtn = document.getElementById('nmap_stop_btn');
+    const stateLabel = document.getElementById('nmap_state_label');
+    if (!startBtn || !stopBtn || !stateLabel) return; // модалка уже закрыта/не отрисована
+    startBtn.disabled = data.running;
+    stopBtn.disabled = !data.running;
+    stateLabel.textContent = data.running ? 'прослушка включена…' : 'выключено';
+    stateLabel.classList.toggle('is-active', data.running);
+
+    const container = document.getElementById('nmap_devices');
+    if (container) {
+        container.innerHTML = data.devices.length
+            ? `<div class="nmap-table-head"><span>DHCP-сервер</span><span>Предлагаемый IP</span><span>Шлюз</span><span>Аренда</span><span>Замечен</span></div>${data.devices.map((device) => `<div class="nmap-row"><span class="nmap-mac">${esc(device.server_ip || '—')}</span><span class="nmap-ip">${esc(device.offered_ip || '—')}</span><span class="nmap-vendor">${esc(device.router || '—')}</span><span class="nmap-vendor">${esc(device.lease || '—')}</span><span class="nmap-seen">${esc(device.last_seen)}</span></div>`).join('')}`
+            : '<div class="muted">Ответов от DHCP-серверов пока нет — если это продолжается долго, посмотрите на вывод nmap ниже (там будет видно, если, например, не хватает прав sudo).</div>';
+    }
+
+    const rawOutput = document.getElementById('nmap_raw_output');
+    if (rawOutput) rawOutput.textContent = data.raw_output || (data.running ? 'Ждём первый результат сканирования…' : '');
 }
 
 // Лёгкое обновление "доступен/недоступен" без перезагрузки всей страницы —

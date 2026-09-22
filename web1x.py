@@ -3,26 +3,13 @@
 AnsibleWebControl — простой веб-интерфейс для запуска Ansible-плейбуков
 и редактирования inventory-файлов (hosts.yml) через браузер.
 
-Никаких фреймворков: это один процесс на http.server.HTTPServer, который
-раздаёт статику из public/ и отвечает на несколько JSON-эндпоинтов (см.
-Handler.do_GET / Handler.do_POST в конце файла).
-
-Самая нетривиальная часть файла — набор функций с префиксом "_", которые
-редактируют hosts.yml НЕ через yaml.dump(), а построчно (regex + работа со
-списком строк). Это сделано намеренно: если просто загрузить YAML в
-словарь, поправить и сохранить через yaml.dump(), теряются все комментарии
-и пустые строки, которые администратор мог расставить вручную для
-читаемости. Поэтому добавление/удаление/переименование одного узла или
-изменение членства в группе стараются менять только нужные строки файла,
-а полная пересборка через save_hosts() используется лишь как запасной
-вариант, когда точечная правка невозможна или структура файла нетипична.
-
-Все "жёстко прибитые" значения (пути, имена файлов, порт сервера, тайминги
+Все "постоянный велечины" значения (пути, имена файлов, порт сервера, тайминги
 и т.п.) вынесены в constants.py — начните оттуда, если нужно что-то
 перенастроить.
 """
 
 import concurrent.futures
+import ipaddress
 import json
 import os
 import re
@@ -42,6 +29,7 @@ from constants import (
     BACKGROUND_IMAGE_NAME,
     DEFAULT_PROJECTS_ROOT,
     DEFAULTS_FILE_CANDIDATES,
+    DHCP_DISCOVER_FIELDS,
     DHCP_PORT,
     DHCP_SERVICE_CANDIDATES,
     HOSTS_FILE_CANDIDATES,
@@ -51,6 +39,9 @@ from constants import (
     ISO_DIR,
     ISO_FILE_EXTENSION,
     LOG_MAX_LINES,
+    NMAP_COMMAND,
+    NMAP_SCAN_INTERVAL_SECONDS,
+    NMAP_SCAN_TIMEOUT_SECONDS,
     NODE_TEMPLATES_BY_PARAM_COUNT,
     NON_PLAYBOOK_FILE_NAMES,
     OBJECTS_DIR_NAME,
@@ -83,6 +74,10 @@ HOST_STATUS = {}
 STATUS_LOCK = threading.Lock()
 SYSTEM_STATUS = {"dhcp": None, "tftp": None, "iso": None}
 SYSTEM_STATUS_LOCK = threading.Lock()
+NMAP_LOCK = threading.Lock()
+NMAP_STATE = {"running": False, "devices": {}, "raw_output": ""}
+NMAP_STOP_EVENT = threading.Event()
+NMAP_THREAD = None
 
 # Шаблоны параметров узла — вынесены в constants.py, чтобы их можно было
 # найти и поправить, не копаясь в логике classify_node() ниже.
@@ -1042,6 +1037,122 @@ def system_status():
     with SYSTEM_STATUS_LOCK:
         return dict(SYSTEM_STATUS)
 
+def _local_subnets():
+    """Определяет CIDR локальных сетей на активных интерфейсах сервера
+    (кроме loopback). Самим сканированием сейчас не используется (см.
+    _nmap_scan_once — dhcp-discover рассылает широковещательный запрос и
+    не требует списка подсетей), но полезно оставить: пригодится, если
+    команду сканирования снова захотят сделать адресной."""
+    try:
+        result = subprocess.run(
+            ["ip", "-4", "-o", "addr", "show", "scope", "global"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, timeout=SYSTEM_CHECK_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    subnets = []
+    for line in result.stdout.splitlines():
+        for part in line.split():
+            if "/" not in part or part.count(".") != 3:
+                continue
+            try:
+                subnets.append(str(ipaddress.ip_network(part, strict=False)))
+            except ValueError:
+                continue
+    return subnets
+
+def _parse_dhcp_discover_output(output):
+    """Разбирает вывод `nmap --script dhcp-discover` на отдельные ответы.
+    Каждый ответ DHCP-сервера в выводе начинается со строки вида
+    "Response N of M:", дальше идут пары "Поле: значение" с отступом —
+    из них берём только известные поля (см. DHCP_DISCOVER_FIELDS)."""
+    responses = []
+    for block in re.split(r"Response \d+ of \d+:\s*", output)[1:]:
+        info = {}
+        for field in DHCP_DISCOVER_FIELDS:
+            match = re.search(rf"{re.escape(field)}:\s*(.+)", block)
+            if match:
+                info[field] = match.group(1).strip()
+        if info:
+            responses.append(info)
+    return responses
+
+def _nmap_scan_once():
+    """Один проход NMAP_COMMAND (по умолчанию — dhcp-discover): широковещательный
+    DHCPDISCOVER и сбор ответов DHCP-серверов в локальной сети. Возвращает
+    (devices, raw_output) — raw_output отдаётся как есть в /nmap_status,
+    чтобы в интерфейсе было видно, что именно ответил nmap (или что пошло
+    не так — например, не хватило прав на sudo или nmap не установлен)."""
+    try:
+        result = subprocess.run(
+            NMAP_COMMAND,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, timeout=NMAP_SCAN_TIMEOUT_SECONDS,
+        )
+        output = result.stdout
+    except FileNotFoundError:
+        return {}, "nmap не найден на сервере (команда не установлена)."
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return {}, f"Не удалось запустить nmap: {error}"
+
+    devices = {}
+    for info in _parse_dhcp_discover_output(output):
+        server_ip = info.get("Server Identifier", "")
+        offered_ip = info.get("IP Offered", "")
+        key = server_ip or offered_ip
+        if not key:
+            continue
+        devices[key] = {
+            "server_ip": server_ip,
+            "offered_ip": offered_ip,
+            "router": info.get("Router", ""),
+            "lease": info.get("IP Address Lease Time", ""),
+        }
+    return devices, output
+
+def nmap_worker():
+    """Фоновый поток режима прослушки: пока не попросили остановиться,
+    раз в NMAP_SCAN_INTERVAL_SECONDS перезапускает сканирование и копит
+    найденные DHCP-серверы в NMAP_STATE (старые из списка не пропадают
+    сразу — только обновляется "последний раз замечен")."""
+    global NMAP_STATE
+    while not NMAP_STOP_EVENT.is_set():
+        found, raw_output = _nmap_scan_once()
+        now = datetime.now().strftime("%H:%M:%S")
+        with NMAP_LOCK:
+            devices = NMAP_STATE["devices"]
+            for key, info in found.items():
+                info["first_seen"] = devices.get(key, {}).get("first_seen", now)
+                info["last_seen"] = now
+                devices[key] = info
+            NMAP_STATE["raw_output"] = raw_output
+        NMAP_STOP_EVENT.wait(NMAP_SCAN_INTERVAL_SECONDS)
+    with NMAP_LOCK:
+        NMAP_STATE["running"] = False
+
+def nmap_start():
+    global NMAP_THREAD
+    with NMAP_LOCK:
+        if NMAP_STATE["running"]:
+            return
+        NMAP_STATE["running"] = True
+        NMAP_STATE["devices"] = {}
+        NMAP_STATE["raw_output"] = ""
+    NMAP_STOP_EVENT.clear()
+    NMAP_THREAD = threading.Thread(target=nmap_worker, daemon=True)
+    NMAP_THREAD.start()
+
+def nmap_stop():
+    NMAP_STOP_EVENT.set()
+    with NMAP_LOCK:
+        NMAP_STATE["running"] = False
+
+def nmap_status():
+    with NMAP_LOCK:
+        devices = sorted(NMAP_STATE["devices"].values(), key=lambda item: (item["server_ip"], item["offered_ip"]))
+        return {"running": NMAP_STATE["running"], "devices": devices, "raw_output": NMAP_STATE.get("raw_output", "")}
+
 def run_playbook(command, project, obj, name, cwd, cfg, label=None):
     title = label or name
     log(f"=== START {title} [{project}{('/' + obj) if obj else ''}] ===")
@@ -1115,6 +1226,7 @@ class Handler(BaseHTTPRequestHandler):
             self.json({"path": query.get("path", [""])[0], "content": read(path), "name": os.path.basename(path)}); return
         if url.path == "/status": self.json(status(project, obj)); return
         if url.path == "/system_status": self.json(system_status()); return
+        if url.path == "/nmap_status": self.json(nmap_status()); return
         if url.path == "/log_new":
             try: start = int(query.get("start", ["0"])[0])
             except ValueError: start = 0
@@ -1139,6 +1251,8 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/run_autodeploy":
                 threading.Thread(target=run_autodeploy, args=(project, data.get("hosts", [])), daemon=True).start(); self.json({"ok": True}); return
             if self.path == "/stop": stop(); self.json({"ok": True}); return
+            if self.path == "/nmap_start": nmap_start(); self.json({"ok": True}); return
+            if self.path == "/nmap_stop": nmap_stop(); self.json({"ok": True}); return
             if self.path == "/update_host":
                 new_hostname = data.get("new_hostname", data.get("hostname", ""))
                 save_host(project, obj, data.get("hostname", ""), new_hostname, data.get("values", {}))

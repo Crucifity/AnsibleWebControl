@@ -50,6 +50,7 @@ body {
     margin: 0 auto;
     padding: 10px 18px;
 }
+.system-status-dynamic { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; }
 /* DHCP/TFTP/ISO показаны крупными карточками-бейджами, а не мелкой строкой
    текста — просили побольше места под показатели DHCP и TFTP. */
 .system-status-item {
@@ -79,6 +80,12 @@ button.system-status-item.iso-toggle:hover { background: rgba(255,255,255,.09); 
 button.system-status-item.iso-toggle.is-open { border-color: rgba(64,150,255,.5); background: rgba(35,110,210,.14); }
 .iso-toggle-arrow { display: inline-block; font-size: 11px; color: rgba(255,255,255,.55); transition: transform .2s ease; }
 button.system-status-item.iso-toggle.is-open .iso-toggle-arrow { transform: rotate(180deg); }
+
+/* Кнопка открытия окна NMAP — тот же бейдж, что у DHCP/TFTP/ISO, но
+   выделена синим (это отдельный инструмент, а не показатель состояния). */
+button.system-status-item.nmap-open-btn { cursor: pointer; background: rgba(35,110,210,.16); border-color: rgba(64,150,255,.4); color: rgba(190,215,255,.95); font-size: 14px; font-weight: 600; transition: background .15s, border-color .15s; }
+button.system-status-item.nmap-open-btn:hover { background: rgba(35,110,210,.28); transform: none; }
+.nmap-open-icon { font-size: 15px; }
 
 /* Плавающая панель поверх контента (как и .hwtype-dropdown ниже) — открытие
    списка ISO-образов не должно сдвигать вниз остальную страницу. */
@@ -324,7 +331,23 @@ button.danger { background: rgba(160,50,50,.55); }
 .node-name { font-weight: 600; font-size: 15px; }
 .node-ip { color: rgba(255,255,255,.60); font-size: 14px; font-variant-numeric: tabular-nums; }
 .node-template { color: rgba(255,255,255,.58); font-size: 14px; font-variant-numeric: tabular-nums; }
-.node-edit { min-height: 34px; box-sizing: border-box; padding: 7px 11px; white-space: nowrap; }
+.node-edit {
+    min-height: 34px;
+    box-sizing: border-box;
+    padding: 7px 11px;
+    white-space: nowrap;
+    /* тот же синий, что у активной кнопки шаблона в окне "Добавление узла" */
+    background: rgba(35,110,210,.16);
+    border-color: rgba(64,150,255,.4);
+    color: #fff;
+}
+.node-edit:hover { background: rgba(35,110,210,.7); }
+/* Пока форма открыта, но ничего не поменяли — кнопка остаётся синей (её
+   текст уже "Отмена", отменять там пока нечего). Как только правится
+   любое поле/параметр/группа — становится красной, предупреждая, что
+   повторный клик отменит и отбросит эти изменения. */
+.node-edit.has-changes { background: rgba(160,50,50,.65); border-color: rgba(210,80,80,.7); }
+.node-edit.has-changes:hover { background: rgba(180,60,60,.78); }
 
 .status-dot { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 50%; }
 .status-up { background: rgba(55,190,105,.72); box-shadow: 0 0 5px rgba(55,190,105,.25); }
@@ -708,6 +731,45 @@ button.danger { background: rgba(160,50,50,.55); }
 .muted, .empty { color: rgba(255,255,255,.42); padding: 12px 4px; }
 .run-confirm-card { width: min(520px,100%); }
 .error-modal-card { width: min(480px,100%); }
+.nmap-card { width: min(680px,100%); }
+
+.nmap-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.nmap-state { font-size: 13px; color: rgba(255,255,255,.5); }
+.nmap-state.is-active { color: rgba(130,220,160,.9); }
+.nmap-state.is-active::before { content: '● '; }
+
+.nmap-devices { max-height: 280px; overflow-y: auto; }
+.nmap-table-head, .nmap-row {
+    display: grid;
+    grid-template-columns: 130px 130px 120px 110px 80px;
+    gap: 10px;
+    align-items: center;
+    padding: 7px 4px;
+}
+.nmap-table-head { color: rgba(255,255,255,.45); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; border-bottom: 1px solid rgba(255,255,255,.10); }
+.nmap-row { font-size: 13px; border-bottom: 1px solid rgba(255,255,255,.06); }
+.nmap-row:last-child { border-bottom: none; }
+.nmap-mac { font-family: ui-monospace, "SF Mono", Consolas, monospace; color: rgba(160,215,255,.95); }
+.nmap-ip { color: #fff; }
+.nmap-vendor { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(255,255,255,.65); }
+.nmap-seen { color: rgba(255,255,255,.45); text-align: right; white-space: nowrap; }
+
+.nmap-raw-label { margin-top: 14px; margin-bottom: 6px; font-size: 12px; color: rgba(255,255,255,.45); }
+.nmap-raw-output {
+    max-height: 160px;
+    overflow: auto;
+    margin: 0;
+    padding: 10px 12px;
+    background: rgba(0,0,0,.32);
+    border: 1px solid rgba(255,255,255,.08);
+    border-radius: 8px;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    color: rgba(255,255,255,.65);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
 .run-confirm-text { color: rgba(255,255,255,.72); line-height: 1.55; overflow-wrap: anywhere; }
 .run-confirm-text strong { color: rgba(255,255,255,.92); }
 
