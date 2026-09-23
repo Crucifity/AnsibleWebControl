@@ -42,8 +42,6 @@
         .group-filter-control { display: flex; align-items: stretch; gap: 4px; min-width: 0; }
         .group-filter-btn { min-width: 0; }
         .group-filter-clear { min-width: 38px; padding-left: 10px; padding-right: 10px; }
-        .delete-group-list { display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto; }
-        .delete-group-item { display: flex; align-items: center; justify-content: space-between; gap: 16px; text-align: left; width: 100%; }
         .group-btn-delete { background: rgba(160,50,50,.45); border-color: rgba(210,80,80,.55); }
         .group-btn-delete:hover { background: rgba(180,60,60,.58); }
     </style>
@@ -51,6 +49,11 @@
 <body>
     <div class="overlay">
         <div id="nav"></div>
+        <div id="system_status_bar" class="system-status-bar">
+            <button type="button" class="system-status-item nmap-open-btn" onclick="openNmapModal()">NMAP <span class="nmap-open-icon">📡</span></button>
+            <div id="system_status_dynamic" class="system-status-dynamic"></div>
+        </div>
+        <div id="iso_panel" class="iso-panel"></div>
         <div id="project_selector"></div>
         <div class="page-wrap">
             <div id="object_block" class="block project-context-block">
@@ -91,25 +94,24 @@
         </div>
     </div>
     <div id="add_node_modal" class="modal-backdrop" hidden>
-        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="add_node_title">
-            <div class="modal-head"><div><div class="modal-kicker">Новый узел</div><h3 id="add_node_title">Добавление узла</h3></div><button class="modal-close" onclick="closeAddNodeModal()" aria-label="Закрыть">×</button></div>
+        <div class="modal-card add-node-card" role="dialog" aria-modal="true" aria-labelledby="add_node_title">
+            <div class="modal-head"><div><h3 id="add_node_title">Добавление узла</h3></div><button class="modal-close" onclick="closeAddNodeModal()" aria-label="Закрыть">×</button></div>
             <div class="modal-body">
                 <label class="modal-label" for="new_node_name">Название</label>
                 <input id="new_node_name" class="modal-input" type="text" placeholder="Например, host01" autocomplete="off">
                 <div class="node-group-field" style="margin-top: 16px;">
+                    <div class="modal-label">Группы</div>
+                    <div id="group_selector_list" class="group-toggle-list"></div>
                     <div class="group-selector-buttons">
-                        <button type="button" class="group-btn" onclick="toggleGroupSelector()">Выбрать группу <span class="arrow">▾</span></button>
                         <button type="button" class="group-btn group-btn-create" onclick="openCreateGroupModal()">Создать группу</button>
-                        <button type="button" class="group-btn group-btn-delete" onclick="openDeleteGroupModal()">Удалить группу</button>
-                    </div>
-                    <div id="group_selector_list" class="group-selector-list"></div>
-                    <div id="selected_groups_display" class="selected-groups-display">
-                        <span class="muted">Группы не выбраны</span>
+                        <button type="button" class="group-btn group-btn-delete" onclick="requestDeleteSelectedGroups()">Удалить группу</button>
                     </div>
                 </div>
                 <div class="modal-label" style="margin-top: 16px;">Шаблон параметров</div>
-                <div id="node_template_tabs" class="node-type-tabs"></div>
-                <div id="new_node_fields" class="node-modal-fields"></div>
+                <div class="node-params-panel">
+                    <div id="node_template_tabs" class="node-type-tabs"></div>
+                    <div id="new_node_fields" class="node-modal-fields"></div>
+                </div>
             </div>
             <div class="modal-footer"><button class="modal-secondary" onclick="closeAddNodeModal()">Отмена</button><button class="primary" onclick="createNode()">Добавить узел</button></div>
         </div>
@@ -121,11 +123,30 @@
             <div class="modal-footer"><button class="modal-secondary" onclick="closePlaybookModal()">Отмена</button><button class="primary" onclick="savePlaybookFromModal()">Изменить</button></div>
         </div>
     </div>
+    <div id="nmap_modal" class="modal-backdrop" hidden>
+        <div class="modal-card nmap-card" role="dialog" aria-modal="true" aria-labelledby="nmap_modal_title">
+            <div class="modal-head"><div><div class="modal-kicker">Обнаружение узлов в сети</div><h3 id="nmap_modal_title">NMAP</h3></div><button class="modal-close" onclick="closeNmapModal()" aria-label="Закрыть">×</button></div>
+            <div class="modal-body">
+                <div class="nmap-controls">
+                    <button type="button" class="primary" id="nmap_start_btn" onclick="startNmapListening()">Включить режим прослушки</button>
+                    <button type="button" class="danger" id="nmap_stop_btn" onclick="stopNmapListening()" disabled>Отключить</button>
+                    <span id="nmap_state_label" class="nmap-state">выключено</span>
+                </div>
+                <div id="nmap_devices" class="nmap-devices">
+                    <div class="muted">Список пуст — включите режим прослушки, чтобы начать поиск DHCP-серверов.</div>
+                </div>
+                <div class="nmap-raw-label">Вывод nmap (для диагностики, если ничего не находится):</div>
+                <pre id="nmap_raw_output" class="nmap-raw-output"></pre>
+            </div>
+            <div class="modal-footer"><button class="modal-secondary" onclick="closeNmapModal()">Закрыть</button></div>
+        </div>
+    </div>
+    <script src="/constants.js"></script>
     <script src="/common.js"></script>
     <script src="/main.js"></script>
     <script>
         (() => {
-            const MOTION_MS = 220;
+            const MOTION_MS = ANIM.MODAL_MOTION_MS;
             let closePassthrough = false;
             const originalCloseAddNodeModal = window.closeAddNodeModal || function() { document.getElementById('add_node_modal').hidden = true; };
             const originalClosePlaybookModal = window.closePlaybookModal || function() { document.getElementById('playbook_modal').hidden = true; };
@@ -141,8 +162,8 @@
             window.editPlaybook = function(name) { originalEditPlaybook(name); smoothShow(document.getElementById('playbook_modal')); };
             window.closePlaybookModal = function() { if (closePassthrough) return originalClosePlaybookModal(); smoothCloseWithOriginal(document.getElementById('playbook_modal'), originalClosePlaybookModal); };
             document.addEventListener('click', (event) => { if (closePassthrough) return; const button = event.target.closest('#add_node_modal .modal-close, #add_node_modal .modal-secondary, #playbook_modal .modal-close, #playbook_modal .modal-secondary, #run_confirm_modal .modal-close, #run_confirm_modal #run_confirm_cancel'); if (!button) return; event.preventDefault(); event.stopImmediatePropagation(); const modal = button.closest('.modal-backdrop'); if (!modal) return; if (modal.id === 'add_node_modal') return smoothCloseWithOriginal(modal, originalCloseAddNodeModal); if (modal.id === 'playbook_modal') return smoothCloseWithOriginal(modal, originalClosePlaybookModal); modal.classList.add('modal-closing'); setTimeout(() => { modal.classList.remove('modal-closing'); closePassthrough = true; button.click(); closePassthrough = false; }, MOTION_MS); }, true);
-            document.addEventListener('click', (event) => { if (closePassthrough) return; const modal = event.target.closest('.modal-backdrop'); if (!modal || event.target !== modal) return; if (modal.id === 'add_node_modal') window.closeAddNodeModal(); if (modal.id === 'playbook_modal') window.closePlaybookModal(); if (modal.id === 'run_confirm_modal') modal.querySelector('#run_confirm_cancel')?.click(); if (modal.id === 'delete_group_modal') window.closeDeleteGroupModal(); });
-            window.addEventListener('keydown', (event) => { if (event.key !== 'Escape') return; const modals = ['add_node_modal', 'playbook_modal', 'run_confirm_modal', 'delete_group_modal'].map((id) => document.getElementById(id)).filter((modal) => modal && !modal.hidden); if (!modals.length) return; event.preventDefault(); event.stopImmediatePropagation(); modals.forEach((modal) => { if (modal.id === 'add_node_modal') return smoothCloseWithOriginal(modal, originalCloseAddNodeModal); if (modal.id === 'playbook_modal') return smoothCloseWithOriginal(modal, originalClosePlaybookModal); if (modal.id === 'delete_group_modal') return window.closeDeleteGroupModal(); modal.querySelector('#run_confirm_cancel')?.click(); }); }, true);
+            document.addEventListener('click', (event) => { if (closePassthrough) return; const modal = event.target.closest('.modal-backdrop'); if (!modal || event.target !== modal) return; if (modal.id === 'add_node_modal') window.closeAddNodeModal(); if (modal.id === 'playbook_modal') window.closePlaybookModal(); if (modal.id === 'run_confirm_modal') modal.querySelector('#run_confirm_cancel')?.click(); if (modal.id === 'error_modal') modal.hidden = true; if (modal.id === 'nmap_modal') window.closeNmapModal(); });
+            window.addEventListener('keydown', (event) => { if (event.key !== 'Escape') return; const modals = ['add_node_modal', 'playbook_modal', 'run_confirm_modal', 'error_modal', 'nmap_modal'].map((id) => document.getElementById(id)).filter((modal) => modal && !modal.hidden); if (!modals.length) return; event.preventDefault(); event.stopImmediatePropagation(); modals.forEach((modal) => { if (modal.id === 'add_node_modal') return smoothCloseWithOriginal(modal, originalCloseAddNodeModal); if (modal.id === 'playbook_modal') return smoothCloseWithOriginal(modal, originalClosePlaybookModal); if (modal.id === 'error_modal') return (modal.hidden = true); if (modal.id === 'nmap_modal') return window.closeNmapModal(); modal.querySelector('#run_confirm_cancel')?.click(); }); }, true);
         })();
     </script>
 </body>

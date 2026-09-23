@@ -48,8 +48,14 @@ function injectProjectSelectorStyles() {
     const style = document.createElement('style');
     style.id = 'project-selector-styles';
     style.textContent = `
+//Проект
         .project-bar { padding-left: 60px !important; }
-        .project-select { position: relative; width: 170px; min-width: 190px; flex: 0 0 190px; }
+        .project-select {
+            position: relative;
+            width: 170px;
+            min-width: 190px;
+            flex: 0 0 190px;
+        }
         .project-select-button {
             display: flex;
             align-items: center;
@@ -66,10 +72,22 @@ function injectProjectSelectorStyles() {
             color: #fff;
             text-align: left;
         }
-        .project-select-button:hover { background: rgba(0,0,0,.62); transform: none; }
+        .project-select-button:hover {
+            background: rgba(0,0,0,.62);
+            transform: none;
+        }
         .project-select-button[aria-expanded="true"] { border-color: rgba(0,210,106,.45); }
-        .project-select-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .project-select-arrow { flex: 0 0 auto; color: rgba(255,255,255,.65); transition: transform .22s ease; }
+        .project-select-value {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .project-select-arrow {
+            flex: 0 0 auto;
+            color: rgba(255,255,255,.65);
+            transition: transform .22s ease;
+        }
         .project-select-button[aria-expanded="true"] .project-select-arrow { transform: rotate(180deg); }
         .project-select-list {
             position: absolute;
@@ -118,6 +136,7 @@ function injectProjectSelectorStyles() {
         .project-option:hover, .project-option.active { background: rgba(255,255,255,.10); transform: none; }
         .project-option.active { background: rgba(45,90,138,.75); }
 
+//Объекты
         .object-select-custom {
             position: relative;
             width: min(100%, 420px);
@@ -152,10 +171,22 @@ function injectProjectSelectorStyles() {
             color: #fff;
             text-align: left;
         }
-        .object-select-button:hover { background: rgba(0,0,0,.62); transform: none; }
+        .object-select-button:hover {
+            background: rgba(0,0,0,.62);
+            transform: none;
+        }
         .object-select-button[aria-expanded="true"] { border-color: rgba(0,210,106,.45); }
-        .object-select-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .object-select-arrow { flex: 0 0 auto; color: rgba(255,255,255,.65); transition: transform .22s ease; }
+        .object-select-value {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .object-select-arrow {
+            flex: 0 0 auto;
+            color: rgba(255,255,255,.65);
+            transition: transform .22s ease;
+        }
         .object-select-button[aria-expanded="true"] .object-select-arrow { transform: rotate(180deg); }
         .object-select-list {
             position: fixed;
@@ -202,9 +233,10 @@ function injectProjectSelectorStyles() {
         }
         .object-option:hover, .object-option.active { background: rgba(45,90,138,.75); transform: none; }
 
+//Автодеплой
         .playbook-card { overflow: visible; }
-        .playbook-roles,
-        .role-children {
+        .playbook-roles:not(.smooth-panel),
+        .role-children:not(.smooth-panel) {
             width: 100%;
             max-width: none;
             box-sizing: border-box;
@@ -222,25 +254,10 @@ function injectProjectSelectorStyles() {
             content: 'Файлы плейбука';
             font: 600 13px Arial, sans-serif;
         }
-
-        #add_node_modal .modal-card {
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-        #add_node_modal .modal-head,
-        #add_node_modal .modal-footer { flex: 0 0 auto; }
-        #add_node_modal .modal-body {
-            min-height: 0;
-            overflow: hidden;
-        }
-        #add_node_modal .node-modal-fields {
-            min-height: 0;
-            overflow-y: auto;
-        }
     `;
     document.head.appendChild(style);
 }
+
 
 function positionObjectSelectorList(wrap, list) {
     if (!wrap || !list) return;
@@ -351,9 +368,13 @@ function injectRoleAndModalBehavior() {
                 updateRoleAncestors(panel);
             });
             setTimeout(() => {
+                panel.classList.remove('smooth-panel');
+                panel.style.maxHeight = '';
+                panel.style.opacity = '';
+                panel.style.overflow = '';
                 panel.dataset.animating = '0';
                 updateRoleAncestors(panel);
-            }, 240);
+            }, ANIM.PANEL_TOGGLE_MS);
         } else {
             panel.style.overflow = 'hidden';
             panel.style.maxHeight = `${panel.scrollHeight}px`;
@@ -364,19 +385,20 @@ function injectRoleAndModalBehavior() {
             });
             setTimeout(() => {
                 panel.hidden = true;
+                panel.classList.remove('smooth-panel');
                 panel.style.maxHeight = '';
                 panel.style.opacity = '';
                 panel.style.overflow = '';
                 panel.dataset.animating = '0';
                 updateRoleAncestors(panel);
-            }, 240);
+            }, ANIM.PANEL_TOGGLE_MS);
         }
     }
 
     function loadRoleReadmes(children) {
         children.querySelectorAll('pre[data-readme-path]:not([data-loaded])').forEach((pre) => {
             pre.dataset.loaded = '1';
-            fetch(`/role_file?project=${encodeURIComponent(CURRENT_PROJECT)}${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}&path=${encodeURIComponent(pre.dataset.readmePath)}`)
+            fetch(`${API.ROLE_FILE}?project=${encodeURIComponent(CURRENT_PROJECT)}${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}&path=${encodeURIComponent(pre.dataset.readmePath)}`)
                 .then((response) => { if (!response.ok) throw Error('Не удалось загрузить README.md'); return response.json(); })
                 .then((data) => {
                     pre.textContent = data.content;
@@ -405,7 +427,7 @@ function injectRoleAndModalBehavior() {
         if (open && !panel.dataset.loaded) {
             panel.innerHTML = '<div class="roles-loading">Загрузка ролей…</div>';
             animateRolePanel(panel, true);
-            fetch(`/roles?project=${encodeURIComponent(CURRENT_PROJECT)}${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}&playbook=${encodeURIComponent(name)}`)
+            fetch(`${API.ROLES}?project=${encodeURIComponent(CURRENT_PROJECT)}${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}&playbook=${encodeURIComponent(name)}`)
                 .then((response) => { if (!response.ok) throw Error('Не удалось загрузить роли'); return response.json(); })
                 .then((roles) => {
                     panel.innerHTML = roles.length ? `<div class="roles-title">Роли</div>${roleTree(roles)}` : '<div class="muted">В этом плейбуке роли не указаны.</div>';
