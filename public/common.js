@@ -1,21 +1,26 @@
+// разбирает query-параметры текущего адреса страницы
 function getParams() {
     return new URLSearchParams(window.location.search);
 }
 
+// имя проекта из адреса страницы (пустая строка, если не задан)
 function getProjectFromURL() {
     return getParams().get('project') || '';
 }
 
+// имя объекта из адреса страницы (пустая строка, если не задан)
 function getObjectFromURL() {
     return getParams().get('object') || '';
 }
 
+// экранирует HTML-спецсимволы в строке перед вставкой в разметку
 function escapeHTML(value) {
     return String(value ?? '').replace(/[&<>"']/g, (char) => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[char]));
 }
 
+// строит разметку кастомного выпадающего списка выбора проекта
 function projectSelectorHTML(projects, selected) {
     const currentLabel = selected || '-- выберите проект --';
     const options = projects.map((project) => `
@@ -24,69 +29,75 @@ function projectSelectorHTML(projects, selected) {
         </button>
     `).join('');
 
-    return `<div class="project-bar">
-        <b>Проект:</b>
-        <div class="project-select" id="project_select_wrap">
-            <select id="project_select" hidden aria-hidden="true">
-                <option value="">-- выберите проект --</option>
-                ${projects.map((project) => `<option value="${escapeHTML(project)}" ${project === selected ? 'selected' : ''}>${escapeHTML(project)}</option>`).join('')}
-            </select>
-            <button type="button" class="project-select-button" id="project_select_button" aria-haspopup="listbox" aria-expanded="false" onclick="toggleProjectSelector(event)">
-                <span class="project-select-value">${escapeHTML(currentLabel)}</span>
-                <span class="project-select-arrow">▾</span>
-            </button>
-            <div class="project-select-list" id="project_select_list" role="listbox">
-                <button type="button" class="project-option${selected ? '' : ' active'}" data-project="" onclick="selectProjectOption(this.dataset.project)">-- выберите проект --</button>
-                ${options}
-            </div>
+    return `<div class="project-select" id="project_select_wrap">
+        <select id="project_select" hidden aria-hidden="true">
+            <option value="">-- выберите проект --</option>
+            ${projects.map((project) => `<option value="${escapeHTML(project)}" ${project === selected ? 'selected' : ''}>${escapeHTML(project)}</option>`).join('')}
+        </select>
+        <button type="button" class="system-status-item project-select-button" id="project_select_button" title="Выбрать проект" aria-haspopup="listbox" aria-expanded="false" onclick="toggleProjectSelector(event)">
+            <span class="project-select-caption">Проект</span>
+            <span class="project-select-value" title="${escapeHTML(currentLabel)}">${escapeHTML(currentLabel)}</span>
+            <span class="project-select-arrow">▾</span>
+        </button>
+        <div class="project-select-list" id="project_select_list" role="listbox">
+            <button type="button" class="project-option${selected ? '' : ' active'}" data-project="" onclick="selectProjectOption(this.dataset.project)">-- выберите проект --</button>
+            ${options}
         </div>
     </div>`;
 }
 
+// один раз добавляет в <head> стили выбора проекта/объекта и плавных панелей
 function injectProjectSelectorStyles() {
     if (document.getElementById('project-selector-styles')) return;
     const style = document.createElement('style');
     style.id = 'project-selector-styles';
     style.textContent = `
-        .project-bar { padding-left: 60px !important; }
-        .project-select { position: relative; width: 170px; min-width: 190px; flex: 0 0 190px; }
+/* Проект — кнопка в верхнем ряду, того же вида, что DHCP/TFTP/ISO */
+        .project-select { position: relative; display: flex; flex: 0 0 auto; }
         .project-select-button {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            width: 100%;
-            min-height: 36px;
-            height: 36px;
-            box-sizing: border-box;
-            padding: 7px 12px;
-            border-radius: 9px;
-            border: 1px solid rgba(255,255,255,.15);
-            background: rgba(0,0,0,.5);
-            color: #fff;
-            text-align: left;
+            cursor: pointer;
+            min-width: 150px;
+            max-width: 280px;
+            justify-content: flex-start;
+            transition: background .15s, border-color .15s;
         }
-        .project-select-button:hover { background: rgba(0,0,0,.62); transform: none; }
-        .project-select-button[aria-expanded="true"] { border-color: rgba(0,210,106,.45); }
-        .project-select-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .project-select-arrow { flex: 0 0 auto; color: rgba(255,255,255,.65); transition: transform .22s ease; }
+        .project-select-button:hover { background: rgba(255,255,255,.09); transform: none; }
+        .project-select-button[aria-expanded="true"] { border-color: rgba(64,150,255,.5); background: rgba(35,110,210,.14); }
+        .project-select-caption { font-size: 14px; font-weight: 600; color: #fff; }
+        .project-select-value {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 13px;
+            color: rgba(190,215,255,.95);
+        }
+        .project-select-arrow {
+            flex: 0 0 auto;
+            margin-left: auto;
+            font-size: 11px;
+            color: rgba(255,255,255,.55);
+            transition: transform .22s ease;
+        }
         .project-select-button[aria-expanded="true"] .project-select-arrow { transform: rotate(180deg); }
         .project-select-list {
             position: absolute;
             left: 0;
-            right: 0;
-            top: calc(100% + 5px);
+            top: calc(100% + 6px);
             z-index: 1100;
+            min-width: 100%;
+            width: max-content;
+            max-width: 320px;
             max-height: 0;
             overflow: hidden;
             padding: 0 4px;
             box-sizing: border-box;
             border: 1px solid transparent;
-            border-radius: 9px;
+            border-radius: 10px;
             background: #1e1e1e;
             box-shadow: 0 12px 30px rgba(0,0,0,.42);
             opacity: 0;
-            transform: translateY(-5px);
+            transform: translateY(-6px);
             pointer-events: none;
             transition: max-height .22s ease, opacity .16s ease, transform .22s ease, padding .22s ease, border-color .22s ease;
         }
@@ -118,6 +129,7 @@ function injectProjectSelectorStyles() {
         .project-option:hover, .project-option.active { background: rgba(255,255,255,.10); transform: none; }
         .project-option.active { background: rgba(45,90,138,.75); }
 
+        /* Объекты */
         .object-select-custom {
             position: relative;
             width: min(100%, 420px);
@@ -152,10 +164,22 @@ function injectProjectSelectorStyles() {
             color: #fff;
             text-align: left;
         }
-        .object-select-button:hover { background: rgba(0,0,0,.62); transform: none; }
+        .object-select-button:hover {
+            background: rgba(0,0,0,.62);
+            transform: none;
+        }
         .object-select-button[aria-expanded="true"] { border-color: rgba(0,210,106,.45); }
-        .object-select-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .object-select-arrow { flex: 0 0 auto; color: rgba(255,255,255,.65); transition: transform .22s ease; }
+        .object-select-value {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .object-select-arrow {
+            flex: 0 0 auto;
+            color: rgba(255,255,255,.65);
+            transition: transform .22s ease;
+        }
         .object-select-button[aria-expanded="true"] .object-select-arrow { transform: rotate(180deg); }
         .object-select-list {
             position: fixed;
@@ -202,9 +226,10 @@ function injectProjectSelectorStyles() {
         }
         .object-option:hover, .object-option.active { background: rgba(45,90,138,.75); transform: none; }
 
+/* Автодеплой */
         .playbook-card { overflow: visible; }
-        .playbook-roles,
-        .role-children {
+        .playbook-roles:not(.smooth-panel),
+        .role-children:not(.smooth-panel) {
             width: 100%;
             max-width: none;
             box-sizing: border-box;
@@ -222,26 +247,12 @@ function injectProjectSelectorStyles() {
             content: 'Файлы плейбука';
             font: 600 13px Arial, sans-serif;
         }
-
-        #add_node_modal .modal-card {
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-        #add_node_modal .modal-head,
-        #add_node_modal .modal-footer { flex: 0 0 auto; }
-        #add_node_modal .modal-body {
-            min-height: 0;
-            overflow: hidden;
-        }
-        #add_node_modal .node-modal-fields {
-            min-height: 0;
-            overflow-y: auto;
-        }
     `;
     document.head.appendChild(style);
 }
 
+
+// ставит выпадающий список объекта под его кнопкой (position: fixed по координатам кнопки)
 function positionObjectSelectorList(wrap, list) {
     if (!wrap || !list) return;
     const button = wrap.querySelector('.object-select-button');
@@ -252,6 +263,7 @@ function positionObjectSelectorList(wrap, list) {
     list.style.width = `${rect.width}px`;
 }
 
+// рисует поверх нативного <select> объекта собственную кнопку и список, держа select источником значения
 function enhanceObjectSelector() {
     const select = document.getElementById('object_select');
     if (!select || select.dataset.customObjectSelect === '1') return;
@@ -275,6 +287,7 @@ function enhanceObjectSelector() {
     list.setAttribute('role', 'listbox');
     wrap.appendChild(list);
 
+    // синхронизирует подпись и выбранный пункт кастомного списка с реальным <select>
     function sync() {
         const options = [...select.options];
         const value = select.selectedOptions[0]?.textContent || '';
@@ -322,10 +335,12 @@ function enhanceObjectSelector() {
     sync();
 }
 
+// вешает перехват кликов по ролям/файлам плейбука для плавного раскрытия и закрытия
 function injectRoleAndModalBehavior() {
     if (document.documentElement.dataset.awcRoleModalFix === '1') return;
     document.documentElement.dataset.awcRoleModalFix = '1';
 
+    // пересчитывает высоту раскрытых родительских панелей после изменения вложенной
     function updateRoleAncestors(panel) {
         let parent = panel?.parentElement;
         while (parent) {
@@ -336,6 +351,7 @@ function injectRoleAndModalBehavior() {
         }
     }
 
+    // плавно раскрывает/сворачивает панель роли или файлов плейбука
     function animateRolePanel(panel, open) {
         if (!panel || panel.dataset.animating === '1') return;
         panel.classList.add('smooth-panel');
@@ -351,9 +367,13 @@ function injectRoleAndModalBehavior() {
                 updateRoleAncestors(panel);
             });
             setTimeout(() => {
+                panel.classList.remove('smooth-panel');
+                panel.style.maxHeight = '';
+                panel.style.opacity = '';
+                panel.style.overflow = '';
                 panel.dataset.animating = '0';
                 updateRoleAncestors(panel);
-            }, 240);
+            }, ANIM.PANEL_TOGGLE_MS);
         } else {
             panel.style.overflow = 'hidden';
             panel.style.maxHeight = `${panel.scrollHeight}px`;
@@ -364,19 +384,21 @@ function injectRoleAndModalBehavior() {
             });
             setTimeout(() => {
                 panel.hidden = true;
+                panel.classList.remove('smooth-panel');
                 panel.style.maxHeight = '';
                 panel.style.opacity = '';
                 panel.style.overflow = '';
                 panel.dataset.animating = '0';
                 updateRoleAncestors(panel);
-            }, 240);
+            }, ANIM.PANEL_TOGGLE_MS);
         }
     }
 
+    // подгружает содержимое README вложенных директорий роли по мере раскрытия
     function loadRoleReadmes(children) {
         children.querySelectorAll('pre[data-readme-path]:not([data-loaded])').forEach((pre) => {
             pre.dataset.loaded = '1';
-            fetch(`/role_file?project=${encodeURIComponent(CURRENT_PROJECT)}${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}&path=${encodeURIComponent(pre.dataset.readmePath)}`)
+            fetch(`${API.ROLE_FILE}?project=${encodeURIComponent(CURRENT_PROJECT)}${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}&path=${encodeURIComponent(pre.dataset.readmePath)}`)
                 .then((response) => { if (!response.ok) throw Error('Не удалось загрузить README.md'); return response.json(); })
                 .then((data) => {
                     pre.textContent = data.content;
@@ -386,6 +408,7 @@ function injectRoleAndModalBehavior() {
         });
     }
 
+    // раскрывает/сворачивает директорию роли с анимацией
     function toggleRoleDirAnimated(button) {
         const children = button.parentElement?.querySelector('.role-children');
         if (!children) return;
@@ -396,6 +419,7 @@ function injectRoleAndModalBehavior() {
         if (chevron) chevron.textContent = open ? '▾' : '▸';
     }
 
+    // раскрывает/сворачивает блок «Файлы плейбука» с анимацией и подгрузкой ролей
     function togglePlaybookRolesAnimated(button) {
         const panel = button.closest('.playbook-card')?.querySelector('.playbook-roles');
         if (!panel || panel.dataset.animating === '1') return;
@@ -405,7 +429,7 @@ function injectRoleAndModalBehavior() {
         if (open && !panel.dataset.loaded) {
             panel.innerHTML = '<div class="roles-loading">Загрузка ролей…</div>';
             animateRolePanel(panel, true);
-            fetch(`/roles?project=${encodeURIComponent(CURRENT_PROJECT)}${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}&playbook=${encodeURIComponent(name)}`)
+            fetch(`${API.ROLES}?project=${encodeURIComponent(CURRENT_PROJECT)}${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}&playbook=${encodeURIComponent(name)}`)
                 .then((response) => { if (!response.ok) throw Error('Не удалось загрузить роли'); return response.json(); })
                 .then((roles) => {
                     panel.innerHTML = roles.length ? `<div class="roles-title">Роли</div>${roleTree(roles)}` : '<div class="muted">В этом плейбуке роли не указаны.</div>';
@@ -445,6 +469,7 @@ function injectRoleAndModalBehavior() {
     }, true);
 }
 
+// рисует верхнюю навигацию и селектор проекта/объекта
 function injectNav(active, projects = [], selectedProject = '', selectedObject = '') {
     const selector = document.getElementById('project_selector');
     injectProjectSelectorStyles();
@@ -452,6 +477,7 @@ function injectNav(active, projects = [], selectedProject = '', selectedObject =
     enhanceObjectSelector();
 }
 
+// открывает/закрывает выпадающий список проектов
 function toggleProjectSelector(event) {
     event?.stopPropagation();
     const button = document.getElementById('project_select_button');
@@ -461,6 +487,7 @@ function toggleProjectSelector(event) {
     button.setAttribute('aria-expanded', String(open));
 }
 
+// закрывает выпадающий список проектов
 function closeProjectSelector() {
     const button = document.getElementById('project_select_button');
     const list = document.getElementById('project_select_list');
@@ -469,6 +496,7 @@ function closeProjectSelector() {
     button.setAttribute('aria-expanded', 'false');
 }
 
+// выбирает проект из списка и переходит к нему
 function selectProjectOption(project) {
     const select = document.getElementById('project_select');
     if (!select) return;
@@ -486,6 +514,7 @@ document.addEventListener('click', (event) => {
     }
 });
 
+// переходит на страницу выбранного проекта
 function changeProject() {
     const project = document.getElementById('project_select').value;
     const currentObject = getObjectFromURL();
@@ -499,6 +528,7 @@ function changeProject() {
     window.location.href = url;
 }
 
+// переходит на страницу выбранного объекта текущего проекта
 function changeObject() {
     const object = document.getElementById('object_select').value;
     const project = getProjectFromURL();

@@ -42,8 +42,6 @@
         .group-filter-control { display: flex; align-items: stretch; gap: 4px; min-width: 0; }
         .group-filter-btn { min-width: 0; }
         .group-filter-clear { min-width: 38px; padding-left: 10px; padding-right: 10px; }
-        .delete-group-list { display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto; }
-        .delete-group-item { display: flex; align-items: center; justify-content: space-between; gap: 16px; text-align: left; width: 100%; }
         .group-btn-delete { background: rgba(160,50,50,.45); border-color: rgba(210,80,80,.55); }
         .group-btn-delete:hover { background: rgba(180,60,60,.58); }
     </style>
@@ -51,12 +49,21 @@
 <body>
     <div class="overlay">
         <div id="nav"></div>
-        <div id="project_selector"></div>
+        <div id="iso_panel" class="iso-panel"></div>
         <div class="page-wrap">
+            <!-- Верхний ряд: Проект · DHCP · TFTP · Прослушка · ISO-образы.
+                 Лежит внутри .page-wrap, поэтому левый край первой кнопки
+                 совпадает с левым краем карточек ниже. -->
+            <div id="system_status_bar" class="system-status-bar">
+                <div id="project_selector" class="status-slot"></div>
+                <div id="system_status_services" class="system-status-dynamic"></div>
+                <button type="button" class="system-status-item nmap-open-btn" onclick="openNmapModal()" title="Открыть окно режима прослушки: поиск MAC/IP-адресов в сети">Прослушка</button>
+                <div id="system_status_iso" class="system-status-dynamic"></div>
+            </div>
             <div id="object_block" class="block project-context-block">
                 <div class="section-head">
                     <h3 id="object_title">Объект</h3>
-                    <select id="object_select" onchange="changeObject()"></select>
+                    <select id="object_select" onchange="changeObject()" title="Выбор объекта текущего проекта"></select>
                 </div>
             </div>
             <div id="autodeploy_block"></div>
@@ -66,9 +73,9 @@
                         <h3>Узлы</h3>
                         <div id="groups" class="group-strip"></div>
                         <div class="node-toolbar">
-                            <button id="host_select_toggle" type="button" onclick="toggleHostSelection()"><span class="selection-button-label">Выбрать все узлы</span></button>
-                            <button class="primary" onclick="openAddNodeModal()">Добавить узел</button>
-                            <button class="danger" onclick="deleteSelectedNodes()">Удалить выбранные</button>
+                            <button id="host_select_toggle" type="button" onclick="toggleHostSelection()" title="Отметить или снять все узлы в списке"><span class="selection-button-label">Выбрать все узлы</span></button>
+                            <button class="primary" onclick="openAddNodeModal()" title="Открыть окно добавления нового узла">Добавить узел</button>
+                            <button class="danger" onclick="deleteSelectedNodes()" title="Удалить отмеченные узлы из hosts.yml (с подтверждением)">Удалить выбранные</button>
                         </div>
                     </div>
                     <div id="nodes" class="hosts-list"></div>
@@ -77,7 +84,7 @@
                     <div class="section-head">
                         <h3>Плейбуки</h3>
                         <div class="btn-row compact" id="playbook-selection-toolbar">
-                            <button id="playbook_select_toggle" type="button" onclick="togglePlaybookSelection()"><span class="selection-button-label">Выбрать все плейбуки</span></button>
+                            <button id="playbook_select_toggle" type="button" onclick="togglePlaybookSelection()" title="Отметить или снять все плейбуки в списке"><span class="selection-button-label">Выбрать все плейбуки</span></button>
                         </div>
                     </div>
                     <div id="playbooks" class="playbook-list"></div>
@@ -85,47 +92,98 @@
             </div>
             <section class="block execution-panel">
                 <div class="section-head"><h3>Выполнение</h3><span id="run_state">Готов</span></div>
-                <div class="run-row"><button class="primary" onclick="runSelected()">Запуск</button><button onclick="stopExecution()">Завершить</button></div>
+                <div class="run-row">
+                    <button class="primary" onclick="runSelected()" title="Запустить отмеченные плейбуки на отмеченных узлах">Запуск</button>
+                    <button onclick="stopExecution()" title="Остановить выполняющийся плейбук">Завершить</button>
+                    <!-- Подробность вывода ansible-playbook: добавляет -v / -vv / -vvv к команде запуска -->
+                    <div class="verbosity-select" role="radiogroup" aria-label="Подробность вывода">
+                        <span class="verbosity-label">Подробность:</span>
+                        <label title="Обычный вывод ansible-playbook"><input type="radio" name="verbosity" value="" checked><span>обычная</span></label>
+                        <label title="ansible-playbook -v — результат каждой задачи"><input type="radio" name="verbosity" value="-v"><span>-v</span></label>
+                        <label title="ansible-playbook -vv — плюс входные параметры задач"><input type="radio" name="verbosity" value="-vv"><span>-vv</span></label>
+                        <label title="ansible-playbook -vvv — плюс подробности подключения к узлам"><input type="radio" name="verbosity" value="-vvv"><span>-vvv</span></label>
+                    </div>
+                </div>
                 <pre id="log" class="log"></pre>
             </section>
         </div>
     </div>
     <div id="add_node_modal" class="modal-backdrop" hidden>
-        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="add_node_title">
-            <div class="modal-head"><div><div class="modal-kicker">Новый узел</div><h3 id="add_node_title">Добавление узла</h3></div><button class="modal-close" onclick="closeAddNodeModal()" aria-label="Закрыть">×</button></div>
+        <div class="modal-card add-node-card" role="dialog" aria-modal="true" aria-labelledby="add_node_title">
+            <div class="modal-head"><div><h3 id="add_node_title">Добавление узла</h3></div><button class="modal-close" onclick="closeAddNodeModal()" aria-label="Закрыть">×</button></div>
             <div class="modal-body">
                 <label class="modal-label" for="new_node_name">Название</label>
-                <input id="new_node_name" class="modal-input" type="text" placeholder="Например, host01" autocomplete="off">
+                <input id="new_node_name" class="modal-input" type="text" title="Имя нового узла (hostname) в hosts.yml" placeholder="Например, host01" autocomplete="off">
                 <div class="node-group-field" style="margin-top: 16px;">
+                    <div class="modal-label">Группы</div>
+                    <div id="group_selector_list" class="group-toggle-list"></div>
                     <div class="group-selector-buttons">
-                        <button type="button" class="group-btn" onclick="toggleGroupSelector()">Выбрать группу <span class="arrow">▾</span></button>
-                        <button type="button" class="group-btn group-btn-create" onclick="openCreateGroupModal()">Создать группу</button>
-                        <button type="button" class="group-btn group-btn-delete" onclick="openDeleteGroupModal()">Удалить группу</button>
-                    </div>
-                    <div id="group_selector_list" class="group-selector-list"></div>
-                    <div id="selected_groups_display" class="selected-groups-display">
-                        <span class="muted">Группы не выбраны</span>
+                        <button type="button" class="group-btn group-btn-create" onclick="openCreateGroupModal()" title="Создать новую группу для узла">Создать группу</button>
+                        <button type="button" class="group-btn group-btn-delete" onclick="requestDeleteSelectedGroups()" title="Удалить выбранные (синие) группы — сами узлы останутся">Удалить группу</button>
                     </div>
                 </div>
                 <div class="modal-label" style="margin-top: 16px;">Шаблон параметров</div>
-                <div id="node_template_tabs" class="node-type-tabs"></div>
-                <div id="new_node_fields" class="node-modal-fields"></div>
+                <div class="node-params-panel">
+                    <div id="node_template_tabs" class="node-type-tabs"></div>
+                    <div id="new_node_fields" class="node-modal-fields"></div>
+                </div>
             </div>
-            <div class="modal-footer"><button class="modal-secondary" onclick="closeAddNodeModal()">Отмена</button><button class="primary" onclick="createNode()">Добавить узел</button></div>
+            <div class="modal-footer"><button class="modal-secondary" onclick="closeAddNodeModal()">Отмена</button><button class="primary" onclick="createNode()" title="Создать узел с введёнными параметрами и группами">Добавить узел</button></div>
         </div>
     </div>
     <div id="playbook_modal" class="modal-backdrop" hidden>
         <div id="playbook_editor_card" class="modal-card playbook-editor-modal" role="dialog" aria-modal="true" aria-labelledby="playbook_modal_title">
             <div class="modal-head"><div><div class="modal-kicker">Редактор плейбука</div><h3 id="playbook_modal_title">Плейбук</h3></div><button class="modal-close" onclick="closePlaybookModal()" aria-label="Закрыть">×</button></div>
-            <div class="modal-body playbook-editor-body"><textarea id="playbook_editor" class="playbook-editor" spellcheck="false"></textarea></div>
-            <div class="modal-footer"><button class="modal-secondary" onclick="closePlaybookModal()">Отмена</button><button class="primary" onclick="savePlaybookFromModal()">Изменить</button></div>
+            <div class="modal-body playbook-editor-body"><textarea id="playbook_editor" class="playbook-editor" spellcheck="false" title="Текст плейбука (YAML)"></textarea></div>
+            <div class="modal-footer"><button class="modal-secondary" onclick="closePlaybookModal()">Отмена</button><button class="primary" onclick="savePlaybookFromModal()" title="Сохранить изменения плейбука на сервере">Изменить</button></div>
         </div>
     </div>
+    <div id="nmap_modal" class="modal-backdrop" hidden>
+        <div class="modal-card nmap-card" role="dialog" aria-modal="true" aria-labelledby="nmap_modal_title">
+            <div class="modal-head"><div><div class="modal-kicker">Обнаружение узлов в сети</div><h3 id="nmap_modal_title">Режим прослушки</h3></div><button class="modal-close" onclick="closeNmapModal()" aria-label="Закрыть">×</button></div>
+            <div class="modal-body">
+                <div id="nmap_interface_field" class="nmap-switch-field">
+                    <label class="modal-label" for="nmap_interface_select">Сетевой интерфейс</label>
+                    <select id="nmap_interface_select" class="modal-input" title="Интерфейс, через который сервер смотрит в сеть"></select>
+                </div>
+                <div class="nmap-mode-select" id="nmap_mode_select">
+                    <label class="nmap-mode-option"><input type="radio" name="nmap_mode" value="tcpdump" checked onchange="onNmapModeChange()" title="Пассивно слушать трафик на сервере через tcpdump"><span>TCPdump</span></label>
+                    <label class="nmap-mode-option"><input type="radio" name="nmap_mode" value="switch" onchange="onNmapModeChange()" title="Запросить таблицу MAC-адресов у коммутатора MikroTik по SSH"><span>Таблица коммутатора (SSH)</span></label>
+                </div>
+                <div id="nmap_switch_fields" class="nmap-switch-field nmap-switch-collapsible" inert>
+                    <label class="modal-label" for="nmap_switch_address">IP-адрес коммутатора</label>
+                    <input id="nmap_switch_address" class="modal-input" type="text" title="IP-адрес коммутатора для SSH-подключения" placeholder="Например, 192.168.88.1" autocomplete="off">
+                    <div class="nmap-switch-auth">
+                        <div>
+                            <label class="modal-label" for="nmap_switch_user">Пользователь</label>
+                            <input id="nmap_switch_user" class="modal-input" type="text" title="Логин для SSH-подключения к коммутатору" placeholder="admin" autocomplete="off">
+                        </div>
+                        <div>
+                            <label class="modal-label" for="nmap_switch_password">Пароль</label>
+                            <input id="nmap_switch_password" class="modal-input" type="password" title="Пароль для SSH-подключения (не обязателен, если настроен вход по ключу)" placeholder="(необязательно)" autocomplete="off">
+                        </div>
+                    </div>
+                </div>
+                <div class="nmap-controls">
+                    <button type="button" class="primary" id="nmap_start_btn" onclick="startNmapListening()" title="Начать поиск устройств выбранным способом">Включить режим прослушки</button>
+                    <button type="button" class="danger" id="nmap_stop_btn" onclick="stopNmapListening()" disabled title="Остановить прослушку">Отключить</button>
+                    <span id="nmap_state_label" class="nmap-state">выключено</span>
+                </div>
+                <div id="nmap_devices" class="nmap-devices">
+                    <div class="muted">Список пуст — включите режим прослушки, чтобы начать поиск устройств.</div>
+                </div>
+                <div class="nmap-raw-label">Вывод команды (для диагностики, если ничего не находится):</div>
+                <pre id="nmap_raw_output" class="nmap-raw-output"></pre>
+            </div>
+            <div class="modal-footer"><button class="modal-secondary" onclick="closeNmapModal()">Закрыть</button></div>
+        </div>
+    </div>
+    <script src="/constants.js"></script>
     <script src="/common.js"></script>
     <script src="/main.js"></script>
     <script>
         (() => {
-            const MOTION_MS = 220;
+            const MOTION_MS = ANIM.MODAL_MOTION_MS;
             let closePassthrough = false;
             const originalCloseAddNodeModal = window.closeAddNodeModal || function() { document.getElementById('add_node_modal').hidden = true; };
             const originalClosePlaybookModal = window.closePlaybookModal || function() { document.getElementById('playbook_modal').hidden = true; };
@@ -141,8 +199,8 @@
             window.editPlaybook = function(name) { originalEditPlaybook(name); smoothShow(document.getElementById('playbook_modal')); };
             window.closePlaybookModal = function() { if (closePassthrough) return originalClosePlaybookModal(); smoothCloseWithOriginal(document.getElementById('playbook_modal'), originalClosePlaybookModal); };
             document.addEventListener('click', (event) => { if (closePassthrough) return; const button = event.target.closest('#add_node_modal .modal-close, #add_node_modal .modal-secondary, #playbook_modal .modal-close, #playbook_modal .modal-secondary, #run_confirm_modal .modal-close, #run_confirm_modal #run_confirm_cancel'); if (!button) return; event.preventDefault(); event.stopImmediatePropagation(); const modal = button.closest('.modal-backdrop'); if (!modal) return; if (modal.id === 'add_node_modal') return smoothCloseWithOriginal(modal, originalCloseAddNodeModal); if (modal.id === 'playbook_modal') return smoothCloseWithOriginal(modal, originalClosePlaybookModal); modal.classList.add('modal-closing'); setTimeout(() => { modal.classList.remove('modal-closing'); closePassthrough = true; button.click(); closePassthrough = false; }, MOTION_MS); }, true);
-            document.addEventListener('click', (event) => { if (closePassthrough) return; const modal = event.target.closest('.modal-backdrop'); if (!modal || event.target !== modal) return; if (modal.id === 'add_node_modal') window.closeAddNodeModal(); if (modal.id === 'playbook_modal') window.closePlaybookModal(); if (modal.id === 'run_confirm_modal') modal.querySelector('#run_confirm_cancel')?.click(); if (modal.id === 'delete_group_modal') window.closeDeleteGroupModal(); });
-            window.addEventListener('keydown', (event) => { if (event.key !== 'Escape') return; const modals = ['add_node_modal', 'playbook_modal', 'run_confirm_modal', 'delete_group_modal'].map((id) => document.getElementById(id)).filter((modal) => modal && !modal.hidden); if (!modals.length) return; event.preventDefault(); event.stopImmediatePropagation(); modals.forEach((modal) => { if (modal.id === 'add_node_modal') return smoothCloseWithOriginal(modal, originalCloseAddNodeModal); if (modal.id === 'playbook_modal') return smoothCloseWithOriginal(modal, originalClosePlaybookModal); if (modal.id === 'delete_group_modal') return window.closeDeleteGroupModal(); modal.querySelector('#run_confirm_cancel')?.click(); }); }, true);
+            document.addEventListener('click', (event) => { if (closePassthrough) return; const modal = event.target.closest('.modal-backdrop'); if (!modal || event.target !== modal) return; if (modal.id === 'add_node_modal') window.closeAddNodeModal(); if (modal.id === 'playbook_modal') window.closePlaybookModal(); if (modal.id === 'run_confirm_modal') modal.querySelector('#run_confirm_cancel')?.click(); if (modal.id === 'error_modal') modal.hidden = true; if (modal.id === 'nmap_modal') window.closeNmapModal(); });
+            window.addEventListener('keydown', (event) => { if (event.key !== 'Escape') return; const modals = ['add_node_modal', 'playbook_modal', 'run_confirm_modal', 'error_modal', 'nmap_modal'].map((id) => document.getElementById(id)).filter((modal) => modal && !modal.hidden); if (!modals.length) return; event.preventDefault(); event.stopImmediatePropagation(); modals.forEach((modal) => { if (modal.id === 'add_node_modal') return smoothCloseWithOriginal(modal, originalCloseAddNodeModal); if (modal.id === 'playbook_modal') return smoothCloseWithOriginal(modal, originalClosePlaybookModal); if (modal.id === 'error_modal') return (modal.hidden = true); if (modal.id === 'nmap_modal') return window.closeNmapModal(); modal.querySelector('#run_confirm_cancel')?.click(); }); }, true);
         })();
     </script>
 </body>
