@@ -3,7 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Выбранная тема (light/dark) хранится в браузере; применяем её до отрисовки, чтобы не было мигания. Ключ — THEME_STORAGE_KEY в constants.js -->
+    <script>try { if (localStorage.getItem('awc-theme') === 'light') document.documentElement.dataset.theme = 'light'; } catch (error) {}</script>
     <title>Ansible Web Control</title>
+    <link rel="icon" type="image/png" href="/logo_mark">
     <link rel="stylesheet" href="/style.css">
     <style>
         .node-group-field { margin-top: 16px; }
@@ -32,9 +35,7 @@
         .node-group-field select:focus { outline: none; border-color: rgba(0,210,106,.45); }
         .node-group-field select option { background: #202020; color: #fff; }
         .role-children { overflow: hidden; }
-        .playbook-roles.smooth-panel, .role-children.smooth-panel { transition: max-height 220ms ease, opacity 180ms ease; }
-        .autodeploy-card { background: rgba(0,0,0,.34) !important; }
-        .project-context-block { backdrop-filter: none; }
+        .role-children.smooth-panel { transition: max-height 220ms ease, opacity 180ms ease; }
         .nodes-section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; }
         .nodes-section-head > h3 { flex: 0 0 auto; }
         .nodes-section-head > #groups { flex: 1 1 180px; width: auto; min-width: 180px; overflow: visible; }
@@ -47,54 +48,107 @@
     </style>
 </head>
 <body>
-    <div class="overlay">
+    <div class="overlay app-shell">
         <div id="nav"></div>
         <div id="iso_panel" class="iso-panel"></div>
-        <div class="page-wrap">
-            <!-- Верхний ряд: Проект · DHCP · TFTP · Прослушка · ISO-образы.
-                 Лежит внутри .page-wrap, поэтому левый край первой кнопки
-                 совпадает с левым краем карточек ниже. -->
-            <div id="system_status_bar" class="system-status-bar">
+        <!-- Шапка приложения: знак и название · контекст (проект, объект) · состояние сервера · инструменты -->
+        <header class="app-header" id="system_status_bar">
+            <div class="app-brand" title="Ansible Web Control">
+                <span class="app-logo" aria-hidden="true"></span>
+                <span class="app-title">Ansible <b>Web Control</b></span>
+            </div>
+            <div class="header-group header-context" aria-label="Проект и объект">
                 <div id="project_selector" class="status-slot"></div>
+                    <!-- Объект: скрыт в простом проекте; <select> превращается в кнопку-бейдж в common.js (enhanceObjectSelector) -->
+                    <div id="object_block" class="status-slot" style="display: none">
+                        <select id="object_select" data-caption="Объект" onchange="changeObject()" title="Выбор объекта текущего проекта"></select>
+                    </div>
+            </div>
+            <div class="header-group header-status" aria-label="Состояние сервера">
                 <div id="system_status_services" class="system-status-dynamic"></div>
-                <button type="button" class="system-status-item nmap-open-btn" onclick="openNmapModal()" title="Открыть окно режима прослушки: поиск MAC/IP-адресов в сети">Прослушка</button>
                 <div id="system_status_iso" class="system-status-dynamic"></div>
             </div>
-            <div id="object_block" class="block project-context-block">
-                <div class="section-head">
-                    <h3 id="object_title">Объект</h3>
-                    <select id="object_select" onchange="changeObject()" title="Выбор объекта текущего проекта"></select>
-                </div>
+            <div class="header-group header-tools" aria-label="Инструменты">
+                    <button type="button" class="system-status-item nmap-open-btn" onclick="openNmapModal()" title="Открыть окно режима прослушки: поиск MAC/IP-адресов в сети">Прослушка</button>
+                    <a class="system-status-item repo-btn" id="repo_btn" href="#" target="_blank" rel="noopener" title="Открыть HTTP-репозиторий на машине Autodeploy (в новой вкладке)" aria-label="HTTP-репозиторий">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+                        <span>Репозиторий</span>
+                    </a>
+                    <div class="settings-wrap" id="settings_wrap">
+                        <button type="button" class="system-status-item settings-btn" id="settings_btn" aria-haspopup="menu" aria-expanded="false" title="Дополнительно: тема, константы, карта сети" onclick="toggleSettingsMenu(event)">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                        </button>
+                        <div class="settings-menu" id="settings_menu" role="menu">
+                            <button type="button" role="menuitem" class="settings-item" onclick="openProjectWizard()" title="Создать проект со структурой: inventory, ansible.cfg, роли, плейбуки">
+                                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v5M9.5 13.5h5"/></svg>
+                                <span>Новый проект…</span>
+                            </button>
+                            <button type="button" role="menuitem" class="settings-item" onclick="toggleTheme()" title="Переключить светлую/тёмную тему (запоминается в браузере)">
+                                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+                                <span id="theme_toggle_label">Светлая тема</span>
+                            </button>
+                            <button type="button" role="menuitem" class="settings-item" onclick="openConstantsModal()" title="Пути, сеть, интервалы проверок и другие настройки (файл constants.py)">
+                                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h7"/><path d="M17 14l3 3-5 5h-3v-3z"/></svg>
+                                <span>Настройки</span>
+                            </button>
+                            <button type="button" role="menuitem" class="settings-item" onclick="openNetmapModal()" title="Карта узлов текущего проекта/объекта">
+                                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="5" rx="1"/><rect x="2" y="17" width="6" height="5" rx="1"/><rect x="16" y="17" width="6" height="5" rx="1"/><path d="M12 7v5M5 17v-5h14v5"/></svg>
+                                <span>Карта сети</span>
+                            </button>
+                        </div>
+                    </div>
             </div>
-            <div id="autodeploy_block"></div>
+        </header>
+        <main class="page-wrap app-main">
             <div class="workspace-grid">
                 <section class="block workspace-panel nodes-panel">
                     <div class="section-head nodes-section-head">
-                        <h3>Узлы</h3>
+                        <h3>Узлы <span class="section-count" id="nodes_count"></span></h3>
                         <div id="groups" class="group-strip"></div>
+                        <input id="nodes_search" class="list-search" type="search" placeholder="Поиск: имя, IP или шаблон" autocomplete="off" aria-label="Поиск узлов" title="Показывать только узлы, в имени, IP или шаблоне которых есть этот текст">
                         <div class="node-toolbar">
                             <button id="host_select_toggle" type="button" onclick="toggleHostSelection()" title="Отметить или снять все узлы в списке"><span class="selection-button-label">Выбрать все узлы</span></button>
                             <button class="primary" onclick="openAddNodeModal()" title="Открыть окно добавления нового узла">Добавить узел</button>
-                            <button class="danger" onclick="deleteSelectedNodes()" title="Удалить отмеченные узлы из hosts.yml (с подтверждением)">Удалить выбранные</button>
+                            <button class="danger" id="delete_nodes_btn" onclick="deleteSelectedNodes()" disabled title="Удалить отмеченные узлы из hosts.yml (с подтверждением)">Удалить выбранные</button>
                         </div>
                     </div>
-                    <div id="nodes" class="hosts-list"></div>
+                    <div class="list-wrap">
+                        <div class="list-columns nodes-columns" aria-hidden="true">
+                            <span>Состояние</span><span></span><span></span>
+                            <span class="columns-main"><span>Узел</span><span>IP-адрес</span><span>Шаблон</span></span>
+                            <span></span>
+                        </div>
+                        <div id="nodes" class="hosts-list"></div>
+                    </div>
                 </section>
                 <section class="block workspace-panel playbooks-panel">
-                    <div class="section-head">
-                        <h3>Плейбуки</h3>
+                    <div class="section-head playbooks-section-head">
+                        <h3>Плейбуки <span class="section-count" id="playbooks_count"></span></h3>
                         <div class="btn-row compact" id="playbook-selection-toolbar">
                             <button id="playbook_select_toggle" type="button" onclick="togglePlaybookSelection()" title="Отметить или снять все плейбуки в списке"><span class="selection-button-label">Выбрать все плейбуки</span></button>
                         </div>
+                        <div class="playbook-toolbar">
+                            <button type="button" class="primary" onclick="openCreatePlaybook()" title="Создать плейбук — без ролей или с ролями (существующими или новыми)">Новый плейбук</button>
+                            <button type="button" class="object-file-btn" onclick="openObjectFile('defaults')" title="Значения по умолчанию (defaults.yml): открыть, а если файла нет — создать">defaults</button>
+                            <button type="button" class="object-file-btn" onclick="openObjectFile('cfg')" title="Настройки Ansible (ansible.cfg): открыть, а если файла нет — создать">ansible.cfg</button>
+                            <input id="playbooks_search" class="list-search" type="search" placeholder="Поиск плейбука" autocomplete="off" aria-label="Поиск плейбуков" title="Показывать только плейбуки, в имени которых есть этот текст">
+                        </div>
                     </div>
-                    <div id="playbooks" class="playbook-list"></div>
+                    <div class="list-wrap">
+                        <div class="list-columns playbooks-columns" aria-hidden="true"><span>Плейбук</span><span>Действия</span></div>
+                        <div id="playbooks" class="playbook-list"></div>
+                    </div>
                 </section>
             </div>
             <section class="block execution-panel">
-                <div class="section-head"><h3>Выполнение</h3><span id="run_state">Готов</span></div>
+                <div class="console-resizer" id="console_resizer" role="separator" aria-orientation="horizontal" aria-label="Высота журнала" title="Потяните, чтобы изменить высоту журнала; двойной щелчок — исходная высота"></div>
+                <div class="console-bar">
+                <div class="console-title"><h3>Выполнение</h3><span id="run_state" class="run-state" data-state="idle">Готов</span></div>
                 <div class="run-row">
-                    <button class="primary" onclick="runSelected()" title="Запустить отмеченные плейбуки на отмеченных узлах">Запуск</button>
-                    <button onclick="stopExecution()" title="Остановить выполняющийся плейбук">Завершить</button>
+                    <button class="primary run-btn" onclick="runSelected()" title="Запустить отмеченные плейбуки на отмеченных узлах"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12-7.5z"/></svg>Запуск</button>
+                    <button class="check-run-btn" onclick="runCheck()" title="Прогнать отмеченные плейбуки с флагом --check: ansible покажет, что изменилось бы, но ничего не изменит на узлах">Проверка</button>
+                    <button class="stop-btn" onclick="stopExecution()" title="Остановить выполняющийся плейбук"><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>Завершить</button>
+                    <span id="run_summary" class="run-summary" aria-live="polite"></span>
                     <!-- Подробность вывода ansible-playbook: добавляет -v / -vv / -vvv к команде запуска -->
                     <div class="verbosity-select" role="radiogroup" aria-label="Подробность вывода">
                         <span class="verbosity-label">Подробность:</span>
@@ -104,9 +158,10 @@
                         <label title="ansible-playbook -vvv — плюс подробности подключения к узлам"><input type="radio" name="verbosity" value="-vvv"><span>-vvv</span></label>
                     </div>
                 </div>
+                </div>
                 <pre id="log" class="log"></pre>
             </section>
-        </div>
+        </main>
     </div>
     <div id="add_node_modal" class="modal-backdrop" hidden>
         <div class="modal-card add-node-card" role="dialog" aria-modal="true" aria-labelledby="add_node_title">
@@ -135,73 +190,275 @@
         <div id="playbook_editor_card" class="modal-card playbook-editor-modal" role="dialog" aria-modal="true" aria-labelledby="playbook_modal_title">
             <div class="modal-head"><div><div class="modal-kicker">Редактор плейбука</div><h3 id="playbook_modal_title">Плейбук</h3></div><button class="modal-close" onclick="closePlaybookModal()" aria-label="Закрыть">×</button></div>
             <div class="modal-body playbook-editor-body"><textarea id="playbook_editor" class="playbook-editor" spellcheck="false" title="Текст плейбука (YAML)"></textarea></div>
-            <div class="modal-footer"><button class="modal-secondary" onclick="closePlaybookModal()">Отмена</button><button class="primary" onclick="savePlaybookFromModal()" title="Сохранить изменения плейбука на сервере">Изменить</button></div>
+            <div class="modal-footer"><button class="modal-secondary" onclick="closePlaybookModal()">Отмена</button><button class="primary" onclick="savePlaybookFromModal()" title="Сохранить изменения плейбука на сервере (Ctrl+S); YAML проверяется перед сохранением">Сохранить</button></div>
         </div>
     </div>
     <div id="nmap_modal" class="modal-backdrop" hidden>
         <div class="modal-card nmap-card" role="dialog" aria-modal="true" aria-labelledby="nmap_modal_title">
             <div class="modal-head"><div><div class="modal-kicker">Обнаружение узлов в сети</div><h3 id="nmap_modal_title">Режим прослушки</h3></div><button class="modal-close" onclick="closeNmapModal()" aria-label="Закрыть">×</button></div>
             <div class="modal-body">
-                <div id="nmap_interface_field" class="nmap-switch-field">
-                    <label class="modal-label" for="nmap_interface_select">Сетевой интерфейс</label>
-                    <select id="nmap_interface_select" class="modal-input" title="Интерфейс, через который сервер смотрит в сеть"></select>
+                <!-- Интерфейс и способ прослушки — в одной строке -->
+                <div class="nmap-top-row">
+                    <div class="nmap-field">
+                        <div class="modal-label">Сетевой интерфейс</div>
+                        <div id="nmap_interface_select" class="ui-select" title="Интерфейс, через который сервер смотрит в сеть"></div>
+                    </div>
+                    <div class="nmap-field">
+                        <div class="modal-label">Способ прослушки</div>
+                        <div class="nmap-mode-select" id="nmap_mode_select" role="radiogroup" aria-label="Способ прослушки">
+                            <label class="nmap-mode-option" title="Пассивно слушать трафик на сервере через tcpdump"><input type="radio" name="nmap_mode" value="tcpdump" checked onchange="onNmapModeChange()"><span>TCPdump</span></label>
+                            <label class="nmap-mode-option" title="Запросить таблицу MAC-адресов у коммутатора MikroTik по SSH"><input type="radio" name="nmap_mode" value="switch" onchange="onNmapModeChange()"><span>Таблица коммутатора (SSH)</span></label>
+                            <label class="nmap-mode-option" title="Проверить все адреса подсети и запомнить занятые — для подсветки свободных адресов при заполнении IP"><input type="radio" name="nmap_mode" value="subnet" onchange="onNmapModeChange()"><span>Подсеть</span></label>
+                        </div>
+                    </div>
                 </div>
-                <div class="nmap-mode-select" id="nmap_mode_select">
-                    <label class="nmap-mode-option"><input type="radio" name="nmap_mode" value="tcpdump" checked onchange="onNmapModeChange()" title="Пассивно слушать трафик на сервере через tcpdump"><span>TCPdump</span></label>
-                    <label class="nmap-mode-option"><input type="radio" name="nmap_mode" value="switch" onchange="onNmapModeChange()" title="Запросить таблицу MAC-адресов у коммутатора MikroTik по SSH"><span>Таблица коммутатора (SSH)</span></label>
-                </div>
+                <!-- Адрес, логин и пароль коммутатора — в одной строке (только для таблицы коммутатора) -->
                 <div id="nmap_switch_fields" class="nmap-switch-field nmap-switch-collapsible" inert>
-                    <label class="modal-label" for="nmap_switch_address">IP-адрес коммутатора</label>
-                    <input id="nmap_switch_address" class="modal-input" type="text" title="IP-адрес коммутатора для SSH-подключения" placeholder="Например, 192.168.88.1" autocomplete="off">
-                    <div class="nmap-switch-auth">
+                    <div class="nmap-switch-row">
+                        <div>
+                            <label class="modal-label" for="nmap_switch_address">IP-адрес коммутатора</label>
+                            <input id="nmap_switch_address" class="modal-input" type="text" title="IP-адрес коммутатора для SSH-подключения" placeholder="Например, 192.168.88.1" autocomplete="off">
+                        </div>
                         <div>
                             <label class="modal-label" for="nmap_switch_user">Пользователь</label>
                             <input id="nmap_switch_user" class="modal-input" type="text" title="Логин для SSH-подключения к коммутатору" placeholder="admin" autocomplete="off">
                         </div>
                         <div>
                             <label class="modal-label" for="nmap_switch_password">Пароль</label>
-                            <input id="nmap_switch_password" class="modal-input" type="password" title="Пароль для SSH-подключения (не обязателен, если настроен вход по ключу)" placeholder="(необязательно)" autocomplete="off">
+                            <input id="nmap_switch_password" class="modal-input" type="password" title="Пароль для SSH-подключения (не обязателен, если настроен вход по ключу)" placeholder="необязательно" autocomplete="off">
                         </div>
                     </div>
+                </div>
+                <!-- Подсеть: адрес и маска; результат запоминается для текущего проекта -->
+                <div id="nmap_subnet_fields" class="nmap-switch-field nmap-switch-collapsible" inert>
+                    <div class="nmap-subnet-row">
+                        <div>
+                            <label class="modal-label" for="nmap_subnet_address">Подсеть</label>
+                            <input id="nmap_subnet_address" class="modal-input" type="text" placeholder="например, 192.168.1.0" autocomplete="off" spellcheck="false">
+                        </div>
+                        <div>
+                            <label class="modal-label" for="nmap_subnet_mask">Маска</label>
+                            <input id="nmap_subnet_mask" class="modal-input" type="text" placeholder="24 или 255.255.255.0" autocomplete="off" spellcheck="false">
+                        </div>
+                        <button type="button" class="danger nmap-subnet-reset" id="nmap_subnet_reset" onclick="resetSubnetScan()" title="Забыть результат сканирования подсети для этого проекта — подсветка IP-адресов отключится">Сбросить</button>
+                    </div>
+                    <div class="wizard-hint">Сервер пингует все адреса подсети и смотрит свою ARP-таблицу (так находятся и устройства, которые не отвечают на пинг). Результат запоминается для этого проекта: при заполнении IP узла поле подсвечивается зелёным, если адрес свободен, и красным, если занят.</div>
                 </div>
                 <div class="nmap-controls">
                     <button type="button" class="primary" id="nmap_start_btn" onclick="startNmapListening()" title="Начать поиск устройств выбранным способом">Включить режим прослушки</button>
                     <button type="button" class="danger" id="nmap_stop_btn" onclick="stopNmapListening()" disabled title="Остановить прослушку">Отключить</button>
                     <span id="nmap_state_label" class="nmap-state">выключено</span>
                 </div>
+                <div id="nmap_notice" class="nmap-notice" hidden></div>
                 <div id="nmap_devices" class="nmap-devices">
                     <div class="muted">Список пуст — включите режим прослушки, чтобы начать поиск устройств.</div>
                 </div>
-                <div class="nmap-raw-label">Вывод команды (для диагностики, если ничего не находится):</div>
-                <pre id="nmap_raw_output" class="nmap-raw-output"></pre>
             </div>
             <div class="modal-footer"><button class="modal-secondary" onclick="closeNmapModal()">Закрыть</button></div>
+        </div>
+    </div>
+    <!-- Редактор constants.py: правка значений, «Применить» записывает файл, «Отмена» отбрасывает правки -->
+    <div id="constants_modal" class="modal-backdrop" hidden>
+        <div class="modal-card constants-card" role="dialog" aria-modal="true" aria-labelledby="constants_title">
+            <div class="modal-head"><div><div class="modal-kicker">constants.py</div><h3 id="constants_title">Настройки</h3></div><button class="modal-close" onclick="closeConstantsModal()" aria-label="Закрыть">×</button></div>
+            <div class="modal-body">
+                <div class="constants-hint">Измените нужные значения — изменённые поля подсветятся. «Применить» сохраняет настройки (предыдущая версия файла остаётся в constants.py.bak) и сразу применяет их к работающему серверу; «↺ Вернуть» отменяет правку одного поля.</div>
+                <div id="constants_list" class="constants-list"><div class="muted">Загрузка…</div></div>
+            </div>
+            <div class="modal-footer">
+                <span id="constants_status" class="constants-status"></span>
+                <button class="modal-secondary" onclick="cancelConstants()" title="Отбросить несохранённые правки и закрыть">Отмена</button>
+                <button class="primary" id="constants_apply_btn" onclick="applyConstants()" disabled title="Сохранить изменённые значения в constants.py">Применить</button>
+            </div>
+        </div>
+    </div>
+    <!-- Карта сети: узлы проекта/объекта, значки и расположение сохраняются автоматически -->
+    <div id="netmap_modal" class="modal-backdrop" hidden>
+        <div class="modal-card netmap-card" role="dialog" aria-modal="true" aria-labelledby="netmap_title">
+            <div class="modal-head"><div><div class="modal-kicker" id="netmap_context"></div><h3 id="netmap_title">Карта сети</h3></div><button class="modal-close" onclick="closeNetmapModal()" aria-label="Закрыть">×</button></div>
+            <div class="netmap-toolbar">
+                <button type="button" class="netmap-autobuild-btn" id="netmap_autobuild_btn" onclick="autobuildNetmap()" title="Построить схему по маршрутам до устройств (traceroute): Autodeploy слева, дальше — по числу хопов. Схему потом можно править">Автопостроение сети</button>
+                <button type="button" class="primary" onclick="toggleNetmapAddForm()" title="Добавить на карту устройство, которого нет в hosts.yml (коммутатор, ИБП, NetPing…)">Добавить устройство</button>
+                <button type="button" class="netmap-link-tool-btn" id="netmap_link_tool_btn" aria-pressed="false" onclick="toggleNetmapLinkTool()" title="Инструмент соединения: щёлкните одно устройство, затем другое — они соединятся. Режим остаётся включённым, пока не нажмёте кнопку ещё раз или Esc">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="12" r="2.5"/><path d="M7.5 12h9"/></svg>
+                    Соединить
+                </button>
+                <span class="netmap-hint" id="netmap_hint" aria-live="polite"></span>
+                <button type="button" class="netmap-reset-btn" onclick="resetNetmap()" title="Удалить добавленные устройства и все соединения; оставить Autodeploy и узлы из hosts.yml в исходной раскладке">Сбросить карту</button>
+                <div class="netmap-help-wrap">
+                    <button type="button" class="netmap-help-btn" id="netmap_help_btn" aria-expanded="false" aria-label="Справка по карте" title="Как работать с картой" onclick="toggleNetmapHelp(event)">?</button>
+                    <div class="netmap-help" id="netmap_help" role="dialog" aria-label="Справка по карте">
+                        <div class="netmap-help-title">Как работать с картой</div>
+                        <dl>
+                            <dt>Колесо мыши</dt><dd>масштаб</dd>
+                            <dt>Перетаскивание фона</dt><dd>перемещение по карте</dd>
+                            <dt>Перетаскивание устройства</dt><dd>переставить — встаёт на точки сетки</dd>
+                            <dt>Щелчок по устройству</dt><dd>сведения и изменение</dd>
+                            <dt>«Соединить»</dt><dd>щёлкните два устройства — они соединятся</dd>
+                            <dt>Щелчок по линии</dt><dd>соединение: порт, VLAN, удаление</dd>
+                            <dt>Цвет линии</dt><dd>зелёный — есть пинг, красный — нет</dd>
+                            <dt>Esc</dt><dd>отмена текущего действия</dd>
+                        </dl>
+                    </div>
+                </div>
+                <span id="netmap_status" class="netmap-status"></span>
+            </div>
+            <div id="netmap_add_form" class="netmap-add-form">
+                <div id="netmap_add_type" class="netmap-type-picker" title="Тип устройства"></div>
+                <input id="netmap_add_name" class="modal-input" type="text" placeholder="Название" autocomplete="off" title="Подпись устройства на карте">
+                <input id="netmap_add_ip" class="modal-input" type="text" placeholder="IP (необязательно)" autocomplete="off" title="IP-адрес, если есть">
+                <button type="button" class="primary" onclick="addNetmapNode()">Добавить</button>
+                <button type="button" class="modal-secondary" onclick="toggleNetmapAddForm(false)">Отмена</button>
+            </div>
+            <div class="netmap-canvas" id="netmap_canvas">
+                <div class="netmap-stage" id="netmap_stage"></div>
+                <!-- Масштаб и легенда цвета соединений (поверх холста, не масштабируются) -->
+                <div class="netmap-zoom" id="netmap_zoom">
+                    <span class="netmap-legend"><i class="is-up"></i>есть пинг<i class="is-down"></i>нет пинга</span>
+                    <button type="button" data-zoom="out" title="Уменьшить (колесо мыши вниз)">−</button>
+                    <button type="button" data-zoom="reset" id="netmap_zoom_label" title="Масштаб 100%">100%</button>
+                    <button type="button" data-zoom="in" title="Увеличить (колесо мыши вверх)">+</button>
+                    <button type="button" data-zoom="fit" title="Показать все устройства">Вписать</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Мастер нового проекта -->
+    <div id="project_wizard_modal" class="modal-backdrop" hidden>
+        <div class="modal-card wizard-card" role="dialog" aria-modal="true" aria-labelledby="wizard_title">
+            <div class="modal-head"><div><div class="modal-kicker">Мастер</div><h3 id="wizard_title">Новый проект</h3></div><button class="modal-close" onclick="closeProjectWizard()" aria-label="Закрыть">×</button></div>
+            <div class="modal-body wizard-body">
+                <div class="wizard-form">
+                    <label class="modal-label" for="wizard_name">Имя проекта</label>
+                    <input id="wizard_name" class="modal-input" type="text" placeholder="например, NIVA" autocomplete="off" spellcheck="false">
+                    <div class="wizard-error" id="wizard_name_error"></div>
+                    <div class="modal-label wizard-gap">Тип проекта</div>
+                    <div class="nmap-mode-select wizard-kind" role="radiogroup">
+                        <label class="nmap-mode-option" title="Одна папка playbooks/: inventory, плейбуки и роли"><input type="radio" name="wizard_kind" value="simple" checked><span>Простой</span></label>
+                        <label class="nmap-mode-option" title="Несколько объектов (площадок), у каждого — свои inventory, плейбуки и роли"><input type="radio" name="wizard_kind" value="objects"><span>С объектами</span></label>
+                    </div>
+                    <div id="wizard_objects_block" class="wizard-collapsible">
+                        <div class="modal-label wizard-gap">Объекты</div>
+                        <div id="wizard_objects" class="chips-input" data-placeholder="msk, spb — Enter или запятая"></div>
+                    </div>
+                    <div class="modal-label wizard-gap">Роли</div>
+                    <div id="wizard_roles" class="chips-input" data-placeholder="common, nginx — Enter или запятая"></div>
+                    <div class="wizard-hint">Каждая роль — стандартный скелет: tasks, handlers, defaults, vars, meta, templates, files.</div>
+                    <div class="modal-label wizard-gap">Плейбуки</div>
+                    <label class="wizard-check"><input type="checkbox" id="wizard_site" checked><span><b>site.yml</b> — общий плейбук со всеми ролями</span></label>
+                    <label class="wizard-check"><input type="checkbox" id="wizard_role_playbooks"><span>Отдельный плейбук для каждой роли (01-роль.yml, 02-…)</span></label>
+                    <label class="wizard-check wizard-gap"><input type="checkbox" id="wizard_autodeploy"><span><b>Autodeploy</b> — папка autodeploy со своим autodeploy.yml</span></label>
+                    <div id="wizard_autodeploy_block" class="wizard-collapsible">
+                        <label class="modal-label wizard-gap" for="wizard_autodeploy_source">Структуру взять из проекта</label>
+                        <select id="wizard_autodeploy_source" class="modal-input"></select>
+                        <div class="wizard-hint">Папка autodeploy выбранного проекта копируется в новый проект целиком — дальше это его собственный Autodeploy, независимый от образца.</div>
+                    </div>
+                </div>
+                <div class="wizard-preview">
+                    <div class="modal-label">Будет создано</div>
+                    <pre id="wizard_tree" class="wizard-tree"></pre>
+                </div>
+            </div>
+            <div class="modal-footer"><span id="wizard_status" class="constants-status"></span><button class="modal-secondary" onclick="closeProjectWizard()">Отмена</button><button class="primary" id="wizard_create_btn" onclick="createProjectFromWizard()" disabled>Создать проект</button></div>
+        </div>
+    </div>
+    <!-- Новый плейбук: без ролей или с ролями (существующими и/или новыми) -->
+    <div id="create_playbook_modal" class="modal-backdrop" hidden>
+        <div class="modal-card create-card" role="dialog" aria-modal="true" aria-labelledby="create_playbook_title">
+            <div class="modal-head"><div><div class="modal-kicker" id="create_playbook_context"></div><h3 id="create_playbook_title">Новый плейбук</h3></div><button class="modal-close" onclick="hideModalSmooth('create_playbook_modal')" aria-label="Закрыть">×</button></div>
+            <div class="modal-body">
+                <label class="modal-label" for="create_playbook_name">Имя файла</label>
+                <input id="create_playbook_name" class="modal-input" type="text" placeholder="например, 10-database.yml" autocomplete="off" spellcheck="false">
+                <div class="create-row">
+                    <div><label class="modal-label" for="create_playbook_hosts">Узлы (hosts)</label>
+                        <div class="hosts-combo">
+                            <input id="create_playbook_hosts" class="modal-input" type="text" value="all" autocomplete="off" spellcheck="false" title="Группа, узел или шаблон: all, web, db… Или выберите группы из hosts.yml">
+                            <button type="button" class="hosts-combo-btn" onclick="toggleHostsGroups(event)" title="Выбрать группы из hosts.yml">Группы ▾</button>
+                            <div class="hosts-groups" id="hosts_groups"></div>
+                        </div>
+                    </div>
+                    <label class="wizard-check create-become"><input type="checkbox" id="create_playbook_become" checked><span>become: true</span></label>
+                </div>
+                <div class="modal-label wizard-gap">Состав</div>
+                <div class="nmap-mode-select playbook-mode" role="radiogroup" aria-label="Состав плейбука">
+                    <label class="nmap-mode-option" title="Плейбук с примером задачи — задачи пишутся прямо в нём"><input type="radio" name="playbook_mode" value="plain" checked><span>Без ролей</span></label>
+                    <label class="nmap-mode-option" title="Плейбук подключает роли — существующие или новые"><input type="radio" name="playbook_mode" value="roles"><span>С ролями</span></label>
+                </div>
+                <div id="create_playbook_roles_block" class="wizard-collapsible">
+                    <div class="modal-label wizard-gap">Существующие роли</div>
+                    <div id="create_playbook_roles" class="role-pick-list"></div>
+                    <div class="modal-label wizard-gap">Новые роли</div>
+                    <div id="create_playbook_new_roles" class="chips-input" data-placeholder="имя роли — Enter или запятая"></div>
+                    <div class="wizard-hint">Новая роль создаётся со стандартным скелетом: tasks, handlers, defaults, vars, meta, templates, files.</div>
+                </div>
+            </div>
+            <div class="modal-footer"><span id="create_playbook_status" class="constants-status"></span><button class="modal-secondary" onclick="hideModalSmooth('create_playbook_modal')">Отмена</button><button class="primary" onclick="createPlaybook()">Создать и открыть</button></div>
+        </div>
+    </div>
+    <!-- Файлы плейбука: роли плейбука с их файлами, добавление и удаление ролей и файлов, удаление плейбука -->
+    <div id="playbook_files_modal" class="modal-backdrop" hidden>
+        <div class="modal-card playbook-files-card" role="dialog" aria-modal="true" aria-labelledby="playbook_files_title">
+            <div class="modal-head"><div><div class="modal-kicker" id="playbook_files_context">Файлы плейбука</div><h3 id="playbook_files_title">—</h3></div><button class="modal-close" onclick="hideModalSmooth('playbook_files_modal')" aria-label="Закрыть">×</button></div>
+            <div class="playbook-files-toolbar">
+                <button type="button" class="primary" onclick="openAddRole()" title="Подключить существующие роли (с подролями или без) или создать новую">＋ Добавить роль</button>
+            </div>
+            <div class="modal-body playbook-files-body" id="playbook_files_body"><div class="muted">Загрузка…</div></div>
+            <div class="modal-footer"><button type="button" class="danger playbook-delete-btn" onclick="deletePlaybookFromFiles()" title="Удалить файл плейбука (в корзину backups/deleted); роли не удаляются">Удалить плейбук</button><button class="modal-secondary" onclick="hideModalSmooth('playbook_files_modal')">Закрыть</button></div>
+        </div>
+    </div>
+    <!-- Добавить роль в плейбук: существующие (деревом, с подролями или без) или новая -->
+    <div id="add_role_modal" class="modal-backdrop" hidden>
+        <div class="modal-card create-card add-role-card" role="dialog" aria-modal="true" aria-labelledby="add_role_title">
+            <div class="modal-head"><div><div class="modal-kicker" id="add_role_context"></div><h3 id="add_role_title">Добавить роль</h3></div><button class="modal-close" onclick="hideModalSmooth('add_role_modal')" aria-label="Закрыть">×</button></div>
+            <div class="modal-body">
+                <div class="nmap-mode-select add-role-mode" role="radiogroup" aria-label="Какую роль добавить">
+                    <label class="nmap-mode-option"><input type="radio" name="add_role_mode" value="existing" checked><span>Существующие</span></label>
+                    <label class="nmap-mode-option"><input type="radio" name="add_role_mode" value="new"><span>Новая роль</span></label>
+                </div>
+                <div class="add-role-panes">
+                    <div id="add_role_existing" class="add-role-pane is-active">
+                        <label class="wizard-check add-role-sub-toggle"><input type="checkbox" id="add_role_with_sub" checked><span>С подролями — вместе с ролью или группой отмечаются все её подроли</span></label>
+                        <div id="add_role_tree" class="role-pick-list role-pick-tree"></div>
+                    </div>
+                    <div id="add_role_new" class="add-role-pane">
+                        <label class="modal-label" for="add_role_name">Имя роли</label>
+                        <input id="add_role_name" class="modal-input" type="text" placeholder="например, nginx" autocomplete="off" spellcheck="false">
+                        <div class="modal-label wizard-gap">Что создать в роли</div>
+                        <div class="role-parts" id="add_role_parts">
+                            <label class="wizard-check"><input type="checkbox" value="tasks" checked><span>tasks</span></label>
+                            <label class="wizard-check"><input type="checkbox" value="handlers" checked><span>handlers</span></label>
+                            <label class="wizard-check"><input type="checkbox" value="defaults" checked><span>defaults</span></label>
+                            <label class="wizard-check"><input type="checkbox" value="vars" checked><span>vars</span></label>
+                            <label class="wizard-check"><input type="checkbox" value="meta" checked><span>meta</span></label>
+                            <label class="wizard-check"><input type="checkbox" value="templates" checked><span>templates</span></label>
+                            <label class="wizard-check"><input type="checkbox" value="files" checked><span>files</span></label>
+                            <label class="wizard-check"><input type="checkbox" value="tests" checked><span>tests</span></label>
+                            <label class="wizard-check"><input type="checkbox" value="README.md" checked><span>README.md</span></label>
+                        </div>
+                        <label class="wizard-check wizard-gap"><input type="checkbox" id="add_role_new_sub"><span>С подролями — роль станет группой, в плейбук добавятся «роль/подроль»</span></label>
+                        <div id="add_role_sub_block" class="wizard-collapsible">
+                            <div id="add_role_subroles" class="chips-input" data-placeholder="имя подроли — Enter или запятая"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer"><span id="add_role_status" class="constants-status"></span><button class="modal-secondary" onclick="hideModalSmooth('add_role_modal')">Отмена</button><button class="primary" onclick="submitAddRole()">Добавить</button></div>
+        </div>
+    </div>
+    <!-- Редактор файла роли -->
+    <div id="file_editor_modal" class="modal-backdrop" hidden>
+        <div class="modal-card file-editor-card" role="dialog" aria-modal="true" aria-labelledby="file_editor_title">
+            <div class="modal-head"><div><div class="modal-kicker" id="file_editor_context">Файл роли</div><h3 id="file_editor_title">—</h3></div><button class="modal-close" onclick="closeFileEditor()" aria-label="Закрыть">×</button></div>
+            <div class="modal-body file-editor-body">
+                <div class="editor-error" id="file_editor_error" hidden></div>
+                <textarea id="file_editor" class="file-editor" spellcheck="false" autocomplete="off"></textarea>
+            </div>
+            <div class="modal-footer"><span id="file_editor_status" class="constants-status"></span><button class="modal-secondary" onclick="closeFileEditor()">Закрыть</button><button class="primary" id="file_editor_save" onclick="saveFileEditor()" disabled title="Ctrl+S">Сохранить</button></div>
         </div>
     </div>
     <script src="/constants.js"></script>
     <script src="/common.js"></script>
     <script src="/main.js"></script>
-    <script>
-        (() => {
-            const MOTION_MS = ANIM.MODAL_MOTION_MS;
-            let closePassthrough = false;
-            const originalCloseAddNodeModal = window.closeAddNodeModal || function() { document.getElementById('add_node_modal').hidden = true; };
-            const originalClosePlaybookModal = window.closePlaybookModal || function() { document.getElementById('playbook_modal').hidden = true; };
-            const originalEditPlaybook = window.editPlaybook || function() {};
-            function selectionLabel(button, nextText) { const label = button?.querySelector('.selection-button-label'); if (!label || label.textContent === nextText) return; button.classList.add('selection-changing'); setTimeout(() => { label.textContent = nextText; button.classList.remove('selection-changing'); }, 180); }
-            window.updatePlaybookSelectionButton = function() { const button = document.getElementById('playbook_select_toggle'); if (!button) return; const checks = [...document.querySelectorAll('.pb')]; selectionLabel(button, checks.length > 0 && checks.every((item) => item.checked) ? 'Отменить выбор' : 'Выбрать все плейбуки'); };
-            window.togglePlaybookSelection = function() { const checks = [...document.querySelectorAll('.pb')]; if (!checks.length) return; const allSelected = checks.every((item) => item.checked); checks.forEach((item) => item.checked = !allSelected); updatePlaybookSelectionButton(); };
-            const playbookObserver = new MutationObserver(() => updatePlaybookSelectionButton()); playbookObserver.observe(document.getElementById('playbooks'), { childList: true, subtree: true });
-            document.addEventListener('change', (event) => { if (event.target.matches('.pb')) updatePlaybookSelectionButton(); });
-            function smoothShow(modal) { if (!modal) return; modal.classList.remove('modal-closing'); modal.hidden = false; }
-            function smoothCloseWithOriginal(modal, originalClose) { if (!modal || modal.hidden || modal.classList.contains('modal-closing')) return; modal.classList.add('modal-closing'); setTimeout(() => { modal.classList.remove('modal-closing'); closePassthrough = true; originalClose(); closePassthrough = false; }, MOTION_MS); }
-            window.closeAddNodeModal = function() { if (closePassthrough) return originalCloseAddNodeModal(); smoothCloseWithOriginal(document.getElementById('add_node_modal'), originalCloseAddNodeModal); };
-            window.editPlaybook = function(name) { originalEditPlaybook(name); smoothShow(document.getElementById('playbook_modal')); };
-            window.closePlaybookModal = function() { if (closePassthrough) return originalClosePlaybookModal(); smoothCloseWithOriginal(document.getElementById('playbook_modal'), originalClosePlaybookModal); };
-            document.addEventListener('click', (event) => { if (closePassthrough) return; const button = event.target.closest('#add_node_modal .modal-close, #add_node_modal .modal-secondary, #playbook_modal .modal-close, #playbook_modal .modal-secondary, #run_confirm_modal .modal-close, #run_confirm_modal #run_confirm_cancel'); if (!button) return; event.preventDefault(); event.stopImmediatePropagation(); const modal = button.closest('.modal-backdrop'); if (!modal) return; if (modal.id === 'add_node_modal') return smoothCloseWithOriginal(modal, originalCloseAddNodeModal); if (modal.id === 'playbook_modal') return smoothCloseWithOriginal(modal, originalClosePlaybookModal); modal.classList.add('modal-closing'); setTimeout(() => { modal.classList.remove('modal-closing'); closePassthrough = true; button.click(); closePassthrough = false; }, MOTION_MS); }, true);
-            document.addEventListener('click', (event) => { if (closePassthrough) return; const modal = event.target.closest('.modal-backdrop'); if (!modal || event.target !== modal) return; if (modal.id === 'add_node_modal') window.closeAddNodeModal(); if (modal.id === 'playbook_modal') window.closePlaybookModal(); if (modal.id === 'run_confirm_modal') modal.querySelector('#run_confirm_cancel')?.click(); if (modal.id === 'error_modal') modal.hidden = true; if (modal.id === 'nmap_modal') window.closeNmapModal(); });
-            window.addEventListener('keydown', (event) => { if (event.key !== 'Escape') return; const modals = ['add_node_modal', 'playbook_modal', 'run_confirm_modal', 'error_modal', 'nmap_modal'].map((id) => document.getElementById(id)).filter((modal) => modal && !modal.hidden); if (!modals.length) return; event.preventDefault(); event.stopImmediatePropagation(); modals.forEach((modal) => { if (modal.id === 'add_node_modal') return smoothCloseWithOriginal(modal, originalCloseAddNodeModal); if (modal.id === 'playbook_modal') return smoothCloseWithOriginal(modal, originalClosePlaybookModal); if (modal.id === 'error_modal') return (modal.hidden = true); if (modal.id === 'nmap_modal') return window.closeNmapModal(); modal.querySelector('#run_confirm_cancel')?.click(); }); }, true);
-        })();
-    </script>
+    <script src="/page.js"></script>
 </body>
 </html>

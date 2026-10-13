@@ -56,8 +56,7 @@ function injectProjectSelectorStyles() {
         .project-select { position: relative; display: flex; flex: 0 0 auto; }
         .project-select-button {
             cursor: pointer;
-            min-width: 150px;
-            max-width: 280px;
+            width: 180px;
             justify-content: flex-start;
             transition: background .15s, border-color .15s;
         }
@@ -228,7 +227,6 @@ function injectProjectSelectorStyles() {
 
 /* Автодеплой */
         .playbook-card { overflow: visible; }
-        .playbook-roles:not(.smooth-panel),
         .role-children:not(.smooth-panel) {
             width: 100%;
             max-width: none;
@@ -236,17 +234,7 @@ function injectProjectSelectorStyles() {
             max-height: none !important;
             overflow: visible !important;
         }
-        .playbook-roles.smooth-panel, .role-children.smooth-panel { overflow: hidden !important; }
-        .playbook-actions button[onclick*="togglePlaybookRoles"] {
-            width: 160px !important;
-            min-width: 160px !important;
-            text-align: center;
-            font-size: 0 !important;
-        }
-        .playbook-actions button[onclick*="togglePlaybookRoles"]::after {
-            content: 'Файлы плейбука';
-            font: 600 13px Arial, sans-serif;
-        }
+        .role-children.smooth-panel { overflow: hidden !important; }
     `;
     document.head.appendChild(style);
 }
@@ -276,10 +264,12 @@ function enhanceObjectSelector() {
 
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'object-select-button';
+    button.className = 'system-status-item object-select-button';
+    button.title = select.title || '';
     button.setAttribute('aria-haspopup', 'listbox');
     button.setAttribute('aria-expanded', 'false');
-    button.innerHTML = '<span class="object-select-value"></span><span class="object-select-arrow">▾</span>';
+    const caption = select.dataset.caption ? `<span class="object-select-caption">${escapeHTML(select.dataset.caption)}</span>` : '';
+    button.innerHTML = `${caption}<span class="object-select-value"></span><span class="object-select-arrow">▾</span>`;
     wrap.appendChild(button);
 
     const list = document.createElement('div');
@@ -325,6 +315,7 @@ function enhanceObjectSelector() {
     });
 
     select.addEventListener('change', sync);
+    select.syncCustomList = sync; // main.js вызывает после заполнения списка объектов
     new MutationObserver(sync).observe(select, { childList: true, subtree: true });
     window.addEventListener('resize', () => {
         if (list.classList.contains('is-open')) positionObjectSelectorList(wrap, list);
@@ -344,54 +335,68 @@ function injectRoleAndModalBehavior() {
     function updateRoleAncestors(panel) {
         let parent = panel?.parentElement;
         while (parent) {
-            if (parent.classList.contains('role-children') || parent.classList.contains('playbook-roles')) {
+            if (parent.classList.contains('role-children')) {
                 if (!parent.hidden) parent.style.maxHeight = `${parent.scrollHeight}px`;
             }
             parent = parent.parentElement;
         }
     }
 
-    // плавно раскрывает/сворачивает панель роли или файлов плейбука
+    // вертикальные отступы панели, которые анимируются вместе с высотой
+    const PANEL_BOX_PROPS = ['paddingTop', 'paddingBottom', 'marginTop', 'marginBottom'];
+
+    // полная высота панели в раскрытом виде: содержимое + её «родные» внутренние отступы
+    // (во время анимации текущие отступы ещё не дошли до конечных — их не учитываем)
+    function panelContentHeight(panel) {
+        const style = getComputedStyle(panel);
+        const current = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+        return panel.scrollHeight - current + (panel._naturalPadding ?? current);
+    }
+
+    // плавно раскрывает/сворачивает папку роли. Вместе с высотой анимируются и вертикальные отступы
+    // (иначе в конце сворачивания они исчезают рывком — «ступенька»); конечная высота берётся из
+    // фактического содержимого — панель подстраивается под число файлов.
     function animateRolePanel(panel, open) {
         if (!panel || panel.dataset.animating === '1') return;
+        const ms = ANIM.PANEL_TOGGLE_MS;
         panel.classList.add('smooth-panel');
         panel.dataset.animating = '1';
+        const transition = `max-height ${ms}ms ease, padding-top ${ms}ms ease, padding-bottom ${ms}ms ease, margin-top ${ms}ms ease, margin-bottom ${ms}ms ease, opacity ${Math.round(ms * 0.8)}ms ease`;
+        // начальное состояние выставляется без перехода, затем переход включается и задаётся конечное
+        panel.style.transition = 'none';
+        panel.style.overflow = 'hidden';
+        let target;
         if (open) {
             panel.hidden = false;
-            panel.style.overflow = 'hidden';
+            panel.style.maxHeight = 'none';
+            const style = getComputedStyle(panel);
+            const natural = Object.fromEntries(PANEL_BOX_PROPS.map((prop) => [prop, style[prop]]));
+            panel._naturalPadding = parseFloat(natural.paddingTop) + parseFloat(natural.paddingBottom);
             panel.style.maxHeight = '0px';
             panel.style.opacity = '0';
-            requestAnimationFrame(() => {
-                panel.style.maxHeight = `${panel.scrollHeight}px`;
-                panel.style.opacity = '1';
-                updateRoleAncestors(panel);
-            });
-            setTimeout(() => {
-                panel.classList.remove('smooth-panel');
-                panel.style.maxHeight = '';
-                panel.style.opacity = '';
-                panel.style.overflow = '';
-                panel.dataset.animating = '0';
-                updateRoleAncestors(panel);
-            }, ANIM.PANEL_TOGGLE_MS);
+            PANEL_BOX_PROPS.forEach((prop) => { panel.style[prop] = '0px'; });
+            // высота — в момент старта: к нему содержимое могло уже смениться (пришёл список файлов)
+            target = () => { panel.style.maxHeight = `${panelContentHeight(panel)}px`; PANEL_BOX_PROPS.forEach((prop) => { panel.style[prop] = natural[prop]; }); panel.style.opacity = '1'; };
         } else {
-            panel.style.overflow = 'hidden';
-            panel.style.maxHeight = `${panel.scrollHeight}px`;
+            const style = getComputedStyle(panel);
+            PANEL_BOX_PROPS.forEach((prop) => { panel.style[prop] = style[prop]; });
+            panel.style.maxHeight = `${panel.offsetHeight}px`;
             panel.style.opacity = '1';
-            requestAnimationFrame(() => {
-                panel.style.maxHeight = '0px';
-                panel.style.opacity = '0';
-            });
-            setTimeout(() => {
-                panel.hidden = true;
-                panel.classList.remove('smooth-panel');
-                panel.style.maxHeight = '';
-                panel.style.opacity = '';
-                panel.style.overflow = '';
-                panel.dataset.animating = '0';
-                updateRoleAncestors(panel);
-            }, ANIM.PANEL_TOGGLE_MS);
+            target = () => { panel.style.maxHeight = '0px'; PANEL_BOX_PROPS.forEach((prop) => { panel.style[prop] = '0px'; }); panel.style.opacity = '0'; };
         }
+        panel.getBoundingClientRect();                     // применить начальное состояние
+        requestAnimationFrame(() => {
+            panel.style.transition = transition;
+            target();
+            if (open) updateRoleAncestors(panel);
+        });
+        setTimeout(() => {
+            if (!open) panel.hidden = true;
+            panel.classList.remove('smooth-panel');
+            ['maxHeight', 'opacity', 'overflow', 'transition', ...PANEL_BOX_PROPS].forEach((prop) => { panel.style[prop] = ''; });
+            panel.dataset.animating = '0';
+            updateRoleAncestors(panel);
+        }, ms + 20);
     }
 
     // подгружает содержимое README вложенных директорий роли по мере раскрытия
@@ -419,39 +424,6 @@ function injectRoleAndModalBehavior() {
         if (chevron) chevron.textContent = open ? '▾' : '▸';
     }
 
-    // раскрывает/сворачивает блок «Файлы плейбука» с анимацией и подгрузкой ролей
-    function togglePlaybookRolesAnimated(button) {
-        const panel = button.closest('.playbook-card')?.querySelector('.playbook-roles');
-        if (!panel || panel.dataset.animating === '1') return;
-        const open = panel.hidden;
-        const name = button.closest('.playbook-row')?.querySelector('label span')?.textContent?.trim() || '';
-        button.setAttribute('aria-expanded', String(open));
-        if (open && !panel.dataset.loaded) {
-            panel.innerHTML = '<div class="roles-loading">Загрузка ролей…</div>';
-            animateRolePanel(panel, true);
-            fetch(`${API.ROLES}?project=${encodeURIComponent(CURRENT_PROJECT)}${CURRENT_OBJECT ? `&object=${encodeURIComponent(CURRENT_OBJECT)}` : ''}&playbook=${encodeURIComponent(name)}`)
-                .then((response) => { if (!response.ok) throw Error('Не удалось загрузить роли'); return response.json(); })
-                .then((roles) => {
-                    panel.innerHTML = roles.length ? `<div class="roles-title">Роли</div>${roleTree(roles)}` : '<div class="muted">В этом плейбуке роли не указаны.</div>';
-                    panel.dataset.loaded = '1';
-                    requestAnimationFrame(() => {
-                        panel.style.maxHeight = `${panel.scrollHeight}px`;
-                        updateRoleAncestors(panel);
-                    });
-                })
-                .catch((error) => {
-                    panel.innerHTML = `<div class="muted">${escapeHTML(error.message)}</div>`;
-                    requestAnimationFrame(() => { panel.style.maxHeight = `${panel.scrollHeight}px`; updateRoleAncestors(panel); });
-                });
-        } else {
-            animateRolePanel(panel, open);
-        }
-        const text = open ? 'Роли ▾' : 'Роли ▸';
-        button.setAttribute('data-role-state', open ? 'open' : 'closed');
-        button.setAttribute('aria-label', open ? 'Файлы плейбука: свернуть' : 'Файлы плейбука: развернуть');
-        button.textContent = text;
-    }
-
     document.addEventListener('click', (event) => {
         const roleButton = event.target.closest('.role-toggle');
         if (roleButton) {
@@ -459,12 +431,6 @@ function injectRoleAndModalBehavior() {
             event.stopImmediatePropagation();
             toggleRoleDirAnimated(roleButton);
             return;
-        }
-        const playbookButton = event.target.closest('.playbook-actions button[onclick*="togglePlaybookRoles"]');
-        if (playbookButton) {
-            event.preventDefault();
-            event.stopImmediatePropagation();
-            togglePlaybookRolesAnimated(playbookButton);
         }
     }, true);
 }
@@ -517,15 +483,10 @@ document.addEventListener('click', (event) => {
 // переходит на страницу выбранного проекта
 function changeProject() {
     const project = document.getElementById('project_select').value;
-    const currentObject = getObjectFromURL();
-
-    let url = project ? `${window.location.pathname}?project=${encodeURIComponent(project)}` : window.location.pathname;
-
-    if (project && currentObject) {
-        url += `&object=${encodeURIComponent(currentObject)}`;
-    }
-
-    window.location.href = url;
+    // Объект в адрес НЕ переносим: имена объектов свои у каждого проекта, а
+    // старый объект в новом проекте давал пустые узлы/плейбуки. Сервер сам
+    // выберет первый объект нового проекта.
+    window.location.href = project ? `${window.location.pathname}?project=${encodeURIComponent(project)}` : window.location.pathname;
 }
 
 // переходит на страницу выбранного объекта текущего проекта

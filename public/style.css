@@ -1,8 +1,4 @@
 :root {
-    --ds-control-h: 38px;
-    --ds-radius-control: 9px;
-    --ds-radius-card: 12px;
-    --ds-radius-panel: 16px;
     --ds-gap-1: 4px;
     --ds-gap-2: 8px;
     --ds-gap-3: 12px;
@@ -16,10 +12,7 @@ html, body { min-height: 100%; }
 body.no-scroll { overflow: hidden; }
 body {
     margin: 0;
-    font-family: Arial, sans-serif;
-    color: #fff;
     background-color: #171717;
-    background-image: url('/background');
     background-repeat: no-repeat;
     background-position: center top;
     background-size: cover;
@@ -28,8 +21,6 @@ body {
 
 .overlay {
     min-height: 100vh;
-    background: rgba(0, 0, 0, 0.58);
-    padding-bottom: 24px;
     box-sizing: border-box;
 }
 
@@ -44,21 +35,35 @@ body {
     flex-direction: column;
     gap: 16px;
 }
-.page-wrap > .block, #autodeploy_block > .block, .workspace-grid > .block { margin: 0; }
-#autodeploy_block:empty { display: none; }
+.page-wrap > .block, .workspace-grid > .block { margin: 0; }
 
 /* === Инфопанель вверху страницы: DHCP / TFTP / ISO-образы === */
-.system-status-bar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    align-items: stretch;
-    /* Бар лежит внутри .page-wrap, поэтому его левый край совпадает с
-       левым краем карточек "Объект"/"Узлы" — никаких своих отступов. */
-    margin: 0 0 -8px; /* промежуток до первой панели 8px вместо общих 16px */
-    padding: 0;
-}
 .status-slot { display: flex; }
+/* Объект — та же кнопка-бейдж, что «Проект» (id-селектор перекрывает базовые
+   стили выпадающего списка объекта, которые добавляет common.js). */
+#object_block .object-select-custom { width: auto; flex: 0 0 auto; display: flex; }
+#object_block .object-select-button {
+    width: auto;
+    height: 38px;
+    min-height: 0;
+    min-width: 150px;
+    max-width: 260px;
+    padding: 0 16px;
+    gap: 10px;
+    justify-content: flex-start;
+    border: 1px solid rgba(255,255,255,.09);
+    border-radius: 10px;
+    background: rgba(255,255,255,.05);
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+}
+#object_block .object-select-button:hover { background: rgba(255,255,255,.09); transform: none; }
+#object_block .object-select-button[aria-expanded="true"] { border-color: rgba(64,150,255,.5); background: rgba(35,110,210,.14); }
+.object-select-caption { flex: 0 0 auto; font-size: 14px; font-weight: 600; color: #fff; }
+#object_block .object-select-value { font-size: 13px; font-weight: 400; color: rgba(190,215,255,.95); }
+#object_block .object-select-arrow { margin-left: auto; font-size: 11px; color: rgba(255,255,255,.55); }
+.object-select-list { min-width: 220px; }
+/* Autodeploy — кнопка запуска autodeploy.yml */
 .system-status-dynamic { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; }
 .system-status-item {
     display: inline-flex;
@@ -67,7 +72,11 @@ body {
     background: rgba(255,255,255,.05);
     border: 1px solid rgba(255,255,255,.09);
     border-radius: 10px;
-    padding: 9px 16px;
+    /* Фиксированная высота для ВСЕХ кнопок ряда: раньше ряд растягивал
+       кнопки под самую высокую, и в проектах с объектом высота менялась. */
+    height: 38px;
+    box-sizing: border-box;
+    padding: 0 16px;
     min-height: 0;
     color: rgba(255,255,255,.75);
     font: inherit;
@@ -186,7 +195,7 @@ button.system-status-item.nmap-open-btn:hover { background: rgba(35,110,210,.28)
 .hwtype-option:hover, .hwtype-option.active { background: rgba(45,90,138,.75); transform: none; }
 
 
-#object_select, #playbook_select {
+#object_select {
     appearance: none;
     -webkit-appearance: none;
     width: min(100%, 420px);
@@ -209,16 +218,11 @@ button.system-status-item.nmap-open-btn:hover { background: rgba(35,110,210,.28)
     text-overflow: ellipsis;
 }
 
-#object_select:focus, #playbook_select:focus { outline: none; border-color: rgba(0,210,106,.45); }
-#object_select option, #playbook_select option { background: #202020; color: #fff; }
+#object_select:focus { outline: none; border-color: rgba(0,210,106,.45); }
+#object_select option { background: #202020; color: #fff; }
 
 .block {
-    border: 1px solid rgba(255,255,255,.12);
-    background: rgba(0,0,0,.38);
-    backdrop-filter: blur(5px);
     margin: 8px 0;
-    padding: 18px;
-    border-radius: var(--ds-radius-panel);
     box-sizing: border-box;
 }
 
@@ -228,12 +232,9 @@ button.system-status-item.nmap-open-btn:hover { background: rgba(35,110,210,.28)
     align-items: center;
     gap: 16px;
     min-height: 38px;
-    margin-bottom: 16px;
 }
 .section-head h3 { margin: 0; }
 
-.project-context-block .section-head { min-height: 32px; margin-bottom: 0; align-items: center; }
-.project-context-block #object_select { flex: 0 1 420px; width: min(100%, 420px); height: 34px; min-height: 34px; }
 
 .btn-row, .node-toolbar { display: flex; gap: 10px; flex-wrap: wrap; }
 .compact { margin: 0; }
@@ -241,18 +242,10 @@ button.system-status-item.nmap-open-btn:hover { background: rgba(35,110,210,.28)
 button {
     min-height: var(--ds-control-h);
     box-sizing: border-box;
-    padding: 8px 13px;
-    color: #fff;
-    background: rgba(255,255,255,.10);
-    border: 1px solid rgba(255,255,255,.16);
     border-radius: var(--ds-radius-control);
     cursor: pointer;
     font-weight: 600;
-    transition: background .15s ease, transform .15s ease;
 }
-button:hover { background: rgba(255,255,255,.18); transform: translateY(-1px); }
-button.primary { background: rgba(0,150,90,.55); }
-button.danger { background: rgba(160,50,50,.55); }
 
 .workspace-grid {
     display: grid;
@@ -274,34 +267,24 @@ button.danger { background: rgba(160,50,50,.55); }
 .hosts-list, .playbook-list {
     display: flex;
     flex-direction: column;
-    gap: var(--ds-gap-2);
     margin-top: 0;
-    min-height: 360px;
 }
 
 .host-card, .playbook-card {
     width: 100%;
     box-sizing: border-box;
     overflow: hidden;
-    border: 1px solid rgba(255,255,255,.11);
-    border-radius: var(--ds-radius-card);
-    background: rgba(0,0,0,.22);
     transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
 }
 .host-card:hover { border-color: rgba(255,255,255,.20); }
 .host-card.node-available { border-color: rgba(55,190,105,.30); box-shadow: 0 0 0 1px rgba(55,190,105,.07); }
-.host-card.node-unavailable { border-color: rgba(210,70,70,.30); box-shadow: 0 0 0 1px rgba(210,70,70,.07); }
 .host-card.node-pending { border-color: rgba(255,255,255,.11); }
 .host-card.node-available:hover { border-color: rgba(55,190,105,.40); }
-.host-card.node-unavailable:hover { border-color: rgba(210,70,70,.40); }
 
 .host-head {
     display: grid;
-    grid-template-columns: 92px 18px 18px minmax(0,1fr) auto;
     align-items: center;
     column-gap: 12px;
-    min-height: 48px;
-    height: 48px;
     box-sizing: border-box;
     padding: 0 12px;
     cursor: pointer;
@@ -326,24 +309,17 @@ button.danger { background: rgba(160,50,50,.55); }
     align-items: center;
 }
 .node-name, .node-ip, .node-template { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.node-name { font-weight: 600; font-size: 15px; }
+.node-name { font-weight: 600; }
 .node-ip { color: rgba(255,255,255,.60); font-size: 14px; font-variant-numeric: tabular-nums; }
-.node-template { color: rgba(255,255,255,.58); font-size: 14px; font-variant-numeric: tabular-nums; }
+.node-template { font-size: 14px; font-variant-numeric: tabular-nums; }
 .node-edit {
-    min-height: 34px;
     box-sizing: border-box;
-    padding: 7px 11px;
     white-space: nowrap;
     /* Одинаковая ширина для «Изменить» и «Отмена»: иначе при смене подписи
        менялась ширина кнопки и сдвигались IP-адрес и шаблон узла. */
     width: 96px;
     text-align: center;
-    background: rgba(35,110,210,.16);
-    border-color: rgba(64,150,255,.4);
-    color: #fff;
 }
-.node-edit:hover { background: rgba(35,110,210,.7); }
-.node-edit.has-changes { background: rgba(160,50,50,.65); border-color: rgba(210,80,80,.7); }
 .node-edit.has-changes:hover { background: rgba(180,60,60,.78); }
 
 .status-dot { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 50%; }
@@ -379,7 +355,7 @@ button.danger { background: rgba(160,50,50,.55); }
     transform: rotate(40deg);
 }
 
-.host-body { padding: 14px 16px 15px; border-top: 1px solid rgba(255,255,255,.09); background: rgba(0,0,0,.16); }
+.host-body { padding: 14px 16px 15px; border-top: 1px solid rgba(255,255,255,.09); }
 .param-grid { display: grid; grid-template-columns: minmax(130px,210px) minmax(150px,340px); gap: 7px 14px; align-items: center; }
 .param-name { overflow: hidden; color: rgba(255,255,255,.70); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
 .param-value {
@@ -576,25 +552,20 @@ button.danger { background: rgba(160,50,50,.55); }
     gap: 12px;
     width: 100%;
     min-width: 0;
-    min-height: 48px;
-    height: 48px;
     box-sizing: border-box;
     padding: 0 12px;
 }
 .playbook-row > label { display: flex; align-items: center; gap: 9px; min-width: 0; width: 100%; white-space: nowrap; }
 .playbook-row > label span { display: block; min-width: 0; overflow: visible; text-overflow: clip; white-space: nowrap; line-height: 1.35; }
 .playbook-actions { display: flex; flex: 0 0 auto; gap: 8px; align-items: center; justify-content: flex-end; white-space: nowrap; }
-.playbook-actions button { min-height: 34px; box-sizing: border-box; padding: 7px 11px; }
+.playbook-actions button { box-sizing: border-box; }
 
-.playbook-roles { box-sizing: border-box; margin-top: 12px; padding: 12px; background: #1a1a1a; border-radius: 6px; }
-.playbook-roles[hidden] { display: none; }
-.playbook-roles:not([hidden]) { animation: panelReveal 220ms ease-out both; }
 
 .playbooks-panel .btn-row.compact { display: flex; gap: 8px; flex: 0 0 auto; }
 .playbooks-panel .btn-row.compact button { width: 210px; min-width: 210px; max-width: 210px; height: 38px; min-height: 38px; flex: 0 0 210px; white-space: nowrap; }
 
 #host_select_toggle { min-width: 190px; width: 190px; max-width: 190px; overflow: hidden; }
-.nodes-section-head .node-toolbar { flex: 0 0 auto; flex-wrap: nowrap; gap: 8px; }
+.nodes-section-head .node-toolbar { flex: 0 0 auto; gap: 8px; }
 .nodes-section-head .node-toolbar button { min-height: 38px; height: 38px; padding: 8px 13px; font-size: 13px; white-space: nowrap; }
 .nodes-section-head .node-toolbar button:nth-child(2) { min-width: 150px; }
 .nodes-section-head .node-toolbar button:nth-child(3) { min-width: 190px; }
@@ -606,14 +577,9 @@ button.danger { background: rgba(160,50,50,.55); }
 }
 #host_select_toggle.selection-changing .selection-button-label, #playbook_select_toggle.selection-changing .selection-button-label { opacity: 0; transform: translateY(4px); }
 
-.nodes-section-head { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 14px; min-width: 0; margin-bottom: 16px; }
+.nodes-section-head { display: grid; align-items: center; gap: 14px; min-width: 0; margin-bottom: 16px; }
 .nodes-section-head .group-strip { width: auto; min-width: 0; min-height: 38px; padding: 0; overflow-x: auto; align-items: center; }
 
-.autodeploy-card { border-color: rgba(0,180,255,.40); background: rgba(0,150,255,.22); }
-.autodeploy-card .section-head { min-height: 32px; margin-bottom: 0; }
-.autodeploy-card .autodeploy-action button { height: 34px; min-height: 34px; padding: 7px 11px; }
-.autodeploy-action { display: flex; align-items: center; gap: 12px; }
-.autodeploy-file { color: rgba(255,255,255,.62); font-size: 13px; font-family: monospace; }
 
 .modal-backdrop {
     position: fixed;
@@ -624,8 +590,6 @@ button.danger { background: rgba(160,50,50,.55); }
     justify-content: center;
     padding: 20px;
     box-sizing: border-box;
-    background: rgba(0,0,0,.66);
-    backdrop-filter: blur(7px);
 }
 .modal-backdrop[hidden] { display: none; }
 .modal-backdrop:not([hidden]) { animation: modalBackdropIn 220ms ease-out both; }
@@ -636,8 +600,6 @@ button.danger { background: rgba(160,50,50,.55); }
     max-height: min(760px,calc(100vh - 40px));
     overflow: auto;
     border: 1px solid rgba(255,255,255,.14);
-    border-radius: var(--ds-radius-panel);
-    background: rgba(25,25,25,.94);
     box-shadow: 0 24px 70px rgba(0,0,0,.50);
 }
 .modal-backdrop:not([hidden]) .modal-card { animation: modalCardIn 220ms ease-out both; }
@@ -703,19 +665,22 @@ button.danger { background: rgba(160,50,50,.55); }
 .modal-footer { display: flex; justify-content: flex-end; gap: 9px; padding: 15px 22px 20px; border-top: 1px solid rgba(255,255,255,.08); }
 .modal-secondary { background: transparent; }
 
-.roles-title { color: rgba(255,255,255,.45); font: 600 11px Arial, sans-serif; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 5px; }
 .role-dir { margin: 2px 0; }
 .role-toggle, .role-file { display: block; width: 100%; padding: 5px 8px; border: 0; border-radius: 6px; background: transparent; text-align: left; color: rgba(255,255,255,.76); font: 13px monospace; }
 .role-toggle:hover, .role-file:hover { background: rgba(255,255,255,.07); transform: none; }
 .role-chevron { display: inline-block; width: 14px; color: rgba(255,255,255,.45); }
 .role-children { margin-left: 17px; padding-left: 8px; border-left: 1px solid rgba(255,255,255,.10); }
+/* панели файлов удерживают отступы вложенных элементов внутри себя: высота во время анимации
+   и после неё одинакова — нет подстройки в конце раскрытия */
+.role-children:not([hidden]) { display: flow-root; }
 .role-file { color: rgba(255,255,255,.62); cursor: pointer; }
 .role-readme { margin: 5px 0 7px; border: 1px solid rgba(255,255,255,.10); border-radius: 7px; background: rgba(0,0,0,.18); }
 .role-readme summary { padding: 6px 8px; cursor: pointer; color: rgba(255,255,255,.68); font: 12px monospace; }
 .role-readme pre { margin: 0; padding: 8px; max-height: 280px; overflow: auto; white-space: pre-wrap; color: rgba(255,255,255,.62); font: 12px/1.5 monospace; }
-.roles-loading { color: rgba(255,255,255,.4); font-size: 12px; padding: 5px; }
 
 .run-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+.check-run-btn { background: rgba(35,110,210,.45); border-color: rgba(64,150,255,.5); }
+.check-run-btn:hover { background: rgba(35,110,210,.6); }
 .verbosity-select { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; padding: 3px; border: 1px solid rgba(255,255,255,.12); border-radius: 10px; background: rgba(0,0,0,.25); }
 .verbosity-label { padding: 0 8px 0 6px; font-size: 13px; color: rgba(255,255,255,.55); }
 .verbosity-select label { position: relative; cursor: pointer; }
@@ -724,7 +689,7 @@ button.danger { background: rgba(160,50,50,.55); }
 .verbosity-select label:hover span { background: rgba(255,255,255,.08); color: #fff; }
 .verbosity-select input:checked + span { background: rgba(35,110,210,.55); color: #fff; }
 .verbosity-select input:focus-visible + span { outline: 2px solid rgba(64,150,255,.7); outline-offset: 1px; }
-.log { min-height: 220px; max-height: 480px; overflow: auto; margin: 10px 0 0; padding: 12px; border-radius: 9px; background: rgba(0,0,0,.42); color: rgba(255,255,255,.78); font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+.log { max-height: 480px; overflow: auto; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
 .muted, .empty { color: rgba(255,255,255,.42); padding: 12px 4px; }
 .run-confirm-card { width: min(520px,100%); }
 .error-modal-card { width: min(480px,100%); }
@@ -742,12 +707,7 @@ button.danger { background: rgba(160,50,50,.55); }
 .nmap-card .modal-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
 .nmap-card .modal-body > * { flex-shrink: 0; }
 .nmap-card .modal-body > .nmap-devices { flex: 1 1 auto; min-height: 90px; }
-.nmap-card .modal-body > .nmap-raw-output { height: 110px; max-height: none; }
 
-.nmap-mode-select { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 12px; }
-.nmap-mode-option { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; color: rgba(255,255,255,.75); cursor: pointer; }
-.nmap-mode-option input { width: auto; min-height: 0; }
-.nmap-mode-option input:disabled { cursor: not-allowed; }
 
 .nmap-switch-field { margin-bottom: 14px; }
 /* Плавное раскрытие полей SSH (адрес / пользователь / пароль) */
@@ -759,10 +719,9 @@ button.danger { background: rgba(160,50,50,.55); }
     transform: translateY(-4px);
     transition: max-height .26s ease, opacity .2s ease, transform .26s ease, margin-bottom .26s ease;
 }
-.nmap-switch-collapsible.is-open { max-height: 260px; margin-bottom: 14px; opacity: 1; transform: translateY(0); }
+.nmap-switch-collapsible.is-open { max-height: 120px; margin-bottom: 14px; opacity: 1; transform: translateY(0); }
 .nmap-switch-field .modal-label { margin-bottom: 6px; font-size: 13px; }
 .nmap-switch-field .modal-input { font-size: 14px; }
-.nmap-switch-auth { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
 
 .nmap-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
 .nmap-state { font-size: 14px; color: rgba(255,255,255,.5); }
@@ -778,32 +737,21 @@ button.danger { background: rgba(160,50,50,.55); }
     align-items: center;
     padding: 7px 4px;
 }
+/* TCPdump — четыре колонки: № / IP / MAC / время обнаружения. */
+.nmap-table-head--tcpdump, .nmap-row--tcpdump { grid-template-columns: 40px 140px 170px minmax(0,1fr); }
+.nmap-num { color: rgba(255,255,255,.45); font-variant-numeric: tabular-nums; }
 /* Вариант 2 (коммутатор) — пять колонок: MAC / порт / мост / VLAN / флаги. */
 .nmap-table-head--switch, .nmap-row--switch { grid-template-columns: 170px 110px 110px 70px 70px; }
-.nmap-table-head { color: rgba(255,255,255,.45); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; border-bottom: 1px solid rgba(255,255,255,.10); }
+/* Строка заголовков закреплена (как «Закрепить области» в Excel): список
+   прокручивается под ней, а подписи столбцов остаются на месте. */
+.nmap-table-head { position: sticky; top: 0; z-index: 1; background: #1b1b1b; color: rgba(255,255,255,.45); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; border-bottom: 1px solid rgba(255,255,255,.10); }
 .nmap-row { font-size: 14px; border-bottom: 1px solid rgba(255,255,255,.06); }
 .nmap-row:last-child { border-bottom: none; }
 .nmap-mac { font-family: ui-monospace, "SF Mono", Consolas, monospace; color: rgba(160,215,255,.95); }
 .nmap-ip { color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nmap-vendor { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgba(255,255,255,.65); }
-.nmap-seen { color: rgba(255,255,255,.45); text-align: right; white-space: nowrap; }
+.nmap-seen { color: rgba(255,255,255,.6); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
-.nmap-raw-label { margin-top: 14px; margin-bottom: 6px; font-size: 13px; color: rgba(255,255,255,.45); }
-.nmap-raw-output {
-    max-height: 160px;
-    overflow: auto;
-    margin: 0;
-    padding: 10px 12px;
-    background: rgba(0,0,0,.32);
-    border: 1px solid rgba(255,255,255,.08);
-    border-radius: 8px;
-    font-family: ui-monospace, "SF Mono", Consolas, monospace;
-    font-size: 13px;
-    line-height: 1.5;
-    color: rgba(255,255,255,.65);
-    white-space: pre-wrap;
-    word-break: break-word;
-}
 .run-confirm-text { color: rgba(255,255,255,.72); line-height: 1.55; overflow-wrap: anywhere; }
 .run-confirm-text strong { color: rgba(255,255,255,.92); }
 
@@ -849,8 +797,6 @@ button.danger { background: rgba(160,50,50,.55); }
 @media (max-width: 1050px) { .workspace-grid { grid-template-columns: minmax(0,1fr); grid-template-rows: none; row-gap: var(--ds-gap-5); } .workspace-grid > .workspace-panel { display: block; grid-row: auto; } }
 @media (max-width: 900px) {
     .node-toolbar, .btn-row { gap: var(--ds-gap-2); }
-    .project-context-block .section-head { flex-wrap: wrap; }
-    .project-context-block #object_select { flex: 1 1 240px; width: auto; min-width: 0; }
     .playbook-editor-modal { min-width: 0; }
     .playbook-editor { min-width: 0; width: calc(100vw - 90px) !important; }
     .host-head { grid-template-columns: 92px 18px 18px minmax(0,1fr) auto; height: auto; min-height: 48px; }
@@ -869,7 +815,7 @@ button.danger { background: rgba(160,50,50,.55); }
 
     /* Инфопанель DHCP/TFTP/ISO/NMAP — бейджи чуть компактнее, чтобы больше
        помещалось в строку до переноса. */
-    .system-status-item { padding: 7px 12px; }
+    .system-status-item, #object_block .object-select-button { padding: 0 12px; }
     .system-status-label { font-size: 13px; }
     .system-status-state { font-size: 12px; }
 
@@ -895,9 +841,1464 @@ button.danger { background: rgba(160,50,50,.55); }
     .add-node-card { width: 100%; height: 100%; max-width: 100vw; max-height: 100vh; border-radius: 0; }
     .modal-backdrop { padding: 0; }
     .modal-backdrop .modal-card { border-radius: 0; }
-    .nmap-mode-select { flex-direction: column; gap: 8px; }
-    .nmap-switch-auth { grid-template-columns: minmax(0,1fr); }
     .nmap-controls { flex-direction: column; align-items: stretch; }
     .nmap-controls button { width: 100%; }
-    .system-status-bar { gap: 6px; }
 }
+/* ===========================================================================
+   Меню дополнительных параметров (шестерёнка справа в верхнем ряду)
+   =========================================================================== */
+/* правая группа верхнего ряда: «Репозиторий» и шестерёнка */
+.settings-wrap { position: relative; display: flex; }
+a.system-status-item.repo-btn { gap: 8px; text-decoration: none; cursor: pointer; font-size: 14px; font-weight: 600; color: rgba(255,255,255,.85); transition: background .15s, border-color .15s; }
+a.system-status-item.repo-btn:hover { background: rgba(255,255,255,.09); }
+a.system-status-item.repo-btn svg { color: rgba(190,215,255,.95); }
+a.system-status-item.repo-btn[hidden] { display: none; }
+button.system-status-item.settings-btn { width: 38px; padding: 0; justify-content: center; cursor: pointer; transition: background .15s, border-color .15s; }
+button.system-status-item.settings-btn:hover { background: rgba(255,255,255,.09); transform: none; }
+.settings-btn svg { transition: transform .35s ease; }
+.settings-btn[aria-expanded="true"] { border-color: rgba(64,150,255,.5); background: rgba(35,110,210,.14); }
+.settings-btn[aria-expanded="true"] svg { transform: rotate(60deg); }
+.settings-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 1100;
+    min-width: 230px;
+    max-height: 0;
+    overflow: hidden;
+    padding: 0 4px;
+    box-sizing: border-box;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: #1e1e1e;
+    box-shadow: 0 12px 30px rgba(0,0,0,.42);
+    opacity: 0;
+    transform: translateY(-6px);
+    pointer-events: none;
+    transition: max-height .22s ease, opacity .16s ease, transform .22s ease, padding .22s ease, border-color .22s ease;
+}
+.settings-menu.is-open { max-height: 260px; padding: 4px; border-color: rgba(255,255,255,.16); opacity: 1; transform: translateY(0); pointer-events: auto; }
+.settings-item { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 38px; padding: 8px 12px; border: 0; border-radius: 7px; background: transparent; color: #eee; font-size: 14px; font-weight: 600; text-align: left; }
+.settings-item:hover { background: rgba(45,90,138,.75); transform: none; }
+.settings-item svg { flex: 0 0 auto; color: rgba(190,215,255,.95); }
+
+/* ===========================================================================
+   Окно «Константы»
+   =========================================================================== */
+.constants-card { width: min(980px,100%); height: min(820px, calc(100vh - 40px)); display: flex; flex-direction: column; overflow: hidden; }
+.constants-card > .modal-head, .constants-card > .modal-footer { flex-shrink: 0; }
+.constants-card .modal-body { flex: 1; min-height: 0; overflow-y: auto; }
+.constants-card .modal-footer { align-items: center; }
+.constants-hint { margin-bottom: 14px; font-size: 13px; line-height: 1.5; color: rgba(255,255,255,.55); }
+.constants-section { margin-bottom: 18px; }
+.constants-section-title { position: sticky; top: -20px; z-index: 1; margin: 0 -22px 6px; padding: 8px 22px; background: #1b1b1b; color: rgba(190,215,255,.95); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid rgba(255,255,255,.08); }
+#constants_apply_btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+.constants-status { margin-right: auto; font-size: 13px; color: rgba(255,255,255,.55); }
+.constants-status.is-error { color: rgba(240,140,140,.95); }
+
+/* ===========================================================================
+   Окно «Карта сети»
+   =========================================================================== */
+.netmap-card { width: min(1400px, calc(100vw - 40px)); height: calc(100vh - 40px); max-height: none; display: flex; flex-direction: column; overflow: hidden; }
+.netmap-card > .modal-head { flex-shrink: 0; }
+.netmap-toolbar { flex-shrink: 0; display: flex; align-items: center; gap: 14px; padding: 12px 22px; border-bottom: 1px solid rgba(255,255,255,.08); }
+.netmap-toolbar > button { flex: 0 0 auto; white-space: nowrap; }
+.netmap-hint { flex: 1 1 auto; min-width: 0; font-size: 13px; color: rgba(255,255,255,.45); }
+.netmap-status { margin-left: auto; font-size: 13px; color: rgba(130,220,160,.9); opacity: 0; transition: opacity .25s ease; }
+.netmap-status.is-visible { opacity: 1; }
+.netmap-status.is-error { color: rgba(240,140,140,.95); }
+.netmap-hint.is-accent { color: rgba(150,195,255,.95); }
+.netmap-add-form {
+    flex-shrink: 0;
+    display: grid;
+    grid-template-columns: minmax(200px,1fr) minmax(180px,1.4fr) minmax(130px,1fr) auto auto;
+    gap: 10px;
+    align-items: center;
+    max-height: 0;
+    padding: 0 22px;
+    overflow: hidden;
+    opacity: 0;
+    border-bottom: 1px solid transparent;
+    transition: max-height .25s ease, padding .25s ease, opacity .2s ease, border-color .25s ease;
+}
+.netmap-add-form.is-open { max-height: 90px; padding: 12px 22px; opacity: 1; border-color: rgba(255,255,255,.08); }
+.netmap-canvas {
+    --netmap-surface: #151617;
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;           /* перемещение — перетаскиванием фона, масштаб — колесом (transform холста) */
+    background-color: var(--netmap-surface);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+}
+.netmap-canvas.is-panning { cursor: grabbing; }
+/* Точки сетки: шаг 20px, ровно там, куда «прилипают» центры значков при перетаскивании */
+.netmap-stage {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 6000px;              /* = NETMAP_STAGE в main.js */
+    height: 6000px;
+    transform-origin: 0 0;
+    background-image: radial-gradient(circle, rgba(255,255,255,.16) 1.1px, transparent 1.6px);
+    background-size: 20px 20px;
+    background-position: 10px 10px;
+}
+.netmap-stage.is-linking .netmap-node { cursor: crosshair; }
+.netmap-loading { position: absolute; left: 30px; top: 20px; }
+.netmap-node {
+    position: absolute;
+    z-index: 2;
+    width: 120px;
+    padding: 15px 4px 8px;
+    box-sizing: border-box;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    text-align: center;
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+    animation: netmapNodeIn .25s ease-out both;
+    transition: background .15s, border-color .15s, box-shadow .15s;
+}
+.netmap-node:hover { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.12); }
+.netmap-node.is-dragging { cursor: grabbing; z-index: 5; background: rgba(35,110,210,.16); border-color: rgba(64,150,255,.55); box-shadow: 0 12px 28px rgba(0,0,0,.4); }
+.netmap-icon { width: 48px; height: 48px; margin: 0 auto 6px; border-radius: 10px; background: var(--netmap-surface); color: rgba(190,215,255,.95); }
+.netmap-icon svg { width: 100%; height: 100%; }
+/* у подписей фон холста — линии соединений не перечёркивают текст */
+.netmap-name, .netmap-ip { margin: 0 auto; padding: 0 4px; box-sizing: border-box; border-radius: 4px; background: var(--netmap-surface); }
+.netmap-name { font-weight: 600; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.netmap-ip { font-size: 12px; color: rgba(255,255,255,.55); font-variant-numeric: tabular-nums; }
+.netmap-node.is-link-source { border-color: rgba(64,150,255,.75); background: rgba(35,110,210,.18); box-shadow: 0 0 0 3px rgba(64,150,255,.18); }
+.netmap-node.is-custom .netmap-ip { font-style: italic; }
+/* цвет значка по типу устройства */
+.netmap-node.type-server .netmap-icon { color: rgba(160,230,185,.95); }
+.netmap-node.type-router .netmap-icon, .netmap-node.type-crypto_router .netmap-icon { color: rgba(240,200,120,.95); }
+.netmap-node.type-switch .netmap-icon { color: rgba(120,200,255,.95); }
+.netmap-node.type-ups .netmap-icon { color: rgba(240,160,110,.95); }
+.netmap-node.type-supervisor .netmap-icon { color: rgba(200,170,255,.95); }
+.netmap-node.type-netping .netmap-icon { color: rgba(130,220,210,.95); }
+@keyframes netmapNodeIn { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
+.netmap-popover {
+    position: absolute;
+    width: 380px;
+    padding: 12px;
+    box-sizing: border-box;
+    border: 1px solid rgba(255,255,255,.16);
+    border-radius: 12px;
+    background: #1e1e1e;
+    box-shadow: 0 14px 34px rgba(0,0,0,.5);
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: opacity .16s ease, transform .2s ease;
+}
+.netmap-popover.is-open { opacity: 1; transform: translateY(0); }
+.netmap-popover-fields .modal-input { min-height: 32px; padding: 6px 10px; font-size: 13px; }
+.netmap-delete-btn { width: 100%; margin-top: 8px; min-height: 32px; }
+
+/* ===========================================================================
+   Светлая тема — включается атрибутом <html data-theme="light"> (меню-шестерёнка).
+   Базовые стили рассчитаны на тёмную тему; здесь переопределяются цвета
+   поверхностей, текста, рамок и списков. Журнал выполнения и вывод команд
+   намеренно остаются тёмными, как терминал.
+   =========================================================================== */
+:root.theme-switching, :root.theme-switching *, :root.theme-switching *::before, :root.theme-switching *::after {
+    transition: background-color .35s ease, color .35s ease, border-color .35s ease, box-shadow .35s ease, fill .35s ease !important;
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="light"] body { color: #1d2330; background-color: #e9edf2; }
+:root[data-theme="light"] .overlay { background: rgba(236,240,245,.88); }
+
+/* поверхности */
+:root[data-theme="light"] .block { backdrop-filter: none; }
+:root[data-theme="light"] .host-card.node-available { border-color: rgba(31,138,85,.40); }
+:root[data-theme="light"] .host-card.node-pending { border-color: rgba(20,30,50,.14); }
+:root[data-theme="light"] .host-body, :root[data-theme="light"] .node-params-panel, :root[data-theme="light"] .role-readme { background: #f4f6f9; border-color: rgba(20,30,50,.10); }
+
+/* текст */
+:root[data-theme="light"] .muted,
+:root[data-theme="light"] .empty,
+:root[data-theme="light"] .new-node-empty,
+:root[data-theme="light"] .node-ip,
+:root[data-theme="light"] .node-template,
+:root[data-theme="light"] .param-name,
+:root[data-theme="light"] .edit-note,
+:root[data-theme="light"] .modal-label,
+:root[data-theme="light"] .modal-kicker,
+:root[data-theme="light"] .node-groups-label,
+:root[data-theme="light"] .node-group-checkbox,
+:root[data-theme="light"] .new-node-field span,
+:root[data-theme="light"] .node-type-desc,
+:root[data-theme="light"] .run-confirm-text,
+:root[data-theme="light"] .nmap-state,
+:root[data-theme="light"] .nmap-num,
+:root[data-theme="light"] .nmap-seen,
+:root[data-theme="light"] .nmap-vendor,
+:root[data-theme="light"] .iso-item,
+:root[data-theme="light"] .iso-item-size,
+:root[data-theme="light"] .iso-item-date,
+:root[data-theme="light"] .iso-panel-path,
+:root[data-theme="light"] .verbosity-label,
+:root[data-theme="light"] .constants-hint,
+:root[data-theme="light"] .constant-desc,
+:root[data-theme="light"] .constants-status,
+:root[data-theme="light"] .netmap-hint,
+:root[data-theme="light"] .netmap-ip,
+:root[data-theme="light"] .node-expand,
+:root[data-theme="light"] .role-chevron,
+:root[data-theme="light"] .iso-toggle-arrow,
+:root[data-theme="light"] .hwtype-toggle-arrow,
+:root[data-theme="light"] .project-select-arrow,
+:root[data-theme="light"] .object-select-arrow,
+:root[data-theme="light"] #object_block .object-select-arrow { color: rgba(29,35,48,.6); }
+:root[data-theme="light"] .run-confirm-text strong,
+:root[data-theme="light"] .nmap-ip,
+:root[data-theme="light"] .netmap-name,
+:root[data-theme="light"] .constant-name,
+:root[data-theme="light"] .system-status-label,
+:root[data-theme="light"] .project-select-caption,
+:root[data-theme="light"] .object-select-caption,
+:root[data-theme="light"] .role-toggle,
+:root[data-theme="light"] .role-file,
+:root[data-theme="light"] .role-readme summary { color: #1d2330; }
+:root[data-theme="light"] .node-status.available { color: #1f8a55; }
+:root[data-theme="light"] .node-status.unavailable { color: #c0392b; }
+:root[data-theme="light"] .node-status.pending, :root[data-theme="light"] .status-pending { color: rgba(29,35,48,.5); }
+
+/* кнопки */
+:root[data-theme="light"] button { color: #1d2330; background: #f3f5f8; border-color: rgba(20,30,50,.16); }
+:root[data-theme="light"] button:hover { background: #e6eaf0; }
+:root[data-theme="light"] button.primary, :root[data-theme="light"] .group-btn-create { background: #1f9d63; border-color: #1a8a56; color: #fff; }
+:root[data-theme="light"] button.primary:hover, :root[data-theme="light"] .group-btn-create:hover { background: #188552; }
+:root[data-theme="light"] button.danger, :root[data-theme="light"] .group-btn-delete { background: #cc4b4b; border-color: #b53d3d; color: #fff; }
+:root[data-theme="light"] button.danger:hover, :root[data-theme="light"] .group-btn-delete:hover { background: #b53d3d; }
+:root[data-theme="light"] .node-edit, :root[data-theme="light"] .check-run-btn { background: #2f6fd1; border-color: #285fb4; color: #fff; }
+:root[data-theme="light"] .node-edit:hover, :root[data-theme="light"] .check-run-btn:hover { background: #285fb4; }
+:root[data-theme="light"] .edit-save.primary:disabled, :root[data-theme="light"] .edit-save.primary:disabled:hover { background: #eef1f5; color: rgba(29,35,48,.4); border-color: rgba(20,30,50,.12); }
+:root[data-theme="light"] .modal-secondary, :root[data-theme="light"] .modal-close { background: transparent; }
+:root[data-theme="light"] .modal-close:hover { background: rgba(20,30,50,.06); }
+:root[data-theme="light"] .node-type-tab { background: #fff; border-color: rgba(20,30,50,.16); }
+:root[data-theme="light"] .node-type-tab.active { background: rgba(47,111,209,.12); border-color: #2f6fd1; }
+:root[data-theme="light"] .group-toggle-btn { background: #fff; border-color: rgba(20,30,50,.25); color: #1d2330; }
+:root[data-theme="light"] .group-toggle-btn.active { background: #2f6fd1; border-color: #2f6fd1; color: #fff; }
+:root[data-theme="light"] .group-btn, :root[data-theme="light"] .group-filter-btn { background: #f3f5f8; border-color: rgba(20,30,50,.16); color: #1d2330; }
+
+/* верхний ряд */
+:root[data-theme="light"] .system-status-item, :root[data-theme="light"] #object_block .object-select-button { background: #fff; border-color: rgba(20,30,50,.12); color: rgba(29,35,48,.75); box-shadow: 0 1px 2px rgba(20,30,50,.05); }
+:root[data-theme="light"] .system-status-item.is-active { color: #1f8a55; border-color: rgba(31,138,85,.35); }
+:root[data-theme="light"] .system-status-item.is-inactive { color: #c0392b; border-color: rgba(192,57,43,.32); }
+:root[data-theme="light"] button.system-status-item:hover, :root[data-theme="light"] #object_block .object-select-button:hover { background: #f1f4f8; }
+:root[data-theme="light"] button.system-status-item.iso-toggle { color: #1d2330; }
+:root[data-theme="light"] button.system-status-item.nmap-open-btn { background: rgba(47,111,209,.10); border-color: rgba(47,111,209,.35); color: #285fb4; }
+:root[data-theme="light"] .project-select-value, :root[data-theme="light"] #object_block .object-select-value { color: #285fb4; }
+:root[data-theme="light"] .project-select-button[aria-expanded="true"], :root[data-theme="light"] #object_block .object-select-button[aria-expanded="true"],
+:root[data-theme="light"] button.system-status-item.iso-toggle.is-open, :root[data-theme="light"] .settings-btn[aria-expanded="true"] { background: rgba(47,111,209,.10); border-color: rgba(47,111,209,.45); }
+:root[data-theme="light"] .settings-item svg { color: #2f6fd1; }
+
+/* выпадающие списки и всплывающие панели */
+:root[data-theme="light"] .project-select-list, :root[data-theme="light"] .object-select-list, :root[data-theme="light"] .hwtype-dropdown,
+:root[data-theme="light"] .settings-menu, :root[data-theme="light"] .iso-panel, :root[data-theme="light"] .group-filter-list, :root[data-theme="light"] .netmap-popover {
+    background: #fff; box-shadow: 0 12px 30px rgba(20,30,50,.18);
+}
+:root[data-theme="light"] .project-select-list.is-open, :root[data-theme="light"] .object-select-list.is-open, :root[data-theme="light"] .hwtype-dropdown.is-open,
+:root[data-theme="light"] .settings-menu.is-open, :root[data-theme="light"] .iso-panel.is-open, :root[data-theme="light"] .netmap-popover { border-color: rgba(20,30,50,.14); }
+:root[data-theme="light"] .project-option, :root[data-theme="light"] .object-option, :root[data-theme="light"] .hwtype-option,
+:root[data-theme="light"] .settings-item, :root[data-theme="light"] .group-filter-item { color: #1d2330; background: transparent; }
+:root[data-theme="light"] .project-option:hover, :root[data-theme="light"] .object-option:hover, :root[data-theme="light"] .hwtype-option:hover,
+:root[data-theme="light"] .settings-item:hover, :root[data-theme="light"] .group-filter-item:hover { background: rgba(47,111,209,.10); }
+:root[data-theme="light"] .project-option.active, :root[data-theme="light"] .object-option.active, :root[data-theme="light"] .hwtype-option.active,
+:root[data-theme="light"] .group-filter-item.active { background: #2f6fd1; color: #fff; }
+
+/* поля ввода */
+:root[data-theme="light"] .modal-input,
+:root[data-theme="light"] .new-node-field input,
+:root[data-theme="light"] .host-card.editing .param-value,
+:root[data-theme="light"] #object_select,
+:root[data-theme="light"] .node-group-field select,
+:root[data-theme="light"] .playbook-editor {
+    background: #fff; color: #1d2330; border-color: rgba(20,30,50,.2);
+}
+:root[data-theme="light"] .param-value { color: #1d2330; }
+:root[data-theme="light"] .modal-input:focus, :root[data-theme="light"] .new-node-field input:focus,
+:root[data-theme="light"] .host-card.editing .param-value:focus { border-color: #2f6fd1; background: #fff; }
+:root[data-theme="light"] .new-node-field input { border-color: rgba(47,111,209,.45); }
+:root[data-theme="light"] .node-check, :root[data-theme="light"] .pb { background: #fff; border-color: rgba(20,30,50,.3); }
+
+/* модальные окна */
+:root[data-theme="light"] .modal-backdrop { background: rgba(20,30,50,.35); }
+:root[data-theme="light"] .modal-card { border-color: rgba(20,30,50,.14); box-shadow: 0 24px 70px rgba(20,30,50,.25); }
+:root[data-theme="light"] .modal-head, :root[data-theme="light"] .modal-footer, :root[data-theme="light"] .netmap-toolbar,
+:root[data-theme="light"] .netmap-add-form.is-open { border-color: rgba(20,30,50,.10); }
+:root[data-theme="light"] .playbook-editor-body { background: #fff; }
+
+/* таблицы прослушки, константы, карта */
+:root[data-theme="light"] .nmap-table-head { background: #fff; color: rgba(29,35,48,.55); border-color: rgba(20,30,50,.12); }
+:root[data-theme="light"] .nmap-row { border-color: rgba(20,30,50,.07); }
+:root[data-theme="light"] .nmap-mac { color: #285fb4; }
+:root[data-theme="light"] .verbosity-select { background: #f3f5f8; border-color: rgba(20,30,50,.14); }
+:root[data-theme="light"] .verbosity-select label span { color: rgba(29,35,48,.7); }
+:root[data-theme="light"] .verbosity-select label:hover span { background: rgba(20,30,50,.06); color: #1d2330; }
+:root[data-theme="light"] .verbosity-select input:checked + span { background: #2f6fd1; color: #fff; }
+:root[data-theme="light"] .constants-section-title { background: #fff; color: #285fb4; border-color: rgba(20,30,50,.10); }
+:root[data-theme="light"] .constant-error, :root[data-theme="light"] .constants-status.is-error, :root[data-theme="light"] .netmap-status.is-error { color: #c0392b; }
+:root[data-theme="light"] .netmap-status { color: #1f8a55; }
+:root[data-theme="light"] .netmap-canvas { background-color: #f6f8fb; }
+:root[data-theme="light"] .netmap-node:hover { background: rgba(20,30,50,.04); border-color: rgba(20,30,50,.12); }
+:root[data-theme="light"] .netmap-node.is-dragging { background: rgba(47,111,209,.10); border-color: rgba(47,111,209,.5); box-shadow: 0 12px 28px rgba(20,30,50,.18); }
+:root[data-theme="light"] .netmap-icon { color: #2f6fd1; }
+:root[data-theme="light"] .netmap-node.type-server .netmap-icon { color: #1f8a55; }
+:root[data-theme="light"] .netmap-node.type-router .netmap-icon, :root[data-theme="light"] .netmap-node.type-crypto_router .netmap-icon { color: #b7791f; }
+:root[data-theme="light"] .netmap-node.type-switch .netmap-icon { color: #1c7fb8; }
+:root[data-theme="light"] .netmap-node.type-ups .netmap-icon { color: #c4602c; }
+:root[data-theme="light"] .netmap-node.type-supervisor .netmap-icon { color: #7b55c7; }
+:root[data-theme="light"] .netmap-node.type-netping .netmap-icon { color: #178f86; }
+:root[data-theme="light"] .role-toggle, :root[data-theme="light"] .role-file { background: transparent; border-color: transparent; }
+:root[data-theme="light"] .role-toggle:hover, :root[data-theme="light"] .role-file:hover { background: rgba(20,30,50,.05); }
+:root[data-theme="light"] .hwtype-toggle { background: transparent; border-color: transparent; }
+:root[data-theme="light"] .host-card.editing .hwtype-toggle, :root[data-theme="light"] .new-node-field .hwtype-toggle { background: #fff; border-color: rgba(20,30,50,.2); }
+
+/* --- Карта сети: соединения --- */
+.netmap-links { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.netmap-link-line { stroke: rgba(120,170,255,.55); stroke-width: 2; stroke-linecap: round; transition: stroke .15s, stroke-width .15s; }
+.netmap-link-hit { stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
+.netmap-link:hover .netmap-link-line { stroke: rgba(160,200,255,.95); stroke-width: 3; }
+.netmap-link-preview { stroke: rgba(160,200,255,.85); stroke-width: 2; stroke-dasharray: 6 5; opacity: 0; transition: opacity .15s; }
+.netmap-link-preview.is-visible { opacity: 1; }
+
+/* --- Карта сети: карточка устройства --- */
+.netmap-popover-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.netmap-popover-titles { min-width: 0; flex: 1; }
+.netmap-popover-title { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.netmap-popover-sub { font-size: 12px; color: rgba(255,255,255,.55); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.netmap-back { min-height: 0; width: 28px; height: 28px; padding: 0; border-radius: 7px; font-size: 20px; line-height: 1; }
+.netmap-popover-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.netmap-popover-actions button { min-height: 36px; font-size: 13px; }
+.netmap-edit-action { background: rgba(35,110,210,.55); border-color: rgba(64,150,255,.6); }
+.netmap-edit-action:hover { background: rgba(35,110,210,.7); }
+.netmap-popover-body { animation: netmapViewIn .2s ease-out both; }
+@keyframes netmapViewIn { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+.netmap-info { display: grid; grid-template-columns: 96px minmax(0,1fr); gap: 5px 10px; font-size: 13px; }
+.netmap-info-key { color: rgba(255,255,255,.5); }
+.netmap-info-value { min-width: 0; overflow-wrap: anywhere; }
+.netmap-section-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 12px 0 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: rgba(190,215,255,.9); }
+.netmap-peer-list { display: flex; flex-direction: column; gap: 2px; max-height: 150px; overflow-y: auto; }
+.netmap-peer { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 7px; font-size: 13px; }
+.netmap-peer:hover { background: rgba(255,255,255,.05); }
+.netmap-peer .netmap-picker-icon { width: 22px; height: 22px; }
+.netmap-peer-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.netmap-peer-ip { font-size: 12px; color: rgba(255,255,255,.5); font-variant-numeric: tabular-nums; }
+.netmap-unlink { min-height: 0; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; font-size: 17px; line-height: 1; color: rgba(255,255,255,.55); }
+.netmap-unlink:hover { background: rgba(160,50,50,.55); color: #fff; transform: none; }
+.netmap-link-btn { min-height: 0; padding: 3px 9px; font-size: 12px; text-transform: none; letter-spacing: 0; }
+.netmap-empty-note { font-size: 12px; color: rgba(255,255,255,.45); }
+.netmap-popover-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.netmap-popover-fields .modal-label { margin-bottom: 4px; }
+.netmap-params { margin-top: 10px; font-size: 12px; }
+.netmap-params summary { cursor: pointer; color: rgba(255,255,255,.6); }
+.netmap-params-list { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 3px 10px; max-height: 160px; margin-top: 6px; overflow-y: auto; }
+.netmap-params-list span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.netmap-params-list span:nth-child(odd) { color: rgba(255,255,255,.5); }
+.netmap-popover.is-small { width: 260px; }
+.netmap-link-pair { font-size: 13px; margin-bottom: 4px; overflow-wrap: anywhere; }
+
+/* --- Список выбора оборудования (в стиле остальных выпадающих списков) --- */
+.netmap-type-picker { min-width: 0; }
+.netmap-picker-btn {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    min-height: var(--ds-control-h);
+    padding: 0 12px;
+    box-sizing: border-box;
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: var(--ds-radius-control);
+    background: rgba(255,255,255,.055);
+    color: #fff;
+    text-align: left;
+    font-weight: 600;
+    transition: border-color .15s, background .15s;
+}
+.netmap-picker-btn:hover { background: rgba(255,255,255,.09); transform: none; }
+.netmap-picker-btn.is-open { border-color: rgba(64,150,255,.6); }
+.netmap-picker-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.netmap-picker-arrow { font-size: 11px; color: rgba(255,255,255,.55); transition: transform .2s ease; }
+.netmap-picker-btn.is-open .netmap-picker-arrow { transform: rotate(180deg); }
+.netmap-picker-icon { display: inline-flex; flex: 0 0 auto; width: 24px; height: 24px; color: rgba(190,215,255,.95); }
+.netmap-picker-icon svg { width: 100%; height: 100%; }
+.netmap-type-list {
+    position: fixed;
+    z-index: 10000;
+    max-height: 0;
+    overflow: hidden;
+    padding: 0 4px;
+    box-sizing: border-box;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: #1e1e1e;
+    box-shadow: 0 12px 30px rgba(0,0,0,.42);
+    opacity: 0;
+    transform: translateY(-5px);
+    pointer-events: none;
+    transition: max-height .22s ease, opacity .15s ease, transform .22s ease, padding .22s ease, border-color .22s ease;
+}
+.netmap-type-list.is-open { max-height: 380px; overflow-y: auto; padding: 4px; border-color: rgba(255,255,255,.16); opacity: 1; transform: translateY(0); pointer-events: auto; }
+.netmap-type-option { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 0; padding: 7px 10px; border: 0; border-radius: 7px; background: transparent; color: #eee; text-align: left; }
+.netmap-type-option:hover { background: rgba(255,255,255,.08); transform: none; }
+.netmap-type-option.active { background: rgba(45,90,138,.75); }
+.netmap-type-option .netmap-picker-icon { width: 28px; height: 28px; }
+.netmap-type-option-text { display: flex; flex-direction: column; min-width: 0; }
+.netmap-type-option-label { font-size: 13px; font-weight: 600; }
+.netmap-type-option-desc { font-size: 11px; font-weight: 400; color: rgba(255,255,255,.5); white-space: normal; }
+/* цвет значков по типу — одинаково на холсте, в карточке и в списке */
+.netmap-picker-icon.type-server { color: rgba(160,230,185,.95); }
+.netmap-picker-icon.type-router, .netmap-picker-icon.type-crypto_router { color: rgba(240,200,120,.95); }
+.netmap-picker-icon.type-switch { color: rgba(120,200,255,.95); }
+.netmap-picker-icon.type-ups { color: rgba(240,160,110,.95); }
+.netmap-picker-icon.type-supervisor { color: rgba(200,170,255,.95); }
+.netmap-picker-icon.type-netping { color: rgba(130,220,210,.95); }
+
+/* --- Карта сети: светлая тема для новых элементов --- */
+:root[data-theme="light"] .netmap-canvas { --netmap-surface: #f6f8fb; background-image: none; }
+:root[data-theme="light"] .netmap-stage { background-image: radial-gradient(circle, rgba(20,30,50,.22) 1.1px, transparent 1.6px); }
+:root[data-theme="light"] .netmap-link-line { stroke: rgba(47,111,209,.55); }
+:root[data-theme="light"] .netmap-link:hover .netmap-link-line { stroke: #2f6fd1; }
+:root[data-theme="light"] .netmap-link-preview { stroke: #2f6fd1; }
+:root[data-theme="light"] .netmap-node.is-link-source { border-color: #2f6fd1; background: rgba(47,111,209,.10); box-shadow: 0 0 0 3px rgba(47,111,209,.15); }
+:root[data-theme="light"] .netmap-hint.is-accent { color: #285fb4; }
+:root[data-theme="light"] .netmap-popover-sub, :root[data-theme="light"] .netmap-info-key, :root[data-theme="light"] .netmap-peer-ip,
+:root[data-theme="light"] .netmap-empty-note, :root[data-theme="light"] .netmap-params summary, :root[data-theme="light"] .netmap-params-list span:nth-child(odd),
+:root[data-theme="light"] .netmap-type-option-desc, :root[data-theme="light"] .netmap-picker-arrow, :root[data-theme="light"] .netmap-unlink { color: rgba(29,35,48,.55); }
+:root[data-theme="light"] .netmap-section-title { color: #285fb4; }
+:root[data-theme="light"] .netmap-peer:hover { background: rgba(20,30,50,.05); }
+:root[data-theme="light"] .netmap-unlink { background: transparent; }
+:root[data-theme="light"] .netmap-unlink:hover { background: #cc4b4b; color: #fff; }
+:root[data-theme="light"] .netmap-edit-action { background: #2f6fd1; border-color: #285fb4; color: #fff; }
+:root[data-theme="light"] .netmap-edit-action:hover { background: #285fb4; }
+:root[data-theme="light"] .netmap-picker-btn { background: #fff; border-color: rgba(20,30,50,.2); color: #1d2330; }
+:root[data-theme="light"] .netmap-picker-btn:hover { background: #f6f8fb; }
+:root[data-theme="light"] .netmap-picker-btn.is-open { border-color: #2f6fd1; }
+:root[data-theme="light"] .netmap-type-list { background: #fff; box-shadow: 0 12px 30px rgba(20,30,50,.18); }
+:root[data-theme="light"] .netmap-type-list.is-open { border-color: rgba(20,30,50,.14); }
+:root[data-theme="light"] .netmap-type-option { background: transparent; color: #1d2330; }
+:root[data-theme="light"] .netmap-type-option:hover { background: rgba(47,111,209,.08); }
+:root[data-theme="light"] .netmap-type-option.active { background: rgba(47,111,209,.14); }
+:root[data-theme="light"] .netmap-picker-icon { color: #2f6fd1; }
+:root[data-theme="light"] .netmap-picker-icon.type-server { color: #1f8a55; }
+:root[data-theme="light"] .netmap-picker-icon.type-router, :root[data-theme="light"] .netmap-picker-icon.type-crypto_router { color: #b7791f; }
+:root[data-theme="light"] .netmap-picker-icon.type-switch { color: #1c7fb8; }
+:root[data-theme="light"] .netmap-picker-icon.type-ups { color: #c4602c; }
+:root[data-theme="light"] .netmap-picker-icon.type-supervisor { color: #7b55c7; }
+:root[data-theme="light"] .netmap-picker-icon.type-netping { color: #178f86; }
+
+/* --- Карта сети: цвет соединения по пингу --- */
+.netmap-link.is-up .netmap-link-line { stroke: rgba(80,205,125,.9); }
+.netmap-link.is-down .netmap-link-line { stroke: rgba(235,95,95,.95); }
+.netmap-link.is-up:hover .netmap-link-line { stroke: rgba(120,235,160,1); }
+.netmap-link.is-down:hover .netmap-link-line { stroke: rgba(255,130,130,1); }
+.netmap-link-state { margin-bottom: 4px; font-size: 12px; color: rgba(255,255,255,.55); }
+.netmap-link-state.is-up { color: rgba(110,220,150,.95); }
+.netmap-link-state.is-down { color: rgba(240,130,130,.95); }
+
+/* --- Карта сети: узел этой машины (Autodeploy) --- */
+.netmap-node.type-autodeploy .netmap-icon { color: #fff; background: rgba(35,110,210,.55); box-shadow: 0 0 0 3px rgba(64,150,255,.22); }
+.netmap-picker-icon.type-autodeploy { color: rgba(150,195,255,.95); }
+
+/* --- Карта сети: масштаб и легенда (поверх холста) --- */
+.netmap-zoom {
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    z-index: 15;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 10px;
+    background: rgba(30,30,30,.92);
+    box-shadow: 0 8px 22px rgba(0,0,0,.35);
+    cursor: default;
+}
+.netmap-zoom button { min-height: 30px; min-width: 32px; padding: 0 9px; font-size: 13px; }
+#netmap_zoom_label { min-width: 58px; font-variant-numeric: tabular-nums; }
+.netmap-legend { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 6px; font-size: 12px; color: rgba(255,255,255,.6); }
+.netmap-legend i { display: inline-block; width: 16px; height: 3px; margin-left: 4px; border-radius: 2px; }
+.netmap-legend i.is-up { background: rgba(80,205,125,.9); }
+.netmap-legend i.is-down { background: rgba(235,95,95,.95); }
+.netmap-popover { z-index: 20; }
+
+/* светлая тема */
+:root[data-theme="light"] .netmap-link.is-up .netmap-link-line, :root[data-theme="light"] .netmap-legend i.is-up { stroke: #1f9d63; background: #1f9d63; }
+:root[data-theme="light"] .netmap-link.is-down .netmap-link-line, :root[data-theme="light"] .netmap-legend i.is-down { stroke: #d14545; background: #d14545; }
+:root[data-theme="light"] .netmap-link-state.is-up { color: #1f8a55; }
+:root[data-theme="light"] .netmap-link-state.is-down { color: #c0392b; }
+:root[data-theme="light"] .netmap-node.type-autodeploy .netmap-icon { color: #fff; background: #2f6fd1; box-shadow: 0 0 0 3px rgba(47,111,209,.18); }
+:root[data-theme="light"] .netmap-picker-icon.type-autodeploy { color: #2f6fd1; }
+:root[data-theme="light"] .netmap-zoom { background: rgba(255,255,255,.95); border-color: rgba(20,30,50,.14); box-shadow: 0 8px 22px rgba(20,30,50,.15); }
+:root[data-theme="light"] .netmap-legend { color: rgba(29,35,48,.6); }
+
+/* --- Окно «Настройки» (constants.py): обычные поля вместо синтаксиса Python --- */
+.constant-row { display: grid; grid-template-columns: minmax(240px, 380px) minmax(0,1fr); gap: 18px; align-items: start; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
+.constant-meta { min-width: 0; }
+.constant-label { font-size: 14px; font-weight: 600; color: #fff; }
+.constant-desc { margin-top: 3px; font-size: 12px; line-height: 1.45; color: rgba(255,255,255,.5); }
+.constant-name { display: inline-block; margin-top: 4px; font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 11px; color: rgba(255,255,255,.32); }
+.constant-badge { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 5px; background: rgba(210,150,40,.18); color: rgba(240,200,120,.95); font-size: 11px; font-weight: 400; vertical-align: 1px; }
+.constant-value-wrap { min-width: 0; }
+.constant-input { min-height: 36px; padding: 6px 10px; font-size: 14px; }
+.constant-number { display: flex; align-items: center; gap: 8px; max-width: 260px; }
+.constant-number .constant-input { width: 140px; }
+.constant-unit { font-size: 13px; color: rgba(255,255,255,.55); }
+.constant-list { display: flex; flex-direction: column; gap: 6px; }
+.constant-list-item { display: flex; gap: 6px; align-items: center; }
+.constant-list-remove { flex: 0 0 auto; min-height: 0; width: 32px; height: 32px; padding: 0; border-radius: 8px; font-size: 18px; line-height: 1; color: rgba(255,255,255,.6); }
+.constant-list-remove:hover { background: rgba(160,50,50,.55); color: #fff; transform: none; }
+.constant-list-add { align-self: flex-start; min-height: 0; padding: 5px 12px; font-size: 13px; }
+.constant-row-footer { display: flex; align-items: center; gap: 10px; min-height: 0; }
+.constant-error { flex: 1; font-size: 12px; color: rgba(240,140,140,.95); }
+.constant-error:not(:empty) { margin-top: 5px; }
+.constant-revert { display: none; margin-top: 5px; min-height: 0; padding: 2px 8px; border: 0; background: transparent; font-size: 12px; font-weight: 600; color: rgba(150,195,255,.95); }
+.constant-revert:hover { background: rgba(255,255,255,.07); transform: none; }
+.constant-row.is-changed .constant-revert { display: inline-block; margin-left: auto; }
+.constant-row.is-changed .constant-input { border-color: rgba(64,150,255,.75); background: rgba(35,110,210,.12); }
+.constant-row.is-error .constant-input { border-color: rgba(235,115,115,.85); background: rgba(160,50,50,.14); }
+.constants-status.is-success { color: rgba(130,220,160,.95); }
+
+/* --- Уведомления (вместо системных окон alert) --- */
+.toast-box { position: fixed; right: 18px; bottom: 18px; z-index: 20000; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; pointer-events: none; }
+.toast {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    width: min(420px, calc(100vw - 36px));
+    padding: 11px 12px;
+    box-sizing: border-box;
+    border: 1px solid rgba(255,255,255,.14);
+    border-left-width: 4px;
+    border-radius: 10px;
+    background: #1f1f1f;
+    box-shadow: 0 12px 30px rgba(0,0,0,.45);
+    color: #f2f2f2;
+    font-size: 14px;
+    line-height: 1.4;
+    opacity: 0;
+    transform: translateY(10px);
+    pointer-events: auto;
+    transition: opacity .2s ease, transform .2s ease;
+}
+.toast.is-visible { opacity: 1; transform: none; }
+.toast-icon { flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; }
+.toast-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.toast-close { flex: 0 0 auto; min-height: 0; width: 22px; height: 22px; padding: 0; border: 0; background: transparent; font-size: 17px; line-height: 1; color: rgba(255,255,255,.55); }
+.toast-close:hover { background: rgba(255,255,255,.08); transform: none; }
+.toast-error { border-left-color: #d9534f; } .toast-error .toast-icon { background: #d9534f; }
+.toast-warning { border-left-color: #e0a030; } .toast-warning .toast-icon { background: #e0a030; }
+.toast-success { border-left-color: #2fae6e; } .toast-success .toast-icon { background: #2fae6e; }
+.toast-info { border-left-color: #3b82e0; } .toast-info .toast-icon { background: #3b82e0; }
+
+/* светлая тема */
+:root[data-theme="light"] .constant-row { border-color: rgba(20,30,50,.07); }
+:root[data-theme="light"] .constant-label { color: #1d2330; }
+:root[data-theme="light"] .constant-desc, :root[data-theme="light"] .constant-unit { color: rgba(29,35,48,.6); }
+:root[data-theme="light"] .constant-name { color: rgba(29,35,48,.38); }
+:root[data-theme="light"] .constant-badge { background: rgba(210,150,40,.16); color: #8a5a00; }
+:root[data-theme="light"] .constant-revert { color: #285fb4; background: transparent; }
+:root[data-theme="light"] .constant-list-remove { color: rgba(29,35,48,.6); }
+:root[data-theme="light"] .constant-list-remove:hover { background: #cc4b4b; color: #fff; }
+:root[data-theme="light"] .constant-row.is-changed .constant-input { border-color: #2f6fd1; background: rgba(47,111,209,.06); }
+:root[data-theme="light"] .constant-row.is-error .constant-input { border-color: #cc4b4b; background: rgba(204,75,75,.06); }
+:root[data-theme="light"] .constant-error { color: #c0392b; }
+:root[data-theme="light"] .constants-status.is-success { color: #1f8a55; }
+:root[data-theme="light"] .toast { background: #fff; color: #1d2330; border-color: rgba(20,30,50,.14); box-shadow: 0 12px 30px rgba(20,30,50,.18); }
+:root[data-theme="light"] .toast-close { color: rgba(29,35,48,.55); background: transparent; }
+
+/* --- Пустые состояния списков: что произошло и что сделать --- */
+.empty-state { display: flex; flex-direction: column; gap: 4px; padding: 22px 16px; border: 1px dashed rgba(255,255,255,.14); border-radius: 12px; text-align: center; color: rgba(255,255,255,.55); font-size: 13px; }
+.empty-state b { font-size: 14px; color: rgba(255,255,255,.85); }
+.empty-state.is-error { border-color: rgba(235,115,115,.4); }
+:root[data-theme="light"] .empty-state { border-color: rgba(20,30,50,.18); color: rgba(29,35,48,.6); }
+:root[data-theme="light"] .empty-state b { color: #1d2330; }
+
+/* --- Выпадающий список в общем стиле (интерфейс в окне «Прослушка» и т.п.) --- */
+.ui-select { position: relative; min-width: 0; }
+.ui-select-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: var(--ds-control-h);
+    padding: 0 12px;
+    box-sizing: border-box;
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: var(--ds-radius-control);
+    background: rgba(255,255,255,.055);
+    color: #fff;
+    text-align: left;
+    transition: border-color .15s, background .15s;
+}
+.ui-select-btn:hover { background: rgba(255,255,255,.09); transform: none; }
+.ui-select-btn:disabled { opacity: .55; cursor: not-allowed; }
+.ui-select.is-open .ui-select-btn { border-color: rgba(64,150,255,.6); }
+.ui-select-label { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ui-select-sub { font-size: 13px; font-weight: 400; color: rgba(255,255,255,.55); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ui-select-arrow { margin-left: auto; font-size: 11px; color: rgba(255,255,255,.55); transition: transform .2s ease; }
+.ui-select.is-open .ui-select-arrow { transform: rotate(180deg); }
+.ui-select-list {
+    position: fixed;
+    z-index: 10000;
+    max-height: 0;
+    overflow: hidden;
+    padding: 0 4px;
+    box-sizing: border-box;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: #1e1e1e;
+    box-shadow: 0 12px 30px rgba(0,0,0,.42);
+    opacity: 0;
+    transform: translateY(-5px);
+    pointer-events: none;
+    transition: max-height .22s ease, opacity .15s ease, transform .22s ease, padding .22s ease, border-color .22s ease;
+}
+.ui-select-list.is-open { max-height: 300px; overflow-y: auto; padding: 4px; border-color: rgba(255,255,255,.16); opacity: 1; transform: translateY(0); pointer-events: auto; }
+.ui-select-option { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 6px 10px; border: 0; border-radius: 7px; background: transparent; color: #eee; text-align: left; }
+.ui-select-option:hover { background: rgba(255,255,255,.08); transform: none; }
+.ui-select-option.active { background: rgba(45,90,138,.75); }
+.ui-select-empty { padding: 8px 10px; }
+
+/* --- Прослушка: пояснение к ошибке SSH и отпечатки ключа коммутатора --- */
+.nmap-notice { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid rgba(224,160,48,.45); border-radius: 10px; background: rgba(224,160,48,.10); font-size: 13px; line-height: 1.45; color: rgba(245,215,150,.95); }
+.nmap-notice[hidden] { display: none; }
+.nmap-notice span { flex: 1; }
+.nmap-notice button { flex: 0 0 auto; min-height: 32px; padding: 0 12px; font-size: 13px; }
+.hostkey-prints { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; padding: 10px 12px; border-radius: 8px; background: rgba(0,0,0,.3); }
+.hostkey-print { display: flex; align-items: baseline; gap: 10px; }
+.hostkey-print span { flex: 0 0 64px; font-size: 12px; font-weight: 600; color: rgba(255,255,255,.55); }
+.hostkey-print code { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 13px; color: #fff; overflow-wrap: anywhere; }
+
+/* --- Карта: кнопка автопостроения --- */
+.netmap-autobuild-btn { background: rgba(35,110,210,.55); border-color: rgba(64,150,255,.6); }
+.netmap-autobuild-btn:hover { background: rgba(35,110,210,.7); }
+.netmap-autobuild-btn.is-busy { position: relative; padding-right: 34px; }
+.netmap-autobuild-btn.is-busy::after { content: ''; position: absolute; right: 12px; top: 50%; width: 12px; height: 12px; margin-top: -7px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: awcSpin .8s linear infinite; }
+@keyframes awcSpin { to { transform: rotate(360deg); } }
+
+/* светлая тема */
+:root[data-theme="light"] a.system-status-item.repo-btn { color: #1d2330; }
+:root[data-theme="light"] a.system-status-item.repo-btn svg { color: #2f6fd1; }
+:root[data-theme="light"] .ui-select-btn { background: #fff; border-color: rgba(20,30,50,.2); color: #1d2330; }
+:root[data-theme="light"] .ui-select-btn:hover { background: #f6f8fb; }
+:root[data-theme="light"] .ui-select.is-open .ui-select-btn { border-color: #2f6fd1; }
+:root[data-theme="light"] .ui-select-sub, :root[data-theme="light"] .ui-select-arrow { color: rgba(29,35,48,.55); }
+:root[data-theme="light"] .ui-select-list { background: #fff; box-shadow: 0 12px 30px rgba(20,30,50,.18); }
+:root[data-theme="light"] .ui-select-list.is-open { border-color: rgba(20,30,50,.14); }
+:root[data-theme="light"] .ui-select-option { background: transparent; color: #1d2330; }
+:root[data-theme="light"] .ui-select-option:hover { background: rgba(47,111,209,.08); }
+:root[data-theme="light"] .ui-select-option.active { background: rgba(47,111,209,.14); }
+:root[data-theme="light"] .nmap-notice { background: rgba(224,160,48,.12); border-color: rgba(190,130,20,.4); color: #7a4f00; }
+:root[data-theme="light"] .hostkey-prints { background: #f3f5f8; }
+:root[data-theme="light"] .hostkey-print span { color: rgba(29,35,48,.55); }
+:root[data-theme="light"] .hostkey-print code { color: #1d2330; }
+:root[data-theme="light"] .netmap-autobuild-btn { background: #2f6fd1; border-color: #285fb4; color: #fff; }
+:root[data-theme="light"] .netmap-autobuild-btn:hover { background: #285fb4; }
+
+/* --- Окно «Прослушка»: интерфейс и способ в одной строке, поля коммутатора — в одной строке --- */
+.nmap-top-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 14px; align-items: end; margin-bottom: 14px; }
+.nmap-field { min-width: 0; }
+.nmap-field .modal-label { margin-bottom: 6px; font-size: 13px; }
+.nmap-mode-select { display: inline-flex; align-items: center; gap: 2px; height: var(--ds-control-h); padding: 3px; box-sizing: border-box; border: 1px solid rgba(255,255,255,.12); border-radius: var(--ds-radius-control); background: rgba(0,0,0,.25); }
+.nmap-mode-option { position: relative; height: 100%; cursor: pointer; }
+.nmap-mode-option input { position: absolute; opacity: 0; pointer-events: none; }
+.nmap-mode-option span { display: flex; align-items: center; height: 100%; padding: 0 14px; border-radius: 6px; font-size: 14px; font-weight: 600; white-space: nowrap; color: rgba(255,255,255,.7); transition: background .18s ease, color .18s ease; }
+.nmap-mode-option:hover span { background: rgba(255,255,255,.08); color: #fff; }
+.nmap-mode-option input:checked + span { background: rgba(35,110,210,.55); color: #fff; }
+.nmap-mode-option input:focus-visible + span { outline: 2px solid rgba(64,150,255,.7); outline-offset: 1px; }
+.nmap-mode-option input:disabled + span { opacity: .55; cursor: not-allowed; }
+.nmap-switch-row { display: grid; grid-template-columns: minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr); gap: 10px; }
+.nmap-switch-row .modal-label { margin-bottom: 6px; font-size: 13px; }
+:root[data-theme="light"] .nmap-mode-select { background: #f3f5f8; border-color: rgba(20,30,50,.14); }
+:root[data-theme="light"] .nmap-mode-option span { color: rgba(29,35,48,.7); }
+:root[data-theme="light"] .nmap-mode-option:hover span { background: rgba(20,30,50,.06); color: #1d2330; }
+:root[data-theme="light"] .nmap-mode-option input:checked + span { background: #2f6fd1; color: #fff; }
+@media (max-width: 720px) {
+    .nmap-top-row, .nmap-switch-row { grid-template-columns: minmax(0,1fr); }
+    .nmap-mode-select { width: 100%; }
+    .nmap-mode-option { flex: 1; }
+    .nmap-mode-option span { justify-content: center; padding: 0 8px; }
+}
+
+/* --- Карта: подпись VLAN на соединении --- */
+.netmap-link-label { font-size: 11px; font-weight: 600; fill: rgba(220,232,255,.95); stroke: var(--netmap-surface); stroke-width: 4px; paint-order: stroke; stroke-linejoin: round; pointer-events: none; }
+.netmap-vlan-label { margin: 10px 0 4px; }
+.netmap-vlan-input { min-height: 32px; padding: 6px 10px; font-size: 13px; }
+.netmap-vlan-input.is-invalid { border-color: rgba(235,115,115,.85); }
+.netmap-vlan-error { min-height: 0; font-size: 12px; color: rgba(240,140,140,.95); }
+.netmap-vlan-error:not(:empty) { margin-top: 4px; }
+/* --- Карта: инструмент «Соединить» --- */
+.netmap-link-tool-btn { display: inline-flex; align-items: center; gap: 7px; }
+.netmap-link-tool-btn.is-active { background: rgba(35,110,210,.55); border-color: rgba(64,150,255,.75); box-shadow: 0 0 0 3px rgba(64,150,255,.18); }
+:root[data-theme="light"] .netmap-link-label { fill: #1d2330; }
+:root[data-theme="light"] .netmap-link-tool-btn.is-active { background: #2f6fd1; border-color: #285fb4; color: #fff; }
+:root[data-theme="light"] .netmap-vlan-error { color: #c0392b; }
+
+/* --- Окно автопостроения: выбор источника устройств --- */
+.autobuild-sources { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.autobuild-source { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid rgba(255,255,255,.12); border-radius: 10px; cursor: pointer; transition: border-color .15s, background .15s; }
+.autobuild-source:hover { background: rgba(255,255,255,.04); }
+.autobuild-source:has(input:checked) { border-color: rgba(64,150,255,.65); background: rgba(35,110,210,.12); }
+.autobuild-source:has(input:disabled) { opacity: .5; cursor: not-allowed; }
+.autobuild-source input { margin-top: 3px; }
+.autobuild-source span { display: flex; flex-direction: column; gap: 2px; }
+.autobuild-source b { color: #fff; font-size: 14px; }
+.autobuild-source small { font-size: 12px; color: rgba(255,255,255,.55); }
+.autobuild-clear { margin-top: 12px; }
+.autobuild-clear-btn { min-height: 0; padding: 4px 10px; border: 0; background: transparent; font-size: 12px; font-weight: 600; color: rgba(240,140,140,.95); }
+.autobuild-clear-btn:hover { background: rgba(160,50,50,.25); transform: none; }
+.netmap-link-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.netmap-port-input { min-height: 32px; padding: 6px 10px; font-size: 13px; }
+.netmap-port-input.is-invalid { border-color: rgba(235,115,115,.85); }
+:root[data-theme="light"] .autobuild-source { border-color: rgba(20,30,50,.16); }
+:root[data-theme="light"] .autobuild-source:has(input:checked) { border-color: #2f6fd1; background: rgba(47,111,209,.08); }
+:root[data-theme="light"] .autobuild-source b { color: #1d2330; }
+:root[data-theme="light"] .autobuild-source small { color: rgba(29,35,48,.6); }
+:root[data-theme="light"] .autobuild-clear-btn { background: transparent; color: #c0392b; }
+
+
+/* шапки панелей: 1-я строка — заголовок со счётчиком, 2-я — действия и поиск */
+.nodes-section-head { grid-template-columns: auto auto minmax(160px,1fr); row-gap: 12px; }
+.nodes-section-head .group-strip { overflow: visible; }
+.nodes-section-head .node-toolbar { grid-column: 1 / -1; flex-wrap: wrap; justify-content: flex-start; }
+.playbooks-section-head { display: grid; grid-template-columns: minmax(0,1fr) auto; row-gap: 12px; column-gap: 14px; align-items: center; }
+.playbooks-section-head #playbooks_search { grid-column: 1 / -1; }
+.section-count { display: inline-block; margin-left: 6px; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; vertical-align: 2px; font-variant-numeric: tabular-nums; }
+.section-count:empty { display: none; }
+
+/* поиск по списку */
+.list-search {
+    flex: 1 1 200px;
+    min-width: 160px;
+    height: var(--ds-control-h);
+    box-sizing: border-box;
+    padding: 0 12px 0 34px;
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: var(--ds-radius-control);
+    outline: none;
+    background: rgba(255,255,255,.05) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a0a8b8' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-3.5-3.5'/%3E%3C/svg%3E") no-repeat 11px center;
+    color: #fff;
+    font-size: 14px;
+    transition: border-color .15s, background-color .15s;
+}
+.list-search::placeholder { color: rgba(255,255,255,.4); }
+.list-search:focus { border-color: rgba(64,150,255,.7); background-color: rgba(255,255,255,.075); }
+.is-filtered-out { display: none !important; }
+
+/* карточки узлов: цветом выделяются только проблемы, обычное состояние — нейтральное */
+.host-card.node-available, .host-card.node-pending { box-shadow: none; }
+.host-card.node-unavailable:hover { border-color: rgba(210,70,70,.45); }
+
+/* действия в строках плейбуков — «тихие»: не спорят с названиями, проявляются при наведении */
+.playbook-actions button { background: transparent; border-color: rgba(255,255,255,.12); color: rgba(255,255,255,.82); }
+.playbook-card:hover .playbook-actions button { border-color: rgba(255,255,255,.22); }
+.playbook-actions button:hover { background: rgba(255,255,255,.08); color: #fff; }
+
+/* массовое удаление неактивно, пока ничего не выбрано */
+button.danger:disabled { background: transparent; border-color: rgba(210,80,80,.25); color: rgba(235,150,150,.45); cursor: not-allowed; transform: none; box-shadow: none; }
+
+/* что будет запущено */
+.run-summary { font-size: 13px; color: rgba(255,255,255,.78); font-variant-numeric: tabular-nums; }
+.run-summary.is-muted { color: rgba(255,255,255,.42); }
+
+/* видимый фокус с клавиатуры */
+button:focus-visible, a:focus-visible, input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible, summary:focus-visible {
+    outline: 2px solid rgba(64,150,255,.85);
+    outline-offset: 2px;
+}
+
+/* --- Карта: «Сбросить карту» и справка «?» вместо длинной строки подсказки --- */
+.netmap-reset-btn { background: transparent; border-color: rgba(210,80,80,.35); color: rgba(240,150,150,.95); }
+.netmap-reset-btn:hover { background: rgba(160,50,50,.35); color: #fff; }
+.netmap-help-wrap { position: relative; flex: 0 0 auto; }
+.netmap-help-btn { width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 0; border-radius: 50%; font-size: 15px; font-weight: 700; }
+.netmap-help-btn[aria-expanded="true"] { border-color: rgba(64,150,255,.6); background: rgba(35,110,210,.2); }
+.netmap-help {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    z-index: 30;
+    width: 440px;
+    max-width: calc(100vw - 60px);
+    padding: 14px 16px;
+    box-sizing: border-box;
+    border: 1px solid rgba(255,255,255,.16);
+    border-radius: 12px;
+    background: #1e1e1e;
+    box-shadow: 0 14px 34px rgba(0,0,0,.5);
+    opacity: 0;
+    transform: translateY(-6px);
+    pointer-events: none;
+    transition: opacity .16s ease, transform .2s ease;
+}
+.netmap-help.is-open { opacity: 1; transform: none; pointer-events: auto; }
+.netmap-help-title { margin-bottom: 10px; font-size: 13px; font-weight: 600; color: rgba(190,215,255,.95); }
+.netmap-help dl { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 6px 14px; margin: 0; font-size: 13px; }
+.netmap-help dt { font-weight: 600; color: #fff; white-space: nowrap; }
+.netmap-help dd { margin: 0; color: rgba(255,255,255,.65); }
+.netmap-hint:empty { display: none; }
+.netmap-toolbar .netmap-hint { flex: 1 1 auto; }
+.netmap-toolbar .netmap-reset-btn { margin-left: auto; }
+.netmap-toolbar .netmap-hint:not(:empty) + .netmap-reset-btn { margin-left: 0; }
+
+/* светлая тема */
+:root[data-theme="light"] .section-count { background: rgba(20,30,50,.07); color: rgba(29,35,48,.65); }
+:root[data-theme="light"] .list-search { background-color: #fff; border-color: rgba(20,30,50,.2); color: #1d2330; }
+:root[data-theme="light"] .list-search::placeholder { color: rgba(29,35,48,.4); }
+:root[data-theme="light"] .list-search:focus { border-color: #2f6fd1; }
+:root[data-theme="light"] .host-card.node-available, :root[data-theme="light"] .host-card.node-pending { box-shadow: none; }
+:root[data-theme="light"] .playbook-actions button { background: transparent; border-color: rgba(20,30,50,.14); color: #1d2330; }
+:root[data-theme="light"] .playbook-actions button:hover { background: rgba(20,30,50,.05); }
+:root[data-theme="light"] button.danger:disabled { background: transparent; border-color: rgba(204,75,75,.3); color: rgba(204,75,75,.5); }
+:root[data-theme="light"] .run-summary { color: #1d2330; }
+:root[data-theme="light"] .run-summary.is-muted { color: rgba(29,35,48,.45); }
+:root[data-theme="light"] .netmap-reset-btn { background: transparent; border-color: rgba(204,75,75,.4); color: #c0392b; }
+:root[data-theme="light"] .netmap-reset-btn:hover { background: #cc4b4b; color: #fff; }
+:root[data-theme="light"] .netmap-help { background: #fff; border-color: rgba(20,30,50,.14); box-shadow: 0 14px 34px rgba(20,30,50,.18); }
+:root[data-theme="light"] .netmap-help-title { color: #285fb4; }
+:root[data-theme="light"] .netmap-help dt { color: #1d2330; }
+:root[data-theme="light"] .netmap-help dd { color: rgba(29,35,48,.65); }
+/* пустой журнал подсказывает, что в нём появится */
+.log:empty::before { content: 'Здесь появится вывод ansible-playbook после «Запуск» или «Проверка»'; color: rgba(255,255,255,.3); font-style: italic; }
+/* светлая тема: отмеченный чекбокс должен быть виден (раньше белый фон перекрывал и отмеченное состояние) */
+:root[data-theme="light"] .node-check:checked, :root[data-theme="light"] .pb:checked { background: #1f9d63; border-color: #1a8a56; box-shadow: 0 0 0 2px rgba(31,157,99,.15); }
+:root[data-theme="light"] .node-check:hover:not(:checked), :root[data-theme="light"] .pb:hover:not(:checked) { border-color: rgba(20,30,50,.5); background: #f3f5f8; }
+:root[data-theme="light"] .host-card.editing .node-group-checkbox:hover { background: #eef1f5; }
+@media (max-width: 560px) {
+    /* узкий экран: переключатель подробности — во всю ширину отдельной строкой */
+    .verbosity-select { margin-left: 0; width: 100%; box-sizing: border-box; }
+    .verbosity-select label { flex: 1; }
+    .verbosity-select label span { min-width: 0; padding: 6px 4px; }
+    .verbosity-label { display: none; }
+    .run-summary { flex: 1 0 100%; }
+}
+
+/* ###########################################################################
+   ДИЗАЙН 2.0 — единая визуальная система и каркас приложения (0.0.21)
+   Слой подключается последним и переопределяет предыдущие правила:
+   палитра → базовые элементы → шапка → панели и списки → журнал → режим «во весь экран».
+   ########################################################################### */
+:root {
+    --bg: #0e1014;
+    --surface: #15181e;
+    --surface-2: #1b1f27;
+    --surface-3: #232935;
+    --line: rgba(255,255,255,.07);
+    --line-strong: rgba(255,255,255,.13);
+    --text: #e6e9ef;
+    --text-2: #a3abb9;
+    --text-3: #6f7887;
+    --accent: #4c8dff;
+    --accent-strong: #3474ea;
+    --accent-weak: rgba(76,141,255,.14);
+    --ok: #3fb97a;
+    --ok-weak: rgba(63,185,122,.14);
+    --bad: #e5534b;
+    --bad-weak: rgba(229,83,75,.14);
+    --warn: #d6a23a;
+    --ds-control-h: 34px;
+    --ds-radius-control: 7px;
+    --ds-radius-card: 8px;
+    --ds-radius-panel: 12px;
+    --header-h: 56px;
+    --console-h: 260px;
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "PT Sans", "Liberation Sans", Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "DejaVu Sans Mono", "Liberation Mono", Consolas, monospace;
+}
+
+/* --- базовые элементы --- */
+body { font-family: var(--font); font-size: 14px; color: var(--text); background: var(--bg); background-image: none; }
+.overlay { background: none; padding-bottom: 0; }
+button { font-family: inherit; font-size: 13px; padding: 0 13px; background: var(--surface-3); border: 1px solid var(--line-strong); color: var(--text); transition: background .15s ease, border-color .15s ease, color .15s ease; }
+button:hover { background: #2b3240; transform: none; }
+button:disabled { cursor: not-allowed; }
+button.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
+button.primary:hover { background: var(--accent); border-color: var(--accent); }
+button.danger { background: var(--bad-weak); border-color: rgba(229,83,75,.45); color: #ffb3ad; }
+button.danger:hover { background: var(--bad); border-color: var(--bad); color: #fff; }
+button svg { flex: 0 0 auto; }
+.modal-input, .new-node-field input, .ui-select-btn, .list-search { background-color: var(--surface-2); border-color: var(--line-strong); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: rgba(255,255,255,.2); }
+* { scrollbar-color: rgba(255,255,255,.16) transparent; scrollbar-width: thin; }
+
+/* --- шапка приложения: знак · контекст · состояние сервера · инструменты --- */
+.app-header {
+    position: sticky;
+    top: 0;
+    z-index: 900;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    height: var(--header-h);
+    margin: 0;
+    padding: 0 18px;
+    box-sizing: border-box;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+}
+.app-brand { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+/* знак — logo_mark.png с прозрачным фоном, целиком вписан в окошко 32×32 */
+.app-logo { width: 32px; height: 32px; flex: 0 0 auto; background: url('/logo_mark') center / contain no-repeat; }
+.app-title { font-size: 15px; font-weight: 500; color: var(--text-2); white-space: nowrap; }
+.app-title b { font-weight: 700; color: var(--text); }
+.header-group { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.header-context, .header-status { padding-left: 14px; border-left: 1px solid var(--line); }
+.header-tools { margin-left: auto; }
+.header-group .system-status-dynamic { display: flex; gap: 8px; }
+.app-header .system-status-item, .app-header #object_block .object-select-button { height: 34px; padding: 0 12px; border-radius: var(--ds-radius-control); background: var(--surface-2); border-color: var(--line); font-size: 13px; }
+.app-header button.system-status-item:hover, .app-header a.system-status-item:hover, .app-header #object_block .object-select-button:hover { background: var(--surface-3); }
+.app-header .project-select-caption, .app-header .object-select-caption, .app-header .system-status-label { font-size: 13px; }
+.app-header .project-select-button { width: 170px; }
+.app-header .system-status-item.is-active { color: #7fd6a6; border-color: rgba(63,185,122,.25); }
+.app-header .system-status-item.is-inactive { color: #ff9a93; border-color: rgba(229,83,75,.3); }
+.app-header button.system-status-item.nmap-open-btn { background: var(--surface-2); color: var(--text); border-color: var(--line-strong); }
+.app-header button.system-status-item.settings-btn { width: 34px; padding: 0; }
+
+/* --- рабочая область --- */
+.app-main { max-width: none; padding: 14px 18px 18px; gap: 14px; }
+.block { background: var(--surface); border: 1px solid var(--line); border-radius: var(--ds-radius-panel); padding: 16px; box-shadow: none; backdrop-filter: none; }
+.section-head { margin-bottom: 12px; }
+.section-head h3, .console-title h3 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: .01em; }
+.section-count { background: var(--surface-3); color: var(--text-2); }
+.nodes-section-head .node-toolbar button, .playbooks-section-head button { height: 34px; min-height: 34px; }
+
+/* списки как таблицы: строка заголовков столбцов + строки */
+.list-wrap { min-width: 0; display: flex; flex-direction: column; }
+.list-columns { flex-shrink: 0; display: grid; align-items: center; height: 30px; padding: 0 13px; box-sizing: border-box; border-bottom: 1px solid var(--line); margin-bottom: 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); white-space: nowrap; }
+/* столбец «Состояние» шире: «недоступен» помещается целиком; строки и заголовок — одной сеткой */
+.host-head { grid-template-columns: 104px 18px 18px minmax(0,1fr) auto; }
+.nodes-columns { grid-template-columns: 104px 18px 18px minmax(0,1fr) 96px; column-gap: 12px; }
+.nodes-columns .columns-main { display: grid; grid-template-columns: minmax(100px,1.15fr) minmax(80px,.8fr) minmax(90px,.95fr); gap: 10px; }
+.nodes-columns span, .playbooks-columns span { overflow: hidden; text-overflow: ellipsis; }
+.playbooks-columns { grid-template-columns: minmax(0,1fr) auto; padding-left: 40px; }
+.hosts-list, .playbook-list { gap: 3px; min-height: 0; }
+/* строки не сжимаются по высоте, когда их много: лишнее уходит под прокрутку списка */
+.hosts-list > *, .playbook-list > * { flex-shrink: 0; }
+.host-card, .playbook-card { background: rgba(255,255,255,.02); border: 1px solid transparent; border-radius: var(--ds-radius-card); }
+.host-card:hover, .playbook-card:hover { background: rgba(255,255,255,.045); border-color: var(--line); }
+.host-card.is-selected, .playbook-card.is-selected { background: var(--accent-weak); border-color: rgba(76,141,255,.3); }
+.host-card.node-available, .host-card.node-pending { border-color: transparent; }
+.host-card.node-available:hover, .host-card.node-pending:hover { border-color: var(--line); }
+.host-card.node-available.is-selected, .host-card.node-pending.is-selected { border-color: rgba(76,141,255,.3); }
+.host-card.node-unavailable { border-color: transparent; box-shadow: inset 3px 0 0 var(--bad); }
+.host-card.node-available { box-shadow: inset 3px 0 0 var(--ok); }
+.host-card.editing { background: var(--surface-2); border-color: var(--line-strong); }
+.host-head { height: 44px; min-height: 44px; }
+.playbook-row { height: 44px; min-height: 44px; }
+.host-body { background: transparent; border-top-color: var(--line); }
+.node-name { font-size: 14px; }
+.node-ip, .node-template { font-size: 13px; color: var(--text-2); }
+.node-template { color: var(--text-3); }
+.node-edit { height: 30px; min-height: 30px; padding: 0 10px; font-size: 13px; background: var(--accent-weak); border-color: rgba(76,141,255,.35); color: #cfe0ff; }
+.node-edit:hover { background: rgba(76,141,255,.28); }
+.node-edit.has-changes { background: var(--bad-weak); border-color: rgba(229,83,75,.5); color: #ffb3ad; }
+.playbook-actions button { height: 30px; min-height: 30px; padding: 0 10px; font-size: 12.5px; }
+
+/* --- журнал выполнения: заголовок, состояние и кнопки — одной строкой --- */
+.execution-panel { position: relative; padding: 0; overflow: visible; display: flex; flex-direction: column; }
+.console-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.console-title { display: flex; align-items: center; gap: 10px; }
+.execution-panel .run-row { margin-top: 0; flex: 1 1 auto; }
+.run-btn { display: inline-flex; align-items: center; gap: 7px; }   /* цвет — как у основного действия (button.primary) */
+button.check-run-btn { background: var(--accent-weak); border-color: rgba(76,141,255,.35); color: #cfe0ff; }
+button.check-run-btn:hover { background: rgba(76,141,255,.28); }
+.stop-btn { display: inline-flex; align-items: center; gap: 7px; }
+.run-state { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px; border-radius: 999px; background: rgba(255,255,255,.06); color: var(--text-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.run-state::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.run-state[data-state="running"], .run-state[data-state="check"] { background: var(--accent-weak); color: #8fb8ff; }
+.run-state[data-state="running"]::before, .run-state[data-state="check"]::before { animation: runPulse 1.2s ease-in-out infinite; }
+.run-state[data-state="done"] { background: var(--ok-weak); color: #7fd6a6; }
+.run-state[data-state="failed"] { background: var(--bad-weak); color: #ff9a93; }
+.run-state[data-state="stopped"] { background: rgba(214,162,58,.14); color: #e6c26b; }
+@keyframes runPulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+.log { margin: 0; padding: 12px 14px; border: 0; border-radius: 0 0 var(--ds-radius-panel) var(--ds-radius-panel); background: #0b0d10; color: #c9d1dc; font: 12.5px/1.55 var(--mono); min-height: 160px; }
+.console-resizer { display: none; }
+body.is-resizing, body.is-resizing * { cursor: row-resize !important; user-select: none; }
+
+/* --- модальные окна и меню --- */
+.modal-backdrop { background: rgba(5,6,8,.62); backdrop-filter: blur(3px); }
+.modal-card { background: var(--surface); border-color: var(--line-strong); border-radius: 12px; }
+.modal-head, .modal-footer { border-color: var(--line); }
+.settings-menu, .project-select-list, .object-select-list, .hwtype-dropdown, .ui-select-list, .netmap-type-list, .iso-panel, .netmap-popover, .netmap-help { background: var(--surface-2); }
+
+/* --- режим «приложения во весь экран» (широкий и достаточно высокий экран):
+       страница не прокручивается, списки прокручиваются внутри панелей, журнал закреплён снизу --- */
+@media (min-width: 1100px) and (min-height: 700px) {
+    html, body { height: 100%; overflow: hidden; }
+    .app-shell { height: 100vh; min-height: 0; display: flex; flex-direction: column; }
+    .app-header { flex-shrink: 0; }   /* шапка всегда своей высоты, даже когда содержимого много */
+    .app-main { flex: 1 1 auto; min-height: 0; display: grid; grid-template-rows: minmax(0,1fr) var(--console-h); gap: 14px; padding-bottom: 14px; }
+    .workspace-grid { min-height: 0; height: 100%; grid-template-rows: auto minmax(0,1fr); }   /* minmax: строка списков не растёт по содержимому — список прокручивается внутри */
+    .workspace-grid > .workspace-panel { min-height: 0; overflow: hidden; }
+    .list-wrap { min-height: 0; }
+    .hosts-list, .playbook-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 2px; }
+    .execution-panel { min-height: 0; margin-top: 0; }
+    .log { flex: 1 1 auto; min-height: 0; max-height: none; overflow: auto; }
+    .console-resizer { display: block; position: absolute; left: 0; right: 0; top: -12px; height: 12px; cursor: row-resize; z-index: 3; }
+    .console-resizer::after { content: ''; position: absolute; left: 50%; top: 4px; width: 44px; height: 4px; margin-left: -22px; border-radius: 4px; background: rgba(255,255,255,.12); transition: background .15s; }
+    .console-resizer:hover::after, body.is-resizing .console-resizer::after { background: var(--accent); }
+}
+
+/* узкие экраны: шапка переносится, без закрепления */
+/* элементы шапки не сжимаются и не переносят подписи — места освобождают правила ниже */
+.app-header .header-group > *, .app-header .system-status-dynamic > *, .app-header .status-slot > * { flex-shrink: 0; }
+.app-header .system-status-item { white-space: nowrap; }
+@media (max-width: 1600px) { .app-title { display: none; } }
+@media (max-width: 1440px) {
+    .app-header a.system-status-item.repo-btn { width: 34px; padding: 0; justify-content: center; }
+    .app-header a.system-status-item.repo-btn span { display: none; }
+    .app-header .project-select-button { width: 150px; }
+}
+@media (max-width: 1320px) {
+    .app-header .project-select-button { width: 130px; }
+    .app-header #object_block .object-select-button { min-width: 112px; }
+    .app-header { gap: 10px; padding: 0 14px; }
+    .header-context, .header-status { padding-left: 10px; }
+}
+@media (max-width: 1100px) {
+    .app-header { position: static; flex-wrap: wrap; height: auto; padding: 10px 12px; gap: 8px 10px; }
+    .header-context, .header-status { padding-left: 0; border-left: 0; }
+    .header-tools { margin-left: 0; }
+    .header-group { flex-wrap: wrap; }
+}
+@media (max-width: 900px) { .list-columns { display: none; } }
+
+/* --- светлая тема для новых элементов --- */
+:root[data-theme="light"] { --line: rgba(20,30,50,.09); --line-strong: rgba(20,30,50,.16); --text: #1d2330; --text-2: #4d5666; --text-3: #7a8494; --surface: #ffffff; --surface-2: #f5f7fa; --surface-3: #eceff4; --accent-weak: rgba(47,111,209,.1); }
+:root[data-theme="light"] body { background: #eef1f5; }
+:root[data-theme="light"] .app-header { background: #fff; border-bottom-color: rgba(20,30,50,.1); }
+:root[data-theme="light"] .app-header .system-status-item, :root[data-theme="light"] .app-header #object_block .object-select-button { background: #f5f7fa; border-color: rgba(20,30,50,.12); box-shadow: none; }
+:root[data-theme="light"] .app-header .system-status-item.is-active { color: #1f8a55; border-color: rgba(31,138,85,.3); }
+:root[data-theme="light"] .app-header .system-status-item.is-inactive { color: #c0392b; border-color: rgba(192,57,43,.3); }
+:root[data-theme="light"] .app-header button.system-status-item.nmap-open-btn { color: #1d2330; }
+:root[data-theme="light"] .block { background: #fff; border-color: rgba(20,30,50,.1); box-shadow: 0 1px 2px rgba(20,30,50,.04); }
+:root[data-theme="light"] .list-columns { color: #7a8494; border-bottom-color: rgba(20,30,50,.1); }
+:root[data-theme="light"] .host-card, :root[data-theme="light"] .playbook-card { background: #fafbfc; border-color: transparent; }
+:root[data-theme="light"] .host-card:hover, :root[data-theme="light"] .playbook-card:hover { background: #f3f5f8; border-color: rgba(20,30,50,.1); }
+:root[data-theme="light"] .host-card.is-selected, :root[data-theme="light"] .playbook-card.is-selected { background: rgba(47,111,209,.07); border-color: rgba(47,111,209,.35); }
+:root[data-theme="light"] .host-card.node-available, :root[data-theme="light"] .host-card.node-pending { border-color: transparent; }
+:root[data-theme="light"] .host-card.node-unavailable { border-color: transparent; box-shadow: inset 3px 0 0 #d14545; }
+:root[data-theme="light"] .host-card.node-available { box-shadow: inset 3px 0 0 #1f9d63; }
+:root[data-theme="light"] .host-card.editing { background: #fff; border-color: rgba(20,30,50,.16); }
+:root[data-theme="light"] .console-bar { border-bottom-color: rgba(20,30,50,.1); }
+:root[data-theme="light"] .run-state { background: #eef1f5; color: #4d5666; }
+:root[data-theme="light"] .run-state[data-state="running"], :root[data-theme="light"] .run-state[data-state="check"] { background: rgba(47,111,209,.1); color: #285fb4; }
+:root[data-theme="light"] .run-state[data-state="done"] { background: rgba(31,157,99,.1); color: #1f8a55; }
+:root[data-theme="light"] .run-state[data-state="failed"] { background: rgba(204,75,75,.1); color: #c0392b; }
+:root[data-theme="light"] .run-state[data-state="stopped"] { background: rgba(214,162,58,.14); color: #8a5a00; }
+:root[data-theme="light"] .log { background: #fff; color: #1d2330; border-color: transparent; }
+:root[data-theme="light"] .log:empty::before { color: rgba(29,35,48,.4); }
+:root[data-theme="light"] .console-resizer::after { background: rgba(20,30,50,.15); }
+:root[data-theme="light"] .node-edit { background: rgba(47,111,209,.1); border-color: rgba(47,111,209,.35); color: #285fb4; }
+:root[data-theme="light"] .node-edit:hover { background: rgba(47,111,209,.18); }
+:root[data-theme="light"] .node-edit.has-changes { background: rgba(204,75,75,.1); border-color: rgba(204,75,75,.45); color: #c0392b; }
+:root[data-theme="light"] button.check-run-btn { background: rgba(47,111,209,.1); border-color: rgba(47,111,209,.35); color: #285fb4; }
+:root[data-theme="light"] button.primary { background: #2f6fd1; border-color: #2f6fd1; color: #fff; }
+:root[data-theme="light"] button.primary:hover { background: #285fb4; }
+:root[data-theme="light"] .modal-card { background: #fff; }
+:root[data-theme="light"] .settings-menu, :root[data-theme="light"] .project-select-list, :root[data-theme="light"] .object-select-list, :root[data-theme="light"] .hwtype-dropdown, :root[data-theme="light"] .ui-select-list, :root[data-theme="light"] .netmap-type-list, :root[data-theme="light"] .iso-panel, :root[data-theme="light"] .netmap-popover, :root[data-theme="light"] .netmap-help { background: #fff; }
+:root[data-theme="light"] * { scrollbar-color: rgba(20,30,50,.25) transparent; }
+/* окно «Добавление узла»: кнопки групп — в общей системе (цвета самих групп не меняются: белая — не выбрана, синяя — выбрана) */
+#add_node_modal .group-btn-create { background: var(--surface-3); border-color: var(--line-strong); color: var(--text); }
+#add_node_modal .group-btn-create:hover { background: #2b3240; }
+#add_node_modal .group-btn-delete { background: var(--bad-weak); border-color: rgba(229,83,75,.45); color: #ffb3ad; }
+#add_node_modal .group-btn-delete:hover { background: var(--bad); border-color: var(--bad); color: #fff; }
+.new-node-field .hwtype-toggle { background: var(--surface-2); border: 1px solid var(--line-strong); min-height: var(--ds-control-h); }
+:root[data-theme="light"] #add_node_modal .group-btn-create { background: #f3f5f8; border-color: rgba(20,30,50,.16); color: #1d2330; }
+:root[data-theme="light"] #add_node_modal .group-btn-delete { background: rgba(204,75,75,.08); border-color: rgba(204,75,75,.4); color: #c0392b; }
+:root[data-theme="light"] #add_node_modal .group-btn-delete:hover { background: #cc4b4b; color: #fff; }
+/* карта: подпись может быть шире значка (шаг сетки 160px) — имена вида «web-msk-1710» видны целиком */
+.netmap-name, .netmap-ip { width: max-content; max-width: 156px; margin-left: 50%; transform: translateX(-50%); }
+.netmap-name { font-size: 12.5px; }
+
+/* ===========================================================================
+   Создание проектов, ролей, плейбуков; редактор файлов (0.0.22)
+   =========================================================================== */
+/* --- редактор кода: номера строк + текст --- */
+.code-editor { display: flex; align-items: stretch; min-width: 0; border: 1px solid var(--line-strong); border-radius: 9px; background: #0d0f13; overflow: hidden; }
+.code-gutter { flex: 0 0 auto; min-width: 46px; box-sizing: border-box; padding: 14px 10px 14px 6px; overflow: hidden; white-space: pre; text-align: right; font: 13px/1.55 var(--mono); color: var(--text-3); background: rgba(255,255,255,.02); border-right: 1px solid var(--line); user-select: none; }
+.code-line-error { display: inline-block; min-width: 100%; color: #fff; background: var(--bad); border-radius: 3px; padding: 0 3px; margin-right: -3px; }
+.code-editor .code-area { flex: 1 1 auto; min-width: 0; margin: 0; padding: 14px; border: 0; border-radius: 0; outline: none; background: transparent; color: #d8dde5; caret-color: #fff; font: 13px/1.55 var(--mono); white-space: pre; overflow: auto; resize: none; tab-size: 2; }
+.code-editor:focus-within { border-color: rgba(76,141,255,.6); }
+.playbook-editor-body .code-editor .code-area.playbook-editor { min-width: 520px; border: 0; padding: 14px; background: transparent; }
+/* ошибка YAML над редактором */
+.editor-error { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid rgba(229,83,75,.45); border-radius: 9px; background: var(--bad-weak); font-size: 13px; line-height: 1.45; color: #ffcdc9; }
+.editor-error[hidden] { display: none; }
+.editor-error-text { flex: 1; min-width: 0; }
+.editor-error-text b { color: #fff; }
+.editor-error-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.editor-error-actions button { height: 30px; min-height: 30px; padding: 0 10px; font-size: 12.5px; }
+/* окно редактора файла роли */
+.file-editor-card { width: min(1100px, calc(100vw - 40px)); height: min(820px, calc(100vh - 40px)); display: flex; flex-direction: column; overflow: hidden; }
+.file-editor-card > .modal-head, .file-editor-card > .modal-footer { flex-shrink: 0; }
+.file-editor-card .modal-footer { align-items: center; }
+.file-editor-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.file-editor-body .code-editor { flex: 1; min-height: 0; }
+#file_editor_save:disabled, #wizard_create_btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* --- мастер нового проекта: поля слева, «будет создано» справа --- */
+.wizard-card { width: min(1040px, calc(100vw - 40px)); height: min(760px, calc(100vh - 40px)); display: flex; flex-direction: column; overflow: hidden; }
+.wizard-card > .modal-head, .wizard-card > .modal-footer { flex-shrink: 0; }
+.wizard-card .modal-footer { align-items: center; }
+.wizard-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; overflow: hidden; }
+.wizard-form { min-height: 0; overflow-y: auto; padding-right: 4px; }
+.wizard-preview { min-height: 0; display: flex; flex-direction: column; }
+.wizard-tree { flex: 1; min-height: 0; margin: 0; padding: 14px; overflow: auto; border: 1px solid var(--line); border-radius: 9px; background: #0d0f13; color: #c9d1dc; font: 12.5px/1.6 var(--mono); white-space: pre; }
+.wizard-gap { margin-top: 16px; }
+.wizard-error { min-height: 0; margin-top: 4px; font-size: 12px; color: #ff9a93; }
+.wizard-error:empty { display: none; }
+.wizard-hint { margin-top: 6px; font-size: 12px; line-height: 1.45; color: var(--text-3); }
+.wizard-kind { display: inline-flex; }
+.wizard-collapsible { max-height: 0; overflow: hidden; opacity: 0; transition: max-height .25s ease, opacity .2s ease; }
+.wizard-collapsible.is-open { max-height: 260px; opacity: 1; }
+.wizard-check { display: flex; align-items: center; gap: 9px; margin-top: 8px; font-size: 13.5px; color: var(--text); cursor: pointer; }
+.wizard-check input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent-strong); flex: 0 0 auto; }
+.wizard-check b { font-family: var(--mono); font-weight: 600; }
+/* поле-«фишки» */
+.chips-input { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: var(--ds-control-h); padding: 4px 6px; box-sizing: border-box; border: 1px solid var(--line-strong); border-radius: var(--ds-radius-control); background: var(--surface-2); cursor: text; }
+.chips-input:focus-within { border-color: rgba(76,141,255,.6); }
+.chip { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 4px 0 9px; border-radius: 6px; background: var(--accent-weak); border: 1px solid rgba(76,141,255,.35); color: #cfe0ff; font: 12.5px var(--mono); }
+.chip.is-invalid { background: var(--bad-weak); border-color: rgba(229,83,75,.5); color: #ffb3ad; }
+.chip button { width: 18px; height: 18px; min-height: 0; padding: 0; border: 0; border-radius: 4px; background: transparent; color: inherit; font-size: 14px; line-height: 1; }
+.chip button:hover { background: rgba(255,255,255,.12); }
+.chips-entry { flex: 1 1 140px; min-width: 120px; height: 24px; border: 0; outline: none; background: transparent; color: var(--text); font: 13px var(--mono); }
+.chips-entry::placeholder { color: var(--text-3); font-family: var(--font); }
+
+/* --- «Создать» в панели плейбуков --- */
+.create-card { width: min(560px, calc(100vw - 40px)); }
+.create-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: end; margin-top: 14px; }
+.create-become { margin: 0 0 9px; font-family: var(--mono); }
+.role-pick-list { display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow-y: auto; padding: 4px 10px 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); }
+.role-pick-list .wizard-check { font-family: var(--mono); }
+/* «＋ Новый файл…» в папках роли */
+.role-add-file { display: block; min-height: 0; margin: 2px 0 4px; padding: 3px 8px; border: 1px dashed var(--line-strong); border-radius: 6px; background: transparent; color: var(--text-3); font-size: 12px; font-weight: 500; text-align: left; }
+.role-add-file:hover { border-color: rgba(76,141,255,.6); color: #cfe0ff; background: var(--accent-weak); }
+
+@media (max-width: 860px) {
+    .wizard-body { grid-template-columns: minmax(0, 1fr); overflow-y: auto; }
+    .wizard-form { overflow: visible; }
+    .wizard-tree { min-height: 180px; }
+}
+
+/* светлая тема */
+:root[data-theme="light"] .code-editor, :root[data-theme="light"] .wizard-tree { background: #fff; border-color: rgba(20,30,50,.2); }
+:root[data-theme="light"] .wizard-tree { color: #1d2330; }
+:root[data-theme="light"] .code-gutter { background: #f5f7fa; border-right-color: rgba(20,30,50,.1); color: rgba(29,35,48,.4); }
+:root[data-theme="light"] .code-editor .code-area { color: #1d2330; caret-color: #1d2330; }
+:root[data-theme="light"] .code-editor:focus-within { border-color: #2f6fd1; }
+:root[data-theme="light"] .editor-error { background: rgba(204,75,75,.08); border-color: rgba(204,75,75,.4); color: #8a2a22; }
+:root[data-theme="light"] .editor-error-text b { color: #c0392b; }
+:root[data-theme="light"] .chips-input, :root[data-theme="light"] .role-pick-list { background: #fff; border-color: rgba(20,30,50,.2); }
+:root[data-theme="light"] .chip { background: rgba(47,111,209,.1); border-color: rgba(47,111,209,.35); color: #285fb4; }
+:root[data-theme="light"] .chip.is-invalid { background: rgba(204,75,75,.08); border-color: rgba(204,75,75,.4); color: #c0392b; }
+:root[data-theme="light"] .chips-entry { color: #1d2330; }
+:root[data-theme="light"] .wizard-check { color: #1d2330; }
+:root[data-theme="light"] .wizard-error { color: #c0392b; }
+:root[data-theme="light"] .role-add-file { background: transparent; color: rgba(29,35,48,.55); border-color: rgba(20,30,50,.2); }
+:root[data-theme="light"] .role-add-file:hover { background: rgba(47,111,209,.08); color: #285fb4; }
+
+/* ===========================================================================
+   Подсказки при наборе (0.0.23)
+   =========================================================================== */
+.code-completion { position: fixed; z-index: 30000; width: 460px; max-width: calc(100vw - 16px); border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface-2); box-shadow: 0 14px 36px rgba(0,0,0,.5); overflow: hidden; font-family: var(--font); }
+.code-completion[hidden] { display: none; }
+.cc-list { max-height: 252px; overflow-y: auto; padding: 4px; }
+.cc-item { display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.cc-item:hover { background: rgba(255,255,255,.06); }
+.cc-item.is-active { background: rgba(76,141,255,.22); }
+.cc-item.is-disabled { opacity: .55; cursor: default; }
+.cc-kind { flex: 0 0 auto; width: 18px; height: 18px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; background: #59606e; }
+.cc-kind-module { background: #3474ea; }
+.cc-kind-namespace { background: #4b6584; }
+.cc-kind-keyword { background: #8a5cd6; }
+.cc-kind-option { background: #2b9a62; }
+.cc-kind-value { background: #b7791f; }
+.cc-kind-variable { background: #c25b9b; }
+.cc-kind-filter, .cc-kind-file { background: #178f86; }
+.cc-kind-handler { background: #c4602c; }
+.cc-kind-role { background: #5b6bd6; }
+.cc-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 13px var(--mono); color: var(--text); }
+.cc-detail { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: right; font-size: 12px; color: var(--text-3); }
+.cc-doc { padding: 7px 12px 8px; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.45; color: var(--text-2); min-height: 16px; }
+.cc-keys { display: block; margin-top: 3px; font-size: 11px; color: var(--text-3); }
+:root[data-theme="light"] .code-completion { background: #fff; border-color: rgba(20,30,50,.16); box-shadow: 0 14px 36px rgba(20,30,50,.2); }
+:root[data-theme="light"] .cc-item:hover { background: rgba(20,30,50,.05); }
+:root[data-theme="light"] .cc-item.is-active { background: rgba(47,111,209,.14); }
+:root[data-theme="light"] .cc-label { color: #1d2330; }
+
+/* ===========================================================================
+   Плейбуки: новая шапка панели, Autodeploy, окно «Файлы плейбука» (0.0.27)
+   =========================================================================== */
+/* шапка: 1-я строка — заголовок, Autodeploy, «Выбрать все»; 2-я — новый плейбук, defaults, ansible.cfg, поиск */
+.playbooks-section-head .btn-row { display: flex; align-items: center; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.playbook-toolbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.playbook-toolbar button { height: 34px; min-height: 34px; }
+.playbook-toolbar .list-search { flex: 1 1 160px; }
+.object-file-btn { font-family: var(--mono); font-weight: 600; }
+/* Autodeploy — прежний зелёный оттенок, размером как кнопки панели */
+/* «Новый плейбук»: без ролей / с ролями */
+.playbook-mode { display: inline-flex; }
+
+/* окно «Файлы плейбука» */
+.playbook-files-card { width: min(860px, calc(100vw - 40px)); height: min(780px, calc(100vh - 40px)); display: flex; flex-direction: column; overflow: hidden; }
+.playbook-files-card > .modal-head, .playbook-files-card > .modal-footer, .playbook-files-toolbar { flex-shrink: 0; }
+.playbook-files-card .modal-footer { justify-content: space-between; }
+.playbook-files-toolbar { display: flex; align-items: center; gap: 10px; padding: 12px 22px; border-bottom: 1px solid var(--line); }
+.add-role-form { flex: 1; display: flex; gap: 8px; min-width: 0; }
+.add-role-form .modal-input { flex: 1; min-width: 0; min-height: 34px; padding: 6px 10px; font-family: var(--mono); font-size: 13px; }
+.playbook-files-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.playbook-files-note { padding: 8px 12px; border: 1px solid rgba(214,162,58,.45); border-radius: 8px; background: rgba(214,162,58,.1); font-size: 13px; color: #e6c26b; }
+.role-card { border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.role-card.is-missing { border-style: dashed; }
+.role-card-head { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+.role-card-name { font: 600 14px var(--mono); color: var(--text); }
+.role-card-where, .role-card-usage { font-size: 12px; color: var(--text-3); }
+.role-card-usage { padding: 1px 8px; border-radius: 999px; background: var(--surface-3); color: var(--text-2); }
+.role-card-actions { margin-left: auto; display: flex; gap: 6px; }
+.role-card-actions button { height: 28px; min-height: 28px; padding: 0 10px; font-size: 12px; }
+.role-card-tree { padding: 6px 12px 10px; }
+.role-card-missing { padding: 10px 12px; font-size: 13px; color: var(--text-2); }
+.role-card-missing button { height: 28px; min-height: 28px; margin-left: 8px; padding: 0 10px; font-size: 12px; }
+/* строка файла: имя открывает редактор, × — удалить (проявляется при наведении) */
+.role-file-row { display: flex; align-items: center; gap: 4px; }
+.role-file-row .role-file { flex: 1; min-width: 0; text-align: left; }
+.role-file-delete { flex: 0 0 auto; width: 24px; height: 24px; min-height: 0; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--text-3); font-size: 16px; line-height: 1; opacity: 0; transition: opacity .15s, background .15s, color .15s; }
+.role-file-row:hover .role-file-delete, .role-file-delete:focus-visible { opacity: 1; }
+.role-file-delete:hover { background: var(--bad); color: #fff; transform: none; }
+@media (hover: none) { .role-file-delete { opacity: 1; } }
+
+/* светлая тема */
+:root[data-theme="light"] .role-card { background: #fafbfc; border-color: rgba(20,30,50,.12); }
+:root[data-theme="light"] .role-card-head { border-bottom-color: rgba(20,30,50,.1); }
+:root[data-theme="light"] .role-card-usage { background: #eef1f5; color: #4d5666; }
+:root[data-theme="light"] .playbook-files-note { color: #8a5a00; }
+:root[data-theme="light"] .role-file-delete { background: transparent; }
+:root[data-theme="light"] .role-file-delete:hover { background: #cc4b4b; color: #fff; }
+
+/* --- Autodeploy — строка в списке плейбуков (только у проектов, где он есть) --- */
+.playbook-card.autodeploy-card { background: var(--ok-weak); border-color: rgba(63,185,122,.35); }
+.playbook-card.autodeploy-card:hover { background: rgba(63,185,122,.2); border-color: rgba(63,185,122,.5); }
+.autodeploy-label { display: flex; align-items: center; gap: 10px; min-width: 0; margin-left: 27px; }
+.autodeploy-file { font-size: 15px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.playbook-actions button.autodeploy-run { background: #2b9a62; border-color: #2b9a62; color: #fff; }
+.playbook-actions button.autodeploy-run:hover { background: #33b071; border-color: #33b071; }
+/* зависимость роли (meta/main.yml) — с отступом под ролью, которая её подключает */
+.role-card.is-dependency { margin-left: 22px; border-style: dashed; }
+:root[data-theme="light"] .playbook-card.autodeploy-card { background: rgba(31,157,99,.08); border-color: rgba(31,157,99,.3); }
+:root[data-theme="light"] .playbook-card.autodeploy-card:hover { background: rgba(31,157,99,.14); }
+:root[data-theme="light"] .autodeploy-file { color: #1d2330; }
+:root[data-theme="light"] .playbook-actions button.autodeploy-run { background: #1f9d63; border-color: #1f9d63; color: #fff; }
+:root[data-theme="light"] .playbook-actions button.autodeploy-run:hover { background: #188552; }
+
+/* ===========================================================================
+   Редакторы: подсветка синтаксиса, окно плейбука с закреплёнными шапкой и кнопками (0.0.30)
+   =========================================================================== */
+/* слой подсветки под прозрачным текстом поля ввода: одинаковые шрифт, интервал, отступы, табуляция */
+.code-stack { position: relative; flex: 1 1 auto; min-width: 0; display: flex; }
+.code-highlight {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: 14px 54px 54px 14px;   /* запас справа и снизу — слой прокручивается так же далеко, как поле ввода с полосами прокрутки */
+    overflow: hidden;
+    white-space: pre;
+    font: 13px/1.55 var(--mono);
+    tab-size: 2;
+    color: #d8dde5;
+    pointer-events: none;
+    background: transparent;
+}
+.code-editor.has-highlight .code-stack textarea.code-area {
+    position: relative;
+    flex: 1 1 auto;
+    width: 100%;
+    color: transparent !important;
+    background: transparent !important;
+    caret-color: #fff;
+    -webkit-text-fill-color: transparent;
+}
+.code-editor.has-highlight .code-area::selection { background: rgba(76,141,255,.35); color: transparent; -webkit-text-fill-color: transparent; }
+.code-editor.has-highlight .code-area::placeholder { -webkit-text-fill-color: var(--text-3); }
+/* токены (по мотивам VS Code Dark+) */
+.tk-key { color: #9cdcfe; }
+.tk-keyword { color: #c586c0; }
+.tk-module { color: #4ec9b0; }
+.tk-string { color: #ce9178; }
+.tk-number { color: #b5cea8; }
+.tk-bool { color: #569cd6; }
+.tk-comment { color: #6a9955; font-style: italic; }
+.tk-jinja { color: #dcdcaa; background: rgba(220,220,170,.08); border-radius: 3px; }
+.tk-string .tk-jinja, .tk-jinja { color: #dcdcaa; }
+.tk-punct { color: #808a99; }
+.tk-tag { color: #4fc1ff; }
+.tk-doc { color: #c586c0; }
+.tk-section { color: #569cd6; font-weight: 700; }
+.tk-flow { color: #d7ba7d; }
+
+/* светлая тема (по мотивам VS Code Light+) */
+:root[data-theme="light"] .code-highlight { color: #1d2330; }
+:root[data-theme="light"] .code-editor.has-highlight .code-stack textarea.code-area { caret-color: #1d2330; }
+:root[data-theme="light"] .code-editor.has-highlight .code-area::selection { background: rgba(47,111,209,.22); }
+:root[data-theme="light"] .tk-key { color: #0451a5; }
+:root[data-theme="light"] .tk-keyword { color: #af00db; }
+:root[data-theme="light"] .tk-module { color: #267f99; }
+:root[data-theme="light"] .tk-string { color: #a31515; }
+:root[data-theme="light"] .tk-number { color: #098658; }
+:root[data-theme="light"] .tk-bool { color: #0000ff; }
+:root[data-theme="light"] .tk-comment { color: #008000; }
+:root[data-theme="light"] .tk-jinja { color: #795e26; background: rgba(121,94,38,.08); }
+:root[data-theme="light"] .tk-punct { color: #6a6f7a; }
+:root[data-theme="light"] .tk-tag { color: #0070c1; }
+:root[data-theme="light"] .tk-doc { color: #af00db; }
+:root[data-theme="light"] .tk-section { color: #0000ff; }
+:root[data-theme="light"] .tk-flow { color: #795e26; }
+
+/* окно редактора плейбука: фиксированная высота — шапка с названием и кнопки закреплены, прокручивается только текст */
+.playbook-editor-modal { height: min(860px, calc(100vh - 40px)); display: flex; flex-direction: column; overflow: hidden; }
+.playbook-editor-modal > .modal-head, .playbook-editor-modal > .modal-footer { flex-shrink: 0; }
+.playbook-editor-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.playbook-editor-body .code-editor { flex: 1; min-height: 0; }
+.playbook-editor-body .code-editor .code-area.playbook-editor { width: 100%; min-width: 0; height: auto; min-height: 0; max-height: none; max-width: none; resize: none; }
+
+/* окно «Добавить роль» */
+.add-role-mode { display: inline-flex; }
+.role-pick-tree { max-height: 340px; }
+.role-pick-item small { color: var(--text-3); font-family: var(--font); }
+.role-pick-item.is-group > span { font-weight: 600; }
+.playbook-files-toolbar { justify-content: flex-start; }
+
+/* ===========================================================================
+   Флажки с анимацией, окно «Добавить роль», сканирование подсети, подсветка IP (0.0.31)
+   =========================================================================== */
+/* флажки в окнах (мастер, новый плейбук, добавить роль): плавная смена и «прорисовка» галочки */
+.wizard-check input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    position: relative;
+    flex: 0 0 auto;
+    width: 17px;
+    height: 17px;
+    margin: 0;
+    border: 1.5px solid var(--line-strong);
+    border-radius: 5px;
+    background: var(--surface-2);
+    cursor: pointer;
+    transition: background-color .18s ease, border-color .18s ease, box-shadow .18s ease, transform .12s ease;
+}
+.wizard-check input[type="checkbox"]::after {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 1.5px;
+    width: 4px;
+    height: 9px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg) scale(0);
+    transform-origin: 60% 60%;
+    opacity: 0;
+    transition: transform .2s cubic-bezier(.34,1.56,.64,1), opacity .12s ease;
+}
+.wizard-check input[type="checkbox"]:checked { background: var(--accent-strong); border-color: var(--accent-strong); }
+.wizard-check input[type="checkbox"]:checked::after { transform: rotate(45deg) scale(1); opacity: 1; }
+.wizard-check input[type="checkbox"]:active { transform: scale(.88); }
+.wizard-check input[type="checkbox"]:hover:not(:disabled) { border-color: rgba(76,141,255,.7); }
+.wizard-check input[type="checkbox"]:focus-visible { box-shadow: 0 0 0 3px rgba(76,141,255,.3); outline: none; }
+.wizard-check input[type="checkbox"]:disabled { cursor: not-allowed; opacity: .55; }
+.wizard-check { line-height: 1.35; }
+
+/* окно «Добавить роль»: размер постоянный, панели сменяют друг друга в одной области */
+.add-role-card { width: min(600px, calc(100vw - 40px)); }
+.add-role-panes { position: relative; height: 380px; margin-top: 14px; }
+.add-role-pane { position: absolute; inset: 0; display: flex; flex-direction: column; opacity: 0; transform: translateX(14px); pointer-events: none; transition: opacity .22s ease, transform .26s ease; }
+.add-role-pane.is-active { opacity: 1; transform: none; pointer-events: auto; }
+#add_role_existing:not(.is-active) { transform: translateX(-14px); }
+.add-role-sub-toggle { margin: 0 0 10px; align-items: flex-start; }
+.add-role-sub-toggle input { margin-top: 1px; }
+.add-role-pane .role-pick-tree { flex: 1; min-height: 0; max-height: none; }
+.role-parts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px 14px; padding: 6px 10px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); }
+.role-parts .wizard-check { font-family: var(--mono); font-size: 13px; }
+#add_role_new #add_role_sub_block.is-open { margin-top: 8px; }
+
+/* прослушка: подсеть */
+.nmap-subnet-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+.nmap-subnet-row .modal-label { margin-bottom: 6px; font-size: 13px; }
+.nmap-subnet-reset { height: var(--ds-control-h); }
+#nmap_subnet_fields .wizard-hint { margin-top: 8px; }
+.subnet-summary { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; font-size: 13px; }
+.subnet-summary b { font-family: var(--mono); font-size: 14px; }
+.subnet-free { color: #7fd6a6; font-weight: 600; }
+.subnet-used { color: #ff9a93; font-weight: 600; }
+.subnet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); gap: 4px; }
+.subnet-cell { height: 26px; min-height: 0; padding: 0; border-radius: 5px; font: 600 11px var(--mono); border: 1px solid transparent; transition: transform .12s ease, filter .12s ease; }
+.subnet-cell.is-free { background: rgba(63,185,122,.16); border-color: rgba(63,185,122,.35); color: #7fd6a6; cursor: copy; }
+.subnet-cell.is-used { background: rgba(229,83,75,.18); border-color: rgba(229,83,75,.4); color: #ff9a93; cursor: default; }
+.subnet-cell:hover { transform: scale(1.08); filter: brightness(1.2); }
+.subnet-progress { height: 8px; border-radius: 6px; background: var(--surface-3); overflow: hidden; }
+.subnet-progress-bar { height: 100%; background: var(--accent); transition: width .4s ease; }
+.subnet-progress-text { margin-top: 8px; font-size: 13px; }
+.nmap-mode-select .nmap-mode-option span { padding: 0 12px; }
+
+/* поле IP узла: свободен — зелёное, занят — красное */
+input.ip-free { border-color: rgba(63,185,122,.75) !important; box-shadow: 0 0 0 3px rgba(63,185,122,.16); background-color: rgba(63,185,122,.07) !important; }
+input.ip-busy { border-color: rgba(229,83,75,.8) !important; box-shadow: 0 0 0 3px rgba(229,83,75,.16); background-color: rgba(229,83,75,.07) !important; }
+input.ip-free, input.ip-busy { transition: border-color .18s ease, box-shadow .18s ease, background-color .18s ease; }
+
+@media (max-width: 720px) { .role-parts { grid-template-columns: repeat(2, minmax(0, 1fr)); } .nmap-subnet-row { grid-template-columns: minmax(0, 1fr); } }
+
+:root[data-theme="light"] .wizard-check input[type="checkbox"] { background: #fff; border-color: rgba(20,30,50,.3); }
+:root[data-theme="light"] .wizard-check input[type="checkbox"]:checked { background: #2f6fd1; border-color: #2f6fd1; }
+:root[data-theme="light"] .role-parts { background: #fff; border-color: rgba(20,30,50,.14); }
+:root[data-theme="light"] .subnet-free { color: #1a8a56; }
+:root[data-theme="light"] .subnet-used { color: #c0392b; }
+:root[data-theme="light"] .subnet-cell.is-free { background: rgba(31,157,99,.1); border-color: rgba(31,157,99,.35); color: #1a8a56; }
+:root[data-theme="light"] .subnet-cell.is-used { background: rgba(204,75,75,.1); border-color: rgba(204,75,75,.38); color: #c0392b; }
+
+/* ===========================================================================
+   Роли плейбука «ступенькой», выбор групп узлов, окно выбора действия (0.0.33)
+   =========================================================================== */
+/* роли под плейбуком: отступ и линия-связка; флажок роли — синий */
+.playbook-role-steps { position: relative; display: flex; flex-direction: column; gap: 1px; margin: -2px 0 6px 21px; padding: 2px 0 2px 18px; border-left: 1px solid var(--line-strong); }
+.pb-role-row { position: relative; display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; border-radius: 6px; cursor: pointer; font: 13px var(--mono); color: var(--text-2); transition: background .15s ease, color .15s ease; }
+.pb-role-row::before { content: ''; position: absolute; left: -18px; top: 50%; width: 14px; border-top: 1px solid var(--line-strong); }
+.pb-role-row:hover { background: rgba(255,255,255,.04); color: var(--text); }
+.pb-role-row:has(.pb-role:checked) { color: var(--text); }
+.pb-role { appearance: none; -webkit-appearance: none; position: relative; flex: 0 0 15px; width: 15px; height: 15px; margin: 0; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(255,255,255,.04); cursor: pointer; transition: background .16s ease, border-color .16s ease, transform .12s ease; }
+.pb-role::after { content: ''; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg) scale(0); opacity: 0; transition: transform .2s cubic-bezier(.34,1.56,.64,1), opacity .12s ease; }
+.pb-role:checked { background: var(--accent-strong); border-color: var(--accent); }
+.pb-role:checked::after { transform: rotate(45deg) scale(1); opacity: 1; }
+.pb-role:active { transform: scale(.88); }
+/* плейбук выбран частично (только отмеченные роли): чёрточка вместо галочки */
+.pb:indeterminate { background: rgba(76,141,255,.35); border-color: rgba(76,141,255,.6); }
+.pb:indeterminate::after { content: ''; position: absolute; left: 4px; top: 7.5px; width: 8px; height: 0; border: 0; border-top: 2px solid #fff; transform: none; }
+.playbook-card.is-partial { border-color: rgba(76,141,255,.3); }
+.confirm-roles { color: #8fb8ff; }
+
+/* «Новый плейбук»: блок ролей раскрывается на высоту содержимого; поле узлов — с выбором групп */
+#create_playbook_roles_block.is-open { max-height: var(--open-h, 640px); }
+.create-card .modal-body { max-height: calc(100vh - 220px); overflow-y: auto; }
+.hosts-combo { position: relative; display: flex; gap: 6px; }
+.hosts-combo .modal-input { flex: 1; min-width: 0; }
+.hosts-combo-btn { flex: 0 0 auto; height: var(--ds-control-h); }
+.hosts-groups { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 20; max-height: 260px; overflow-y: auto; padding: 6px 10px 8px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface-2); box-shadow: 0 12px 30px rgba(0,0,0,.45); opacity: 0; transform: translateY(-6px); pointer-events: none; transition: opacity .16s ease, transform .2s ease; }
+.hosts-groups.is-open { opacity: 1; transform: none; pointer-events: auto; }
+.hosts-groups .wizard-check b { font-family: var(--mono); font-weight: 600; }
+.hosts-groups .wizard-check small { color: var(--text-3); }
+
+:root[data-theme="light"] .pb-role-row:hover { background: rgba(20,30,50,.04); }
+:root[data-theme="light"] .pb-role { background: #fff; border-color: rgba(20,30,50,.3); }
+:root[data-theme="light"] .pb-role:checked { background: #2f6fd1; border-color: #285fb4; }
+:root[data-theme="light"] .pb:indeterminate { background: rgba(47,111,209,.55); border-color: #2f6fd1; }
+:root[data-theme="light"] .confirm-roles { color: #285fb4; }
+:root[data-theme="light"] .hosts-groups { background: #fff; border-color: rgba(20,30,50,.16); box-shadow: 0 12px 30px rgba(20,30,50,.16); }
