@@ -45,7 +45,6 @@ NON_PLAYBOOK_FILE_NAMES = set(HOSTS_FILE_CANDIDATES) | set(DEFAULTS_FILE_CANDIDA
 # === Веб-интерфейс (статические файлы) ======================================
 
 PUBLIC_DIR_NAME = "public"
-BACKGROUND_IMAGE_NAME = "logo.png"
 # Знак приложения (PNG с прозрачным фоном): в шапке слева и иконка вкладки браузера.
 LOGO_MARK_IMAGE_NAME = "logo_mark.png"
 
@@ -88,10 +87,10 @@ LOG_MAX_LINES = 1000
 # уровне вложенности — см. web1x._find_subdir):
 # - для проекта без объектов — папка "hdd" где-то внутри autodeploy/
 #   (там же, где лежит сам файл autodeploy.yml);
-# - для проекта с объектами — папка "part" где-то внутри каталога
-#   выбранного объекта.
+# - для проекта с объектами — папка по фиксированному пути внутри каталога
+#   объекта (HWTYPE_PART_RELATIVE_PATH, по умолчанию roles/pxe_prepare/templates/part).
 HWTYPE_HDD_DIR_NAME = "hdd"
-HWTYPE_PART_DIR_NAME = "part"
+HWTYPE_PART_DIR_NAME = "part"   # используется ниже в HWTYPE_PART_RELATIVE_PATH
 HWTYPE_FILE_EXTENSION = ".j2"
 
 # === Системные сервисы и ISO-образы (инфопанель вверху страницы) ===========

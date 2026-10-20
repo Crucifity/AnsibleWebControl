@@ -277,7 +277,7 @@ button {
     transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
 }
 .host-card:hover { border-color: rgba(255,255,255,.20); }
-.host-card.node-available { border-color: rgba(55,190,105,.30); box-shadow: 0 0 0 1px rgba(55,190,105,.07); }
+.host-card.node-available { border-color: rgba(55,190,105,.30); }
 .host-card.node-pending { border-color: rgba(255,255,255,.11); }
 .host-card.node-available:hover { border-color: rgba(55,190,105,.40); }
 
@@ -1547,8 +1547,8 @@ button.system-status-item.settings-btn:hover { background: rgba(255,255,255,.09)
 .autobuild-sources { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
 .autobuild-source { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid rgba(255,255,255,.12); border-radius: 10px; cursor: pointer; transition: border-color .15s, background .15s; }
 .autobuild-source:hover { background: rgba(255,255,255,.04); }
-.autobuild-source:has(input:checked) { border-color: rgba(64,150,255,.65); background: rgba(35,110,210,.12); }
-.autobuild-source:has(input:disabled) { opacity: .5; cursor: not-allowed; }
+.autobuild-source.is-checked { border-color: rgba(64,150,255,.65); background: rgba(35,110,210,.12); }
+.autobuild-source.is-disabled { opacity: .5; cursor: not-allowed; }
 .autobuild-source input { margin-top: 3px; }
 .autobuild-source span { display: flex; flex-direction: column; gap: 2px; }
 .autobuild-source b { color: #fff; font-size: 14px; }
@@ -1560,7 +1560,7 @@ button.system-status-item.settings-btn:hover { background: rgba(255,255,255,.09)
 .netmap-port-input { min-height: 32px; padding: 6px 10px; font-size: 13px; }
 .netmap-port-input.is-invalid { border-color: rgba(235,115,115,.85); }
 :root[data-theme="light"] .autobuild-source { border-color: rgba(20,30,50,.16); }
-:root[data-theme="light"] .autobuild-source:has(input:checked) { border-color: #2f6fd1; background: rgba(47,111,209,.08); }
+:root[data-theme="light"] .autobuild-source.is-checked { border-color: #2f6fd1; background: rgba(47,111,209,.08); }
 :root[data-theme="light"] .autobuild-source b { color: #1d2330; }
 :root[data-theme="light"] .autobuild-source small { color: rgba(29,35,48,.6); }
 :root[data-theme="light"] .autobuild-clear-btn { background: transparent; color: #c0392b; }
@@ -1931,7 +1931,7 @@ body.is-resizing, body.is-resizing * { cursor: row-resize !important; user-selec
 .code-line-error { display: inline-block; min-width: 100%; color: #fff; background: var(--bad); border-radius: 3px; padding: 0 3px; margin-right: -3px; }
 .code-editor .code-area { flex: 1 1 auto; min-width: 0; margin: 0; padding: 14px; border: 0; border-radius: 0; outline: none; background: transparent; color: #d8dde5; caret-color: #fff; font: 13px/1.55 var(--mono); white-space: pre; overflow: auto; resize: none; tab-size: 2; }
 .code-editor:focus-within { border-color: rgba(76,141,255,.6); }
-.playbook-editor-body .code-editor .code-area.playbook-editor { min-width: 520px; border: 0; padding: 14px; background: transparent; }
+.playbook-editor-body .code-editor .code-area.playbook-editor { border: 0; padding: 14px; background: transparent; }
 /* ошибка YAML над редактором */
 .editor-error { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid rgba(229,83,75,.45); border-radius: 9px; background: var(--bad-weak); font-size: 13px; line-height: 1.45; color: #ffcdc9; }
 .editor-error[hidden] { display: none; }
@@ -2053,10 +2053,7 @@ body.is-resizing, body.is-resizing * { cursor: row-resize !important; user-selec
 /* окно «Файлы плейбука» */
 .playbook-files-card { width: min(860px, calc(100vw - 40px)); height: min(780px, calc(100vh - 40px)); display: flex; flex-direction: column; overflow: hidden; }
 .playbook-files-card > .modal-head, .playbook-files-card > .modal-footer, .playbook-files-toolbar { flex-shrink: 0; }
-.playbook-files-card .modal-footer { justify-content: space-between; }
 .playbook-files-toolbar { display: flex; align-items: center; gap: 10px; padding: 12px 22px; border-bottom: 1px solid var(--line); }
-.add-role-form { flex: 1; display: flex; gap: 8px; min-width: 0; }
-.add-role-form .modal-input { flex: 1; min-width: 0; min-height: 34px; padding: 6px 10px; font-family: var(--mono); font-size: 13px; }
 .playbook-files-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
 .playbook-files-note { padding: 8px 12px; border: 1px solid rgba(214,162,58,.45); border-radius: 8px; background: rgba(214,162,58,.1); font-size: 13px; color: #e6c26b; }
 .role-card { border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
@@ -2086,17 +2083,12 @@ body.is-resizing, body.is-resizing * { cursor: row-resize !important; user-selec
 :root[data-theme="light"] .role-file-delete { background: transparent; }
 :root[data-theme="light"] .role-file-delete:hover { background: #cc4b4b; color: #fff; }
 
-/* --- Autodeploy — строка в списке плейбуков (только у проектов, где он есть) --- */
-.playbook-card.autodeploy-card { background: var(--ok-weak); border-color: rgba(63,185,122,.35); }
-.playbook-card.autodeploy-card:hover { background: rgba(63,185,122,.2); border-color: rgba(63,185,122,.5); }
 .autodeploy-label { display: flex; align-items: center; gap: 10px; min-width: 0; margin-left: 27px; }
 .autodeploy-file { font-size: 15px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .playbook-actions button.autodeploy-run { background: #2b9a62; border-color: #2b9a62; color: #fff; }
 .playbook-actions button.autodeploy-run:hover { background: #33b071; border-color: #33b071; }
 /* зависимость роли (meta/main.yml) — с отступом под ролью, которая её подключает */
 .role-card.is-dependency { margin-left: 22px; border-style: dashed; }
-:root[data-theme="light"] .playbook-card.autodeploy-card { background: rgba(31,157,99,.08); border-color: rgba(31,157,99,.3); }
-:root[data-theme="light"] .playbook-card.autodeploy-card:hover { background: rgba(31,157,99,.14); }
 :root[data-theme="light"] .autodeploy-file { color: #1d2330; }
 :root[data-theme="light"] .playbook-actions button.autodeploy-run { background: #1f9d63; border-color: #1f9d63; color: #fff; }
 :root[data-theme="light"] .playbook-actions button.autodeploy-run:hover { background: #188552; }
@@ -2226,7 +2218,7 @@ body.is-resizing, body.is-resizing * { cursor: row-resize !important; user-selec
 #add_role_existing:not(.is-active) { transform: translateX(-14px); }
 .add-role-sub-toggle { margin: 0 0 10px; align-items: flex-start; }
 .add-role-sub-toggle input { margin-top: 1px; }
-.add-role-pane .role-pick-tree { flex: 1; min-height: 0; max-height: none; }
+.add-role-pane .role-pick-tree { flex: 1; max-height: none; }
 .role-parts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px 14px; padding: 6px 10px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); }
 .role-parts .wizard-check { font-family: var(--mono); font-size: 13px; }
 #add_role_new #add_role_sub_block.is-open { margin-top: 8px; }
@@ -2269,36 +2261,613 @@ input.ip-free, input.ip-busy { transition: border-color .18s ease, box-shadow .1
    Роли плейбука «ступенькой», выбор групп узлов, окно выбора действия (0.0.33)
    =========================================================================== */
 /* роли под плейбуком: отступ и линия-связка; флажок роли — синий */
-.playbook-role-steps { position: relative; display: flex; flex-direction: column; gap: 1px; margin: -2px 0 6px 21px; padding: 2px 0 2px 18px; border-left: 1px solid var(--line-strong); }
+.playbook-role-steps { position: relative; display: flex; flex-direction: column; gap: 1px; margin: -2px 0 6px 21px; padding: 2px 0 2px 18px; }
 .pb-role-row { position: relative; display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; border-radius: 6px; cursor: pointer; font: 13px var(--mono); color: var(--text-2); transition: background .15s ease, color .15s ease; }
-.pb-role-row::before { content: ''; position: absolute; left: -18px; top: 50%; width: 14px; border-top: 1px solid var(--line-strong); }
+/* связка к роли: сверху до середины строки и вправо к флажку; у последней роли угол закруглён и линия ниже не идёт */
+.pb-role-row::before { content: ''; position: absolute; left: -18px; top: 0; height: 50%; width: 14px; border-left: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); }
+.pb-role-row:first-child::before { top: -2px; height: calc(50% + 2px); }   /* первая — до строки плейбука; отрезки не перекрываются, без «точек» на стыках */
+.pb-role-row::after { content: ''; position: absolute; left: -18px; top: 50%; bottom: -1px; border-left: 1px solid var(--line-strong); }
+.pb-role-row:last-child::before { border-bottom-left-radius: 8px; }
+.pb-role-row:last-child::after { display: none; }
 .pb-role-row:hover { background: rgba(255,255,255,.04); color: var(--text); }
-.pb-role-row:has(.pb-role:checked) { color: var(--text); }
+.pb-role-row.is-checked { color: var(--text); }
 .pb-role { appearance: none; -webkit-appearance: none; position: relative; flex: 0 0 15px; width: 15px; height: 15px; margin: 0; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(255,255,255,.04); cursor: pointer; transition: background .16s ease, border-color .16s ease, transform .12s ease; }
 .pb-role::after { content: ''; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg) scale(0); opacity: 0; transition: transform .2s cubic-bezier(.34,1.56,.64,1), opacity .12s ease; }
 .pb-role:checked { background: var(--accent-strong); border-color: var(--accent); }
 .pb-role:checked::after { transform: rotate(45deg) scale(1); opacity: 1; }
 .pb-role:active { transform: scale(.88); }
 /* плейбук выбран частично (только отмеченные роли): чёрточка вместо галочки */
-.pb:indeterminate { background: rgba(76,141,255,.35); border-color: rgba(76,141,255,.6); }
+.pb:indeterminate { background: rgba(232,196,90,.55); border-color: rgba(240,206,110,.8); }
 .pb:indeterminate::after { content: ''; position: absolute; left: 4px; top: 7.5px; width: 8px; height: 0; border: 0; border-top: 2px solid #fff; transform: none; }
-.playbook-card.is-partial { border-color: rgba(76,141,255,.3); }
-.confirm-roles { color: #8fb8ff; }
+/* выбраны только некоторые роли — светло-жёлтая подсветка, чтобы отличалась от выбранных целиком */
+.playbook-card.is-partial, .playbook-card.is-selected.is-partial { background: rgba(232,196,90,.10); border-color: rgba(232,196,90,.42); }
+.playbook-card.is-partial:hover { background: rgba(232,196,90,.15); }
+.confirm-roles { color: #f0ce6e; }
 
 /* «Новый плейбук»: блок ролей раскрывается на высоту содержимого; поле узлов — с выбором групп */
-#create_playbook_roles_block.is-open { max-height: var(--open-h, 640px); }
-.create-card .modal-body { max-height: calc(100vh - 220px); overflow-y: auto; }
+/* «Новый плейбук»: окно по высоте содержимого — без прокрутки; длинный список ролей прокручивается сам */
+.create-card { overflow: visible; }
+.create-card .modal-body { max-height: none; overflow: visible; }
 .hosts-combo { position: relative; display: flex; gap: 6px; }
 .hosts-combo .modal-input { flex: 1; min-width: 0; }
 .hosts-combo-btn { flex: 0 0 auto; height: var(--ds-control-h); }
-.hosts-groups { position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 20; max-height: 260px; overflow-y: auto; padding: 6px 10px 8px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface-2); box-shadow: 0 12px 30px rgba(0,0,0,.45); opacity: 0; transform: translateY(-6px); pointer-events: none; transition: opacity .16s ease, transform .2s ease; }
-.hosts-groups.is-open { opacity: 1; transform: none; pointer-events: auto; }
+/* закрытый список групп не занимает места (раньше, оставаясь прозрачным, растягивал окно и давал прокрутку) */
+.hosts-groups { display: none; position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 40; max-height: 260px; overflow-y: auto; padding: 6px 10px 8px; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--surface-2); box-shadow: 0 12px 30px rgba(0,0,0,.45); }
+.hosts-groups.is-open { display: block; animation: hostsGroupsIn .2s ease; }
+@keyframes hostsGroupsIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 .hosts-groups .wizard-check b { font-family: var(--mono); font-weight: 600; }
 .hosts-groups .wizard-check small { color: var(--text-3); }
 
 :root[data-theme="light"] .pb-role-row:hover { background: rgba(20,30,50,.04); }
 :root[data-theme="light"] .pb-role { background: #fff; border-color: rgba(20,30,50,.3); }
 :root[data-theme="light"] .pb-role:checked { background: #2f6fd1; border-color: #285fb4; }
-:root[data-theme="light"] .pb:indeterminate { background: rgba(47,111,209,.55); border-color: #2f6fd1; }
-:root[data-theme="light"] .confirm-roles { color: #285fb4; }
+:root[data-theme="light"] .pb:indeterminate { background: #e0b440; border-color: #c99a1e; }
+:root[data-theme="light"] .playbook-card.is-partial, :root[data-theme="light"] .playbook-card.is-selected.is-partial { background: #fff8e1; border-color: #f0d080; }
+:root[data-theme="light"] .playbook-card.is-partial:hover { background: #fff3cc; }
+:root[data-theme="light"] .confirm-roles { color: #9a6b00; }
 :root[data-theme="light"] .hosts-groups { background: #fff; border-color: rgba(20,30,50,.16); box-shadow: 0 12px 30px rgba(20,30,50,.16); }
+
+/* окно «Сохранить изменения узла?»: сохранение — зелёное (основное — сплошное), «Отмена» — красная */
+
+/* ###########################################################################
+   КНОПКИ: единая система цветов (0.0.35)
+   Цвет — по смыслу действия, всего пять:
+     красный  — отмена, закрыть, удалить, сбросить, убрать, отключить, завершить;
+     зелёный  — сохранить, создать, добавить, применить, включить, запустить;
+     жёлтый   — «Сохранить и закрыть»;
+     синий    — изменить, переименовать, проверка, автопостроение;
+     нейтральный — просмотр, выбор и всё остальное.
+   Все цветные — полупрозрачные, при наведении ярче. Оттенки меняются здесь, в переменных.
+   ########################################################################### */
+:root {
+    --red-bg: rgba(229,83,75,.15);    --red-bd: rgba(229,83,75,.42);    --red-tx: #ffb3ad;    --red-bg-h: rgba(229,83,75,.32);    --red-bd-h: rgba(229,83,75,.85);    --red-tx-h: #fff;
+    --green-bg: rgba(63,185,122,.16); --green-bd: rgba(63,185,122,.48); --green-tx: #a6e8c3; --green-bg-h: rgba(63,185,122,.34); --green-bd-h: rgba(63,185,122,.9); --green-tx-h: #fff;
+    --yellow-bg: rgba(232,196,90,.16); --yellow-bd: rgba(232,196,90,.5); --yellow-tx: #f3d98a; --yellow-bg-h: rgba(232,196,90,.34); --yellow-bd-h: rgba(232,196,90,.95); --yellow-tx-h: #fff;
+    --blue-bg: rgba(76,141,255,.14);  --blue-bd: rgba(76,141,255,.4);   --blue-tx: #cfe0ff;   --blue-bg-h: rgba(76,141,255,.3);   --blue-bd-h: rgba(76,141,255,.85);  --blue-tx-h: #fff;
+}
+:root[data-theme="light"] {
+    --red-bg: rgba(204,75,75,.09);    --red-bd: rgba(204,75,75,.42);    --red-tx: #b03a2e;    --red-bg-h: rgba(204,75,75,.2);     --red-bd-h: rgba(204,75,75,.8);     --red-tx-h: #8e2a20;
+    --green-bg: rgba(31,157,99,.10);  --green-bd: rgba(31,157,99,.45);  --green-tx: #17734a;  --green-bg-h: rgba(31,157,99,.22);  --green-bd-h: rgba(31,157,99,.85);  --green-tx-h: #0f5a38;
+    --yellow-bg: rgba(214,162,58,.14); --yellow-bd: rgba(214,162,58,.55); --yellow-tx: #8a5a00; --yellow-bg-h: rgba(214,162,58,.3); --yellow-bd-h: rgba(214,162,58,.9); --yellow-tx-h: #6b4500;
+    --blue-bg: rgba(47,111,209,.09);  --blue-bd: rgba(47,111,209,.38);  --blue-tx: #285fb4;   --blue-bg-h: rgba(47,111,209,.2);   --blue-bd-h: rgba(47,111,209,.8);   --blue-tx-h: #1d4a8f;
+}
+button.danger,
+button.modal-secondary,
+button.stop-btn,
+.group-btn-delete,
+#add_node_modal .group-btn-delete,
+button.netmap-reset-btn,
+.netmap-toolbar .netmap-reset-btn,
+button.autobuild-clear-btn,
+button.constant-list-remove,
+.host-card.editing .node-edit,
+.host-card.editing .node-edit.has-changes,
+.node-edit.has-changes { background: var(--red-bg); border-color: var(--red-bd); color: var(--red-tx); box-shadow: none; }
+button.danger:hover:not(:disabled),
+button.modal-secondary:hover:not(:disabled),
+button.stop-btn:hover:not(:disabled),
+.group-btn-delete:hover:not(:disabled),
+#add_node_modal .group-btn-delete:hover:not(:disabled),
+button.netmap-reset-btn:hover:not(:disabled),
+.netmap-toolbar .netmap-reset-btn:hover:not(:disabled),
+button.autobuild-clear-btn:hover:not(:disabled),
+button.constant-list-remove:hover:not(:disabled),
+.host-card.editing .node-edit:hover:not(:disabled),
+.host-card.editing .node-edit.has-changes:hover:not(:disabled),
+.node-edit.has-changes:hover:not(:disabled) { background: var(--red-bg-h); border-color: var(--red-bd-h); color: var(--red-tx-h); }
+button.primary,
+button.run-btn,
+button.primary.run-btn,
+.edit-save.primary,
+.group-btn-create,
+#add_node_modal .group-btn-create,
+.playbook-actions button.autodeploy-run,
+button.constant-list-add { background: var(--green-bg); border-color: var(--green-bd); color: var(--green-tx); box-shadow: none; }
+button.primary:hover:not(:disabled),
+button.run-btn:hover:not(:disabled),
+button.primary.run-btn:hover:not(:disabled),
+.edit-save.primary:hover:not(:disabled),
+.group-btn-create:hover:not(:disabled),
+#add_node_modal .group-btn-create:hover:not(:disabled),
+.playbook-actions button.autodeploy-run:hover:not(:disabled),
+button.constant-list-add:hover:not(:disabled) { background: var(--green-bg-h); border-color: var(--green-bd-h); color: var(--green-tx-h); }
+button.save-close { background: var(--yellow-bg); border-color: var(--yellow-bd); color: var(--yellow-tx); box-shadow: none; }
+button.save-close:hover:not(:disabled) { background: var(--yellow-bg-h); border-color: var(--yellow-bd-h); color: var(--yellow-tx-h); }
+button.check-run-btn,
+.node-edit,
+button.netmap-edit-action,
+button.edit-action,
+button.netmap-autobuild-btn { background: var(--blue-bg); border-color: var(--blue-bd); color: var(--blue-tx); box-shadow: none; }
+button.check-run-btn:hover:not(:disabled),
+.node-edit:hover:not(:disabled),
+button.netmap-edit-action:hover:not(:disabled),
+button.edit-action:hover:not(:disabled),
+button.netmap-autobuild-btn:hover:not(:disabled) { background: var(--blue-bg-h); border-color: var(--blue-bd-h); color: var(--blue-tx-h); }
+/* светлая тема: те же правила с весом выше прежних светлых */
+:root[data-theme="light"] button.danger,
+:root[data-theme="light"] button.modal-secondary,
+:root[data-theme="light"] button.stop-btn,
+:root[data-theme="light"] .group-btn-delete,
+:root[data-theme="light"] #add_node_modal .group-btn-delete,
+:root[data-theme="light"] button.netmap-reset-btn,
+:root[data-theme="light"] .netmap-toolbar .netmap-reset-btn,
+:root[data-theme="light"] button.autobuild-clear-btn,
+:root[data-theme="light"] button.constant-list-remove,
+:root[data-theme="light"] .host-card.editing .node-edit,
+:root[data-theme="light"] .host-card.editing .node-edit.has-changes,
+:root[data-theme="light"] .node-edit.has-changes { background: var(--red-bg); border-color: var(--red-bd); color: var(--red-tx); box-shadow: none; }
+:root[data-theme="light"] button.danger:hover:not(:disabled),
+:root[data-theme="light"] button.modal-secondary:hover:not(:disabled),
+:root[data-theme="light"] button.stop-btn:hover:not(:disabled),
+:root[data-theme="light"] .group-btn-delete:hover:not(:disabled),
+:root[data-theme="light"] #add_node_modal .group-btn-delete:hover:not(:disabled),
+:root[data-theme="light"] button.netmap-reset-btn:hover:not(:disabled),
+:root[data-theme="light"] .netmap-toolbar .netmap-reset-btn:hover:not(:disabled),
+:root[data-theme="light"] button.autobuild-clear-btn:hover:not(:disabled),
+:root[data-theme="light"] button.constant-list-remove:hover:not(:disabled),
+:root[data-theme="light"] .host-card.editing .node-edit:hover:not(:disabled),
+:root[data-theme="light"] .host-card.editing .node-edit.has-changes:hover:not(:disabled),
+:root[data-theme="light"] .node-edit.has-changes:hover:not(:disabled) { background: var(--red-bg-h); border-color: var(--red-bd-h); color: var(--red-tx-h); }
+:root[data-theme="light"] button.primary,
+:root[data-theme="light"] button.run-btn,
+:root[data-theme="light"] button.primary.run-btn,
+:root[data-theme="light"] .edit-save.primary,
+:root[data-theme="light"] .group-btn-create,
+:root[data-theme="light"] #add_node_modal .group-btn-create,
+:root[data-theme="light"] .playbook-actions button.autodeploy-run,
+:root[data-theme="light"] button.constant-list-add { background: var(--green-bg); border-color: var(--green-bd); color: var(--green-tx); box-shadow: none; }
+:root[data-theme="light"] button.primary:hover:not(:disabled),
+:root[data-theme="light"] button.run-btn:hover:not(:disabled),
+:root[data-theme="light"] button.primary.run-btn:hover:not(:disabled),
+:root[data-theme="light"] .edit-save.primary:hover:not(:disabled),
+:root[data-theme="light"] .group-btn-create:hover:not(:disabled),
+:root[data-theme="light"] #add_node_modal .group-btn-create:hover:not(:disabled),
+:root[data-theme="light"] .playbook-actions button.autodeploy-run:hover:not(:disabled),
+:root[data-theme="light"] button.constant-list-add:hover:not(:disabled) { background: var(--green-bg-h); border-color: var(--green-bd-h); color: var(--green-tx-h); }
+:root[data-theme="light"] button.save-close { background: var(--yellow-bg); border-color: var(--yellow-bd); color: var(--yellow-tx); box-shadow: none; }
+:root[data-theme="light"] button.save-close:hover:not(:disabled) { background: var(--yellow-bg-h); border-color: var(--yellow-bd-h); color: var(--yellow-tx-h); }
+:root[data-theme="light"] button.check-run-btn,
+:root[data-theme="light"] .node-edit,
+:root[data-theme="light"] button.netmap-edit-action,
+:root[data-theme="light"] button.edit-action,
+:root[data-theme="light"] button.netmap-autobuild-btn { background: var(--blue-bg); border-color: var(--blue-bd); color: var(--blue-tx); box-shadow: none; }
+:root[data-theme="light"] button.check-run-btn:hover:not(:disabled),
+:root[data-theme="light"] .node-edit:hover:not(:disabled),
+:root[data-theme="light"] button.netmap-edit-action:hover:not(:disabled),
+:root[data-theme="light"] button.edit-action:hover:not(:disabled),
+:root[data-theme="light"] button.netmap-autobuild-btn:hover:not(:disabled) { background: var(--blue-bg-h); border-color: var(--blue-bd-h); color: var(--blue-tx-h); }
+/* неактивные — приглушённые, без «подсветки» при наведении */
+button.danger:disabled, button.primary:disabled, button.save-close:disabled, button.modal-secondary:disabled, button.stop-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+
+/* ===========================================================================
+   ВЫПАДАЮЩИЕ СПИСКИ: единый стиль (0.0.36)
+   Ширина списка = ширина его кнопки; длинные пункты — с многоточием (полное имя — в подсказке).
+   Исключения по ширине: панель ISO-образов и меню шестерёнки (кнопка 34 px — пункты не поместятся):
+   они выровнены по правому краю своей кнопки.
+   =========================================================================== */
+html body .project-select-list,
+html body .object-select-list,
+html body .group-filter-list,
+html body .ui-select-list,
+html body .hosts-groups,
+html body .hwtype-dropdown,
+html body .settings-menu {
+    box-sizing: border-box;
+    padding: 5px;
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    background: var(--surface-2);
+    box-shadow: 0 14px 34px rgba(0,0,0,.45);
+}
+html body .project-select-list, html body .group-filter-list { min-width: 0; width: 100%; max-width: none; left: 0; right: auto; }
+html body .object-select-list { min-width: 0; max-width: none; }
+/* пункты списков */
+html body .project-option, html body .object-option, html body .group-filter-item, html body .ui-select-option, html body .hwtype-option {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 32px;
+    padding: 6px 10px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: background .12s ease, color .12s ease;
+}
+html body .project-option:hover, html body .object-option:hover, html body .group-filter-item:hover, html body .ui-select-option:hover, html body .hwtype-option:hover { background: var(--surface-3); color: var(--text); transform: none; }
+html body .project-option.active, html body .object-option.active, html body .group-filter-item.active, html body .ui-select-option.active, html body .hwtype-option.active { background: var(--accent-weak); color: var(--blue-tx); font-weight: 600; }
+
+/* «Фильтр по группам» — как обычная кнопка */
+html body .group-filter-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: var(--ds-control-h);
+    min-height: var(--ds-control-h);
+    padding: 0 13px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--ds-radius-control);
+    background: var(--surface-3);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+}
+html body .group-filter-btn:hover { background: #2b3240; border-color: var(--line-strong); }
+
+:root[data-theme="light"] body .project-select-list, :root[data-theme="light"] body .object-select-list, :root[data-theme="light"] body .group-filter-list,
+:root[data-theme="light"] body .ui-select-list, :root[data-theme="light"] body .hosts-groups, :root[data-theme="light"] body .hwtype-dropdown, :root[data-theme="light"] body .settings-menu {
+    background: #fff; border-color: rgba(20,30,50,.16); box-shadow: 0 14px 34px rgba(20,30,50,.16);
+}
+:root[data-theme="light"] body .project-option:hover, :root[data-theme="light"] body .object-option:hover, :root[data-theme="light"] body .group-filter-item:hover,
+:root[data-theme="light"] body .ui-select-option:hover, :root[data-theme="light"] body .hwtype-option:hover { background: #eef1f5; color: #1d2330; }
+:root[data-theme="light"] body .project-option.active, :root[data-theme="light"] body .object-option.active, :root[data-theme="light"] body .group-filter-item.active,
+:root[data-theme="light"] body .ui-select-option.active, :root[data-theme="light"] body .hwtype-option.active { background: rgba(47,111,209,.1); color: #285fb4; }
+:root[data-theme="light"] body .project-option, :root[data-theme="light"] body .object-option, :root[data-theme="light"] body .group-filter-item,
+:root[data-theme="light"] body .ui-select-option, :root[data-theme="light"] body .hwtype-option { color: #1d2330; }
+:root[data-theme="light"] body .group-filter-btn { background: #f3f5f8; border-color: rgba(20,30,50,.16); color: #1d2330; }
+:root[data-theme="light"] body .group-filter-btn:hover { background: #e9edf3; }
+
+/* «Новый плейбук»: окно по высоте содержимого — кнопки внизу всегда внутри окна */
+.create-card { max-height: none; }
+/* роли черновика: фишки и кнопка «Добавить роль» */
+.draft-roles { display: flex; flex-wrap: wrap; gap: 6px; min-height: 34px; align-items: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); }
+.draft-roles .muted { font-size: 13px; }
+.draft-roles .chip small { margin-left: 4px; font-family: var(--font); font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; opacity: .75; }
+.draft-roles .chip.is-new { background: var(--green-bg); border-color: var(--green-bd); color: var(--green-tx); }
+.draft-add-role { margin-top: 10px; }
+/* одиночный выбор группы узлов: кружок-переключатель, выбранная — подсвечена */
+.hosts-groups .group-pick { margin: 0; padding: 6px 8px; border-radius: 7px; cursor: pointer; transition: background .12s ease; }
+.hosts-groups .group-pick:hover { background: var(--surface-3); }
+.hosts-groups .group-pick.is-active { background: var(--accent-weak); }
+.wizard-check input[type="radio"] { appearance: none; -webkit-appearance: none; position: relative; flex: 0 0 auto; width: 17px; height: 17px; margin: 0; border: 1.5px solid var(--line-strong); border-radius: 50%; background: var(--surface-2); cursor: pointer; transition: border-color .18s ease, background .18s ease; }
+.wizard-check input[type="radio"]::after { content: ''; position: absolute; inset: 3.5px; border-radius: 50%; background: #fff; transform: scale(0); transition: transform .18s cubic-bezier(.34,1.56,.64,1); }
+.wizard-check input[type="radio"]:checked { background: var(--accent-strong); border-color: var(--accent-strong); }
+.wizard-check input[type="radio"]:checked::after { transform: scale(1); }
+:root[data-theme="light"] .draft-roles { background: #fff; border-color: rgba(20,30,50,.14); }
+:root[data-theme="light"] .hosts-groups .group-pick:hover { background: #eef1f5; }
+:root[data-theme="light"] .hosts-groups .group-pick.is-active { background: rgba(47,111,209,.1); }
+:root[data-theme="light"] .wizard-check input[type="radio"] { background: #fff; border-color: rgba(20,30,50,.3); }
+:root[data-theme="light"] .wizard-check input[type="radio"]:checked { background: #2f6fd1; border-color: #2f6fd1; }
+
+/* ===========================================================================
+   Кнопки: неактивные, обычные (открывающие окна), группы узла, строка Autodeploy (0.0.37)
+   =========================================================================== */
+:root { --neutral-bg: #232935; --neutral-bd: rgba(255,255,255,.13); --neutral-tx: #e6e9ef; --neutral-bg-h: #2b3240; --muted-bg: rgba(255,255,255,.04); --muted-bd: rgba(255,255,255,.08); --muted-tx: rgba(230,233,239,.38); }
+:root[data-theme="light"] { --neutral-bg: #f3f5f8; --neutral-bd: rgba(20,30,50,.16); --neutral-tx: #1d2330; --neutral-bg-h: #e9edf3; --muted-bg: #f5f6f8; --muted-bd: rgba(20,30,50,.1); --muted-tx: rgba(29,35,48,.38); }
+
+/* неактивные цветные кнопки (например, «Сохранить» без изменений) — приглушённые и без цвета */
+button.primary:disabled, button.save-close:disabled, button.danger:disabled, button.run-btn:disabled, .edit-save.primary:disabled, button.check-run-btn:disabled,
+:root[data-theme="light"] button.primary:disabled, :root[data-theme="light"] button.save-close:disabled, :root[data-theme="light"] button.danger:disabled,
+:root[data-theme="light"] button.run-btn:disabled, :root[data-theme="light"] .edit-save.primary:disabled, :root[data-theme="light"] button.check-run-btn:disabled,
+button.primary:disabled:hover, .edit-save.primary:disabled:hover, :root[data-theme="light"] button.primary:disabled:hover, :root[data-theme="light"] .edit-save.primary:disabled:hover {
+    background: var(--muted-bg); border-color: var(--muted-bd); color: var(--muted-tx); box-shadow: none; opacity: 1; cursor: not-allowed; transform: none;
+}
+
+/* обычные кнопки: открывают окна, а не выполняют действие («Новый плейбук», «Добавить роль», «Добавить узел»,
+   «Удалить плейбук» — само удаление подтверждается отдельно), «+ Добавить» в настройках, кнопки групп в окне узла */
+button.constant-list-add,
+button.add-node-btn,
+button.draft-add-role,
+#add_node_modal .group-btn-create,
+#add_node_modal .group-btn-delete,
+.group-btn-create,
+.group-btn-delete,
+:root[data-theme="light"] button.constant-list-add,
+:root[data-theme="light"] button.add-node-btn,
+:root[data-theme="light"] button.draft-add-role,
+:root[data-theme="light"] #add_node_modal .group-btn-create,
+:root[data-theme="light"] #add_node_modal .group-btn-delete {
+    background: var(--neutral-bg); border-color: var(--neutral-bd); color: var(--neutral-tx); box-shadow: none;
+}
+button.constant-list-add:hover:not(:disabled),
+button.add-node-btn:hover:not(:disabled),
+button.draft-add-role:hover:not(:disabled),
+#add_node_modal .group-btn-create:hover:not(:disabled),
+#add_node_modal .group-btn-delete:hover:not(:disabled),
+:root[data-theme="light"] button.constant-list-add:hover:not(:disabled),
+:root[data-theme="light"] button.add-node-btn:hover:not(:disabled),
+:root[data-theme="light"] button.draft-add-role:hover:not(:disabled),
+:root[data-theme="light"] #add_node_modal .group-btn-create:hover:not(:disabled),
+:root[data-theme="light"] #add_node_modal .group-btn-delete:hover:not(:disabled) {
+    background: var(--neutral-bg-h); border-color: var(--neutral-bd); color: var(--neutral-tx);
+}
+/* кнопки групп в окне добавления узла — обычного размера, в одну строку */
+#add_node_modal .group-btn-create, #add_node_modal .group-btn-delete { width: auto; flex: 0 0 auto; height: var(--ds-control-h); min-height: var(--ds-control-h); padding: 0 13px; border-radius: var(--ds-radius-control); font-size: 13px; font-weight: 600; }
+#add_node_modal .group-selector-buttons { display: flex; flex-wrap: wrap; gap: 8px; grid-template-columns: none; }
+/* кнопки-группы (выбор групп узла): как обычные кнопки; выбранная — синяя */
+#add_node_modal .group-toggle-btn, .group-toggle-btn {
+    height: 30px; min-height: 30px; padding: 0 12px; border: 1px solid var(--neutral-bd); border-radius: var(--ds-radius-control);
+    background: var(--neutral-bg); color: var(--neutral-tx); font-size: 13px; font-weight: 600; box-shadow: none;
+}
+#add_node_modal .group-toggle-btn:hover, .group-toggle-btn:hover { background: var(--neutral-bg-h); }
+#add_node_modal .group-toggle-btn.active, .group-toggle-btn.active { background: var(--blue-bg); border-color: var(--blue-bd); color: var(--blue-tx); }
+#add_node_modal .group-toggle-btn.active:hover, .group-toggle-btn.active:hover { background: var(--blue-bg-h); border-color: var(--blue-bd-h); }
+:root[data-theme="light"] #add_node_modal .group-toggle-btn, :root[data-theme="light"] .group-toggle-btn { background: var(--neutral-bg); border-color: var(--neutral-bd); color: var(--neutral-tx); }
+:root[data-theme="light"] #add_node_modal .group-toggle-btn.active, :root[data-theme="light"] .group-toggle-btn.active { background: var(--blue-bg); border-color: var(--blue-bd); color: var(--blue-tx); }
+
+/* строка Autodeploy — приглушённо-синяя */
+.playbook-card.autodeploy-card { background: rgba(76,141,255,.08); border-color: rgba(76,141,255,.28); }
+.playbook-card.autodeploy-card:hover { background: rgba(76,141,255,.13); border-color: rgba(76,141,255,.4); }
+:root[data-theme="light"] .playbook-card.autodeploy-card { background: rgba(47,111,209,.06); border-color: rgba(47,111,209,.25); }
+:root[data-theme="light"] .playbook-card.autodeploy-card:hover { background: rgba(47,111,209,.1); }
+
+
+/* ===========================================================================
+   Шапки панелей «Узлы» и «Плейбуки» — одинаковые (0.0.38):
+   1-я строка — заголовок со счётчиком и «Выбрать все…» справа;
+   2-я — инструменты (узлы: фильтр по группам, «Добавить узел», «Удалить», поиск;
+   плейбуки: «Новый плейбук», «Удалить», defaults, ansible.cfg, поиск)
+   =========================================================================== */
+html body .nodes-section-head, html body .playbooks-section-head {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; row-gap: 12px; column-gap: 14px; align-items: center; margin-bottom: 12px;
+}
+html body .nodes-section-head > .btn-row.compact, html body .playbooks-section-head > .btn-row.compact { justify-self: end; flex: 0 0 auto; display: flex; gap: 8px; }
+html body .nodes-section-head > .btn-row.compact button, html body .playbooks-section-head > .btn-row.compact button, html body #host_select_toggle, html body #playbook_select_toggle {
+    width: 210px; min-width: 210px; max-width: 210px; flex: 0 0 210px; height: 34px; min-height: 34px;
+}
+html body .nodes-section-head .node-toolbar, html body .playbooks-section-head .playbook-toolbar {
+    grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-start;
+}
+/* :nth-child(n) — чтобы перекрыть старые правила для 2-й и 3-й кнопки строки узлов (min-width 150/190 px) */
+html body .nodes-section-head .node-toolbar button:nth-child(n), html body .playbooks-section-head .playbook-toolbar button:nth-child(n) { min-width: 0; height: 34px; min-height: 34px; flex: 0 0 auto; }
+html body .nodes-section-head .node-toolbar .list-search, html body .playbooks-section-head .playbook-toolbar .list-search { flex: 1 1 160px; min-width: 140px; }
+html body .nodes-section-head .node-toolbar .group-strip { flex: 0 0 auto; width: auto; min-width: 0; min-height: 34px; overflow: visible; }
+html body .nodes-section-head .node-toolbar .group-strip:empty { display: none; }
+
+/* окно добавления узла: «Создать группу» / «Удалить группу» — контурные (пунктир, без заливки),
+   чтобы не сливаться с кнопками самих групп */
+#add_node_modal .group-selector-buttons { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+html body #add_node_modal .group-btn-create, html body #add_node_modal .group-btn-delete,
+:root[data-theme="light"] body #add_node_modal .group-btn-create, :root[data-theme="light"] body #add_node_modal .group-btn-delete {
+    height: 30px; min-height: 30px; padding: 0 12px; background: transparent; border: 1px dashed var(--line-strong); color: var(--text-2); box-shadow: none;
+}
+html body #add_node_modal .group-btn-create:hover:not(:disabled), :root[data-theme="light"] body #add_node_modal .group-btn-create:hover:not(:disabled) {
+    border-style: solid; background: var(--neutral-bg-h); color: var(--neutral-tx); border-color: var(--neutral-bd);
+}
+html body #add_node_modal .group-btn-delete:hover:not(:disabled), :root[data-theme="light"] body #add_node_modal .group-btn-delete:hover:not(:disabled) {
+    border-style: solid; background: var(--red-bg); color: var(--red-tx); border-color: var(--red-bd);
+}
+
+/* «Новый плейбук»: список групп закрывается плавно */
+.hosts-groups.is-closing { animation: hostsGroupsOut .17s ease forwards; pointer-events: none; }
+@keyframes hostsGroupsOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-6px); } }
+
+/* окно «Файлы плейбука»: в подвале только «Закрыть» */
+.playbook-files-card .modal-footer { justify-content: flex-end; }
+
+/* узкие экраны: колонки строк не наезжают на кнопки (было и до 0.0.38) */
+html body .node-main > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html body .playbook-row { column-gap: 10px; }
+html body .playbook-row > label { min-width: 0; overflow: hidden; }
+html body .playbook-row > label span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 1300px) {
+    /* колонка «Шаблон» скрывается — шаблон виден в форме узла и в подсказке */
+    html body .node-main .node-template, html body .nodes-columns .columns-main > :nth-child(3) { display: none; }
+}
+
+/* рабочая область — всегда на всю ширину окна. У неё оставалось старое «margin: 0 auto»: в колонке
+   flex автоматические поля отключают растягивание, и ширина бралась по содержимому — с компактной
+   шапкой узлов (0.0.38) панели сжались до ~1530 px на широких экранах (на 2560 px и раньше не было во всю ширину) */
+html body .app-main { width: 100%; max-width: none; margin-left: 0; margin-right: 0; box-sizing: border-box; align-self: stretch; }
+
+/* «Отмена» рядом с красным действием (удалить, убрать…) — серая, как обычная кнопка */
+button.modal-secondary.is-neutral, :root[data-theme="light"] button.modal-secondary.is-neutral { background: var(--neutral-bg); border-color: var(--neutral-bd); color: var(--neutral-tx); }
+button.modal-secondary.is-neutral:hover:not(:disabled), :root[data-theme="light"] button.modal-secondary.is-neutral:hover:not(:disabled) { background: var(--neutral-bg-h); border-color: var(--neutral-bd); color: var(--neutral-tx); }
+
+/* ===========================================================================
+   Флажки в списках узлов, плейбуков и ролей — без анимации (0.0.41)
+   Раньше при наведении флажок приподнимался на 1 px (translateY) с плавным переходом, а наведение на
+   название плейбука тоже «наводит» на его флажок — верхняя граница флажка уезжала вверх. Теперь
+   флажок при наведении не двигается и не меняет вид; при наведении подсвечивается только строка.
+   Флажки в окнах (мастер, «Добавить роль») — как были.
+   =========================================================================== */
+html body .node-check, html body .pb, html body .pb-role,
+html body .node-check::after, html body .pb::after, html body .pb-role::after { transition: none; }
+html body .node-check:hover, html body .pb:hover, html body .node-check:active, html body .pb:active, html body .pb-role:active { transform: none; }
+/* наведение на неотмеченный флажок — тот же вид, что и без наведения */
+html body .node-check:hover:not(:checked), html body .pb:hover:not(:checked):not(:indeterminate) { border-color: rgba(255,255,255,.22); background: rgba(255,255,255,.045); }
+html body .pb-role:hover:not(:checked) { border-color: rgba(255,255,255,.25); background: rgba(255,255,255,.04); }
+:root[data-theme="light"] body .node-check:hover:not(:checked), :root[data-theme="light"] body .pb:hover:not(:checked):not(:indeterminate),
+:root[data-theme="light"] body .pb-role:hover:not(:checked) { border-color: rgba(20,30,50,.3); background: #fff; }
+
+/* ===========================================================================
+   Импорт из других проектов (0.0.43)
+   =========================================================================== */
+.import-source-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin-bottom: 10px; }
+.import-source-row .modal-label { margin-bottom: 6px; font-size: 13px; }
+.import-source-row select.modal-input { min-height: 36px; padding: 6px 10px; }
+.import-object-wrap[hidden] { display: none; }
+.add-role-pane .role-pick-tree { min-height: 0; }
+#add_role_import .role-pick-tree, #import_roles .role-pick-tree, #import_playbooks .role-pick-tree { flex: 1; min-height: 0; }
+.import-panes { height: 300px; }
+.import-kind { margin: 4px 0 0; display: inline-flex; }
+.import-kind .nmap-mode-option[hidden] { display: none; }
+.role-pick-item small { margin-left: 4px; }
+/* фишки импортированного: «из проекта» */
+.chip.is-import { background: var(--blue-bg); border-color: var(--blue-bd); color: var(--blue-tx); }
+.chip.is-import small { margin-left: 4px; font-size: 11px; opacity: .8; text-transform: none; letter-spacing: 0; font-weight: 500; }
+/* «Новый плейбук» из другого проекта: hosts и become берутся из исходного плейбука */
+.create-row.is-disabled { opacity: .45; pointer-events: none; transition: opacity .2s ease; }
+:root[data-theme="light"] .chip.is-import { background: rgba(47,111,209,.08); border-color: rgba(47,111,209,.35); color: #285fb4; }
+
+/* выбор проекта и объекта при импорте — общий компонент списков, на всю ширину ячейки */
+.import-source-row .ui-select.import-select { display: block; width: 100%; }
+.import-source-row .ui-select.import-select .ui-select-btn { width: 100%; }
+/* пункт списка с дополнительной подписью («volkov · 2 объекта», «eth0 · 10.0.0.5»): отступ перед подписью
+   (пропал в 0.0.36, когда пункты всех списков привели к общему виду) */
+html body .ui-select-option .ui-select-sub, html body .ui-select-option small { margin-left: 8px; font-weight: 500; color: var(--text-3); }
+:root[data-theme="light"] body .ui-select-option .ui-select-sub, :root[data-theme="light"] body .ui-select-option small { color: rgba(29,35,48,.5); }
+
+
+/* «Новый плейбук»: варианты «Состава» — в одной области постоянной высоты (окно не меняет размер) */
+.playbook-mode-panes { height: 190px; margin-top: 12px; }
+.playbook-mode-panes .add-role-pane { gap: 8px; }
+.playbook-mode-panes .draft-roles { max-height: 92px; overflow-y: auto; align-content: flex-start; }
+.playbook-mode-panes .draft-add-role { align-self: flex-start; margin-top: 0; }
+.playbook-mode-note { padding: 12px 14px; border: 1px dashed var(--line); border-radius: 9px; color: var(--text-2); font-size: 13px; line-height: 1.5; }
+/* из другого проекта: имя файла тоже берётся из исходных плейбуков */
+.is-importing > #create_playbook_name, .is-importing > label[for="create_playbook_name"] { opacity: .45; pointer-events: none; transition: opacity .2s ease; }
+/* окно импорта: одна вкладка — переключатель скрыт */
+#import_modal .import-kind[hidden] { display: none; }
+/* «Добавить узел»: импорт — слева в подвале */
+#add_node_modal .modal-footer .footer-left { margin-right: auto; }
+
+/* списки узлов и плейбуков — без отступа справа: строки на всю ширину, как шапка и заголовки столбцов
+   (отступ в 2 px сдвигал колонки «IP» и «Шаблон» относительно их заголовков) */
+html body #nodes, html body #playbooks { padding-right: 0; }
+
+
+/* ===========================================================================
+   Теги плейбуков и роли Autodeploy (0.0.46)
+   =========================================================================== */
+.playbook-actions button.tags-btn.is-active, :root[data-theme="light"] .playbook-actions button.tags-btn.is-active { background: var(--blue-bg); border-color: var(--blue-bd); color: var(--blue-tx); }
+.tags-menu { position: fixed; z-index: 30000; display: none; max-width: min(360px, calc(100vw - 16px)); padding: 5px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--surface-2); box-shadow: 0 14px 34px rgba(0,0,0,.45); }
+.tags-menu.is-open { display: block; animation: hostsGroupsIn .18s ease; }
+.tags-menu.is-closing { animation: hostsGroupsOut .16s ease forwards; pointer-events: none; }
+.tags-menu-list { max-height: 260px; overflow-y: auto; }
+.tags-menu-item { margin: 0; padding: 5px 8px; border-radius: 7px; font-family: var(--mono); font-size: 13px; }
+.tags-menu-item:hover { background: var(--surface-3); }
+.tags-menu-item small { margin-left: 6px; font-family: var(--font); color: var(--text-3); }
+.tags-menu-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 4px; padding: 6px 6px 2px; border-top: 1px solid var(--line); font-size: 12px; }
+.tags-menu-foot button { height: 26px; min-height: 26px; padding: 0 10px; font-size: 12px; }
+.confirm-tags { color: #8fb8ff; }
+/* Autodeploy: выбраны только некоторые роли — та же жёлтая подсветка, что у плейбуков */
+.playbook-card.autodeploy-card.is-partial { background: rgba(232,196,90,.10); border-color: rgba(232,196,90,.42); }
+:root[data-theme="light"] .tags-menu { background: #fff; border-color: rgba(20,30,50,.16); box-shadow: 0 14px 34px rgba(20,30,50,.16); }
+:root[data-theme="light"] .tags-menu-item:hover { background: #eef1f5; }
+:root[data-theme="light"] .confirm-tags { color: #285fb4; }
+:root[data-theme="light"] .playbook-card.autodeploy-card.is-partial { background: #fff8e1; border-color: #f0d080; }
+
+/* ===========================================================================
+   0.0.47: знак Autodeploy, ansible.cfg в мастере, журнал запусков, цвета подробности
+   =========================================================================== */
+/* Autodeploy: на месте флажка — знак (того же размера): от него идёт линия к ролям */
+html body .autodeploy-label { gap: 9px; margin-left: 0; }
+.autodeploy-mark { box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 18px; width: 18px; height: 18px; border-radius: 5px; border: 1px solid var(--blue-bd); background: var(--blue-bg); color: var(--blue-tx); }
+
+/* «Новый плейбук»: поля «Роли плейбука» и «Плейбуки из других проектов» — одной высоты */
+.playbook-mode-panes .draft-roles { min-height: 46px; }
+
+/* мастер: ansible.cfg — выбор и «Сравнить» в одной строке */
+.wizard-cfg-row { display: flex; gap: 8px; align-items: center; }
+.wizard-cfg-row .ui-select.import-select { flex: 1; min-width: 0; }
+.wizard-cfg-row button { flex: 0 0 auto; height: var(--ds-control-h); }
+
+/* окно сравнения ansible.cfg */
+.cfg-compare-card { width: min(980px, calc(100vw - 40px)); }
+.cfg-panes { height: min(460px, calc(100vh - 300px)); margin-top: 12px; }
+.cfg-diff, .cfg-file { height: 100%; overflow: auto; margin: 0; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); }
+.cfg-file { padding: 10px 12px; font: 12.5px/1.55 var(--mono); white-space: pre; }
+.cfg-diff-table { width: 100%; border-collapse: collapse; table-layout: fixed; font: 12.5px/1.55 var(--mono); }
+.cfg-diff-table th { position: sticky; top: 0; padding: 6px 10px; text-align: left; font: 600 12px var(--font); color: var(--text-2); background: var(--surface-3); border-bottom: 1px solid var(--line); }
+.cfg-diff-table td { padding: 0 10px; white-space: pre; overflow: hidden; text-overflow: ellipsis; vertical-align: top; border-right: 1px solid var(--line); }
+.cfg-diff-table tr.is-del td:first-child, .cfg-legend i.is-del { background: rgba(229,83,75,.16); }
+.cfg-diff-table tr.is-add td:last-child, .cfg-legend i.is-add { background: rgba(63,185,122,.16); }
+.cfg-diff-table tr.is-change td, .cfg-legend i.is-change { background: rgba(232,196,90,.14); }
+.cfg-same { padding: 10px; }
+.cfg-problem { margin-top: 10px; padding: 8px 12px; border-radius: 8px; background: var(--red-bg); border: 1px solid var(--red-bd); color: var(--red-tx); font-size: 13px; }
+.cfg-legend { margin-right: auto; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-3); }
+.cfg-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-left: 8px; border: 1px solid var(--line); }
+
+/* журнал запусков */
+.run-report-card { width: min(860px, calc(100vw - 40px)); }
+.run-report-list { max-height: min(560px, calc(100vh - 240px)); overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.run-report-entry { padding: 9px 12px; border-radius: 9px; border: 1px solid var(--line); border-left-width: 3px; background: var(--surface-2); font: 12.5px/1.55 var(--mono); }
+.run-report-entry.is-ok { border-left-color: rgba(63,185,122,.8); }
+.run-report-entry.is-failed { border-left-color: rgba(229,83,75,.85); }
+.run-report-entry.is-stopped { border-left-color: rgba(232,196,90,.85); }
+.run-report-head { color: var(--text); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.run-report-line { color: var(--text-2); white-space: pre-wrap; }
+.run-report-line.is-total { color: var(--text); }
+.run-report-line.is-bad { color: var(--red-tx); }
+#run_report_modal .modal-footer .footer-left { margin-right: auto; }
+
+/* подробность вывода: обычная — синий, -v — зелёный, -vv — жёлтый, -vvv — фиолетовый */
+html body .verbosity-select input[value="-v"]:checked + span { background: rgba(63,185,122,.5); color: #fff; }
+html body .verbosity-select input[value="-vv"]:checked + span { background: rgba(214,170,40,.6); color: #fff; }
+html body .verbosity-select input[value="-vvv"]:checked + span { background: rgba(150,100,240,.6); color: #fff; }
+:root[data-theme="light"] body .verbosity-select input[value="-v"]:checked + span { background: #1f9d63; color: #fff; }
+:root[data-theme="light"] body .verbosity-select input[value="-vv"]:checked + span { background: #c99a1e; color: #fff; }
+:root[data-theme="light"] body .verbosity-select input[value="-vvv"]:checked + span { background: #7c4de0; color: #fff; }
+:root[data-theme="light"] .cfg-diff-table th { background: #eef1f5; }
+
+
+/* ===========================================================================
+   Узлы: колонка «Группы», смена шаблона в форме (0.0.48)
+   =========================================================================== */
+html body .node-main, html body .nodes-columns .columns-main { grid-template-columns: minmax(90px, 1.15fr) minmax(80px, .8fr) minmax(90px, .9fr) minmax(70px, .85fr); }
+.node-groups { color: var(--text-2); font-size: 13px; }
+@media (max-width: 1300px) {
+    html body .node-main, html body .nodes-columns .columns-main { grid-template-columns: minmax(0, 1.2fr) minmax(0, .9fr) minmax(0, .9fr); }
+    html body .nodes-columns .columns-main > :nth-child(4) { display: block; }
+}
+/* строка «Шаблон» — только в режиме правки */
+.host-card:not(.editing) .node-template-name, .host-card:not(.editing) .node-template-cell { display: none; }
+.node-template-cell { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.node-template-pick { width: 100%; }
+.node-template-pick .ui-select-btn { width: 100%; }
+.node-template-note { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.node-template-note:empty { display: none; }
+.node-template-note .is-added { color: var(--green-tx); }
+.node-template-note .is-removed { color: var(--red-tx); }
+
+/* ===========================================================================
+   Проверка синтаксиса, история изменений, журнал запусков крупнее (0.0.49)
+   =========================================================================== */
+.check-result { margin: 0 20px 4px; padding: 8px 12px; border-radius: 9px; border: 1px solid var(--line); font-size: 13px; }
+.check-result.is-ok { background: var(--green-bg); border-color: var(--green-bd); color: var(--green-tx); }
+.check-result.is-error { background: var(--red-bg); border-color: var(--red-bd); color: var(--red-tx); }
+.check-result.is-info { background: var(--surface-2); color: var(--text-2); }
+.check-result-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 600; }
+.check-result-close { width: 24px; min-width: 24px; height: 24px; min-height: 24px; padding: 0; border: 0; background: transparent; color: inherit; font-size: 16px; line-height: 1; opacity: .75; }
+.check-result-close:hover { opacity: 1; background: rgba(255,255,255,.08); }
+.check-result pre { margin: 6px 0 0; max-height: 160px; overflow: auto; white-space: pre-wrap; font: 12px/1.5 var(--mono); color: var(--text); }
+:root[data-theme="light"] .check-result pre { color: #1d2330; }
+.modal-footer .footer-left + .editor-history-btn { margin-right: auto; }
+.history-card { width: min(1200px, calc(100vw - 40px)); }
+.history-body { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 12px; height: min(560px, calc(100vh - 230px)); }
+.history-versions { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; padding-right: 2px; }
+.history-version { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; height: auto; min-height: 0; padding: 7px 10px; text-align: left; border-radius: 8px; }
+.history-version b { font: 600 12.5px var(--mono); }
+.history-version small { font-size: 11.5px; color: var(--text-3); font-weight: 500; }
+.history-version.active { background: var(--blue-bg); border-color: var(--blue-bd); color: var(--blue-tx); }
+.history-diff { height: 100%; }
+/* журнал запусков — крупнее */
+html body .run-report-card { width: min(1200px, calc(100vw - 40px)); }
+html body .run-report-list { max-height: calc(100vh - 220px); min-height: min(520px, calc(100vh - 220px)); }
+
+/* ###########################################################################
+   ШКАЛА РАЗМЕРОВ КНОПОК (0.0.49): три размера вместо десятка
+     стандартный — 34 px, шрифт 13/600: панели инструментов, окна, шапка, меню;
+     компактный  — 30 px, шрифт 13/600: кнопки в строках списков (действия плейбука, «Изменить», группы узла);
+     мелкий      — 28 px, шрифт 12/600: кнопки внутри карточек и списков в окнах.
+   Пункты выпадающих списков — 32 px, шрифт 13. Кнопка закрытия окна — квадрат 32×32.
+   ########################################################################### */
+html body .playbook-actions button, html body .playbook-actions button.autodeploy-run, html body .playbook-actions button.tags-btn {
+    height: 30px; min-height: 30px; font-size: 13px; font-weight: 600;
+}
+html body #add_node_modal .group-btn-create, html body #add_node_modal .group-btn-delete,
+:root[data-theme="light"] body #add_node_modal .group-btn-create, :root[data-theme="light"] body #add_node_modal .group-btn-delete { font-weight: 600; }
+html body .role-card-actions button, html body .role-add-file, html body .tags-menu-foot button, html body button.constant-list-add {
+    height: 28px; min-height: 28px; padding: 0 10px; font-size: 12px; font-weight: 600;
+}
+html body button.constant-list-remove { padding: 0; font-size: 16px; line-height: 1; }
+html body .system-status-item { font-size: 13px; }
+html body .settings-menu .settings-item { height: 34px; min-height: 34px; font-size: 13px; }
+html body .group-filter-item { min-height: 32px; height: 32px; }
+html body .modal-close { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; font-size: 22px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+/* шапка: «Прослушка», ISO и «Репозиторий» — тем же шрифтом, что остальные кнопки шапки */
+html body button.system-status-item.iso-toggle, html body button.system-status-item.nmap-open-btn, html body a.system-status-item.repo-btn { font-size: 13px; }
+/* настройки: «×» у элемента списка — той же высоты, что поле рядом */
+html body button.constant-list-remove { width: 36px; min-width: 36px; height: auto; min-height: 0; align-self: stretch; }
+/* пункты списка «Фильтр по группам» лежат внутри строки инструментов — правило для её кнопок (34 px) их не касается */
+html body .nodes-section-head .node-toolbar .group-filter-list button.group-filter-item:nth-child(n) { height: 32px; min-height: 32px; padding: 6px 10px; font-size: 13px; }
+/* история: кнопка версии — в две строки (время и размер), высота по содержимому */
+html body .history-versions button.history-version { height: auto; min-height: 46px; flex: 0 0 auto; justify-content: center; }

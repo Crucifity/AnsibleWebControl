@@ -22,7 +22,7 @@ function escapeHTML(value) {
 
 // строит разметку кастомного выпадающего списка выбора проекта
 function projectSelectorHTML(projects, selected) {
-    const currentLabel = selected || '-- выберите проект --';
+    const currentLabel = selected || 'не выбран';
     const options = projects.map((project) => `
         <button type="button" class="project-option${project === selected ? ' active' : ''}" data-project="${escapeHTML(project)}" onclick="selectProjectOption(this.dataset.project)">
             ${escapeHTML(project)}
@@ -40,7 +40,6 @@ function projectSelectorHTML(projects, selected) {
             <span class="project-select-arrow">▾</span>
         </button>
         <div class="project-select-list" id="project_select_list" role="listbox">
-            <button type="button" class="project-option${selected ? '' : ' active'}" data-project="" onclick="selectProjectOption(this.dataset.project)">-- выберите проект --</button>
             ${options}
         </div>
     </div>`;
@@ -473,12 +472,23 @@ function selectProjectOption(project) {
 document.addEventListener('click', (event) => {
     const projectWrap = document.getElementById('project_select_wrap');
     if (projectWrap && !projectWrap.contains(event.target)) closeProjectSelector();
+    // список объектов открыт признаком is-open у самого списка (раньше снимался с обёртки — и список не закрывался)
     const objectWrap = document.querySelector('.object-select-custom');
-    if (objectWrap && !objectWrap.contains(event.target)) {
-        objectWrap.classList.remove('is-open');
-        objectWrap.querySelector('.object-select-button')?.setAttribute('aria-expanded', 'false');
-    }
+    if (objectWrap && !objectWrap.contains(event.target)) closeObjectSelector();
 });
+// Esc закрывает открытый список проекта/объекта (на этапе перехвата — раньше обработчиков окон страницы)
+window.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !document.querySelector('.object-select-list.is-open, .project-select-list.is-open')) return;
+    event.stopImmediatePropagation();
+    closeObjectSelector();
+    closeProjectSelector();
+}, true);
+
+// закрывает список объектов
+function closeObjectSelector() {
+    document.querySelectorAll('.object-select-list.is-open').forEach((list) => list.classList.remove('is-open'));
+    document.querySelectorAll('.object-select-button[aria-expanded="true"]').forEach((button) => button.setAttribute('aria-expanded', 'false'));
+}
 
 // переходит на страницу выбранного проекта
 function changeProject() {
