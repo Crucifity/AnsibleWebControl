@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <!-- Выбранная тема (light/dark) хранится в браузере; применяем её до отрисовки, чтобы не было мигания. Ключ — THEME_STORAGE_KEY в constants.js -->
     <script>try { if (localStorage.getItem('awc-theme') === 'light') document.documentElement.dataset.theme = 'light'; } catch (error) {}</script>
+    <script>
+        // слишком старый браузер (нет ?. и ??) — интерфейс не запустится; вместо пустой страницы — пояснение
+        try { new Function('var a = {}; return a?.b ?? 1'); } catch (error) {
+            document.addEventListener('DOMContentLoaded', function () {
+                document.body.innerHTML = '<div style="max-width:560px;margin:80px auto;padding:24px;font:15px/1.5 sans-serif;border:1px solid #c33;border-radius:10px;background:#fff3f3;color:#222">'
+                    + '<b>Браузер устарел.</b><br>Ansible Web Control требует Firefox 74+ или Chromium 80+ (в Astra Linux 1.7 — установите обновления браузера).</div>';
+            });
+        }
+    </script>
     <title>Ansible Web Control</title>
     <link rel="icon" type="image/png" href="/logo_mark">
     <link rel="stylesheet" href="/style.css">
@@ -36,10 +45,6 @@
         .node-group-field select option { background: #202020; color: #fff; }
         .role-children { overflow: hidden; }
         .role-children.smooth-panel { transition: max-height 220ms ease, opacity 180ms ease; }
-        .nodes-section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; }
-        .nodes-section-head > h3 { flex: 0 0 auto; }
-        .nodes-section-head > #groups { flex: 1 1 180px; width: auto; min-width: 180px; overflow: visible; }
-        .nodes-section-head > .node-toolbar { flex: 0 1 auto; min-width: 0; flex-wrap: wrap; }
         .group-filter-control { display: flex; align-items: stretch; gap: 4px; min-width: 0; }
         .group-filter-btn { min-width: 0; }
         .group-filter-clear { min-width: 38px; padding-left: 10px; padding-right: 10px; }
@@ -83,6 +88,10 @@
                                 <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 11v5M9.5 13.5h5"/></svg>
                                 <span>Новый проект…</span>
                             </button>
+                            <button type="button" role="menuitem" class="settings-item" onclick="openRunReport()" title="Краткие итоги выполнения плейбуков: успешно или с ошибкой, по ролям и задачам">
+                                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/><path d="M8 13l2 2 4-4"/><path d="M8 18h8"/></svg>
+                                <span>Журнал запусков</span>
+                            </button>
                             <button type="button" role="menuitem" class="settings-item" onclick="toggleTheme()" title="Переключить светлую/тёмную тему (запоминается в браузере)">
                                 <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
                                 <span id="theme_toggle_label">Светлая тема</span>
@@ -104,18 +113,20 @@
                 <section class="block workspace-panel nodes-panel">
                     <div class="section-head nodes-section-head">
                         <h3>Узлы <span class="section-count" id="nodes_count"></span></h3>
-                        <div id="groups" class="group-strip"></div>
-                        <input id="nodes_search" class="list-search" type="search" placeholder="Поиск: имя, IP или шаблон" autocomplete="off" aria-label="Поиск узлов" title="Показывать только узлы, в имени, IP или шаблоне которых есть этот текст">
-                        <div class="node-toolbar">
+                        <div class="btn-row compact" id="node-selection-toolbar">
                             <button id="host_select_toggle" type="button" onclick="toggleHostSelection()" title="Отметить или снять все узлы в списке"><span class="selection-button-label">Выбрать все узлы</span></button>
-                            <button class="primary" onclick="openAddNodeModal()" title="Открыть окно добавления нового узла">Добавить узел</button>
-                            <button class="danger" id="delete_nodes_btn" onclick="deleteSelectedNodes()" disabled title="Удалить отмеченные узлы из hosts.yml (с подтверждением)">Удалить выбранные</button>
+                        </div>
+                        <div class="node-toolbar">
+                            <div id="groups" class="group-strip"></div>
+                            <button class="add-node-btn" onclick="openAddNodeModal()" title="Открыть окно добавления нового узла">Добавить узел</button>
+                            <button class="danger" id="delete_nodes_btn" onclick="deleteSelectedNodes()" disabled title="Удалить отмеченные узлы из hosts.yml (с подтверждением)">Удалить</button>
+                            <input id="nodes_search" class="list-search" type="search" placeholder="Поиск: имя, IP или шаблон" autocomplete="off" aria-label="Поиск узлов" title="Показывать только узлы, в имени, IP или шаблоне которых есть этот текст">
                         </div>
                     </div>
                     <div class="list-wrap">
                         <div class="list-columns nodes-columns" aria-hidden="true">
                             <span>Состояние</span><span></span><span></span>
-                            <span class="columns-main"><span>Узел</span><span>IP-адрес</span><span>Шаблон</span></span>
+                            <span class="columns-main"><span>Узел</span><span>IP-адрес</span><span>Шаблон</span><span>Группы</span></span>
                             <span></span>
                         </div>
                         <div id="nodes" class="hosts-list"></div>
@@ -128,7 +139,8 @@
                             <button id="playbook_select_toggle" type="button" onclick="togglePlaybookSelection()" title="Отметить или снять все плейбуки в списке"><span class="selection-button-label">Выбрать все плейбуки</span></button>
                         </div>
                         <div class="playbook-toolbar">
-                            <button type="button" class="primary" onclick="openCreatePlaybook()" title="Создать плейбук — без ролей или с ролями (существующими или новыми)">Новый плейбук</button>
+                            <button type="button" onclick="openCreatePlaybook()" title="Создать плейбук — без ролей или с ролями (существующими или новыми)">Новый плейбук</button>
+                            <button type="button" class="danger" id="delete_playbooks_btn" onclick="deleteSelectedPlaybooks()" disabled title="Удалить отмеченные плейбуки (в корзину backups/deleted, с подтверждением); роли не удаляются">Удалить</button>
                             <button type="button" class="object-file-btn" onclick="openObjectFile('defaults')" title="Значения по умолчанию (defaults.yml): открыть, а если файла нет — создать">defaults</button>
                             <button type="button" class="object-file-btn" onclick="openObjectFile('cfg')" title="Настройки Ansible (ansible.cfg): открыть, а если файла нет — создать">ansible.cfg</button>
                             <input id="playbooks_search" class="list-search" type="search" placeholder="Поиск плейбука" autocomplete="off" aria-label="Поиск плейбуков" title="Показывать только плейбуки, в имени которых есть этот текст">
@@ -183,14 +195,15 @@
                     <div id="new_node_fields" class="node-modal-fields"></div>
                 </div>
             </div>
-            <div class="modal-footer"><button class="modal-secondary" onclick="closeAddNodeModal()">Отмена</button><button class="primary" onclick="createNode()" title="Создать узел с введёнными параметрами и группами">Добавить узел</button></div>
+            <div class="modal-footer"><button type="button" class="footer-left" onclick="openHostsImport()" title="Скопировать узлы (с параметрами и группами) из другого проекта или объекта">Импорт из другого проекта…</button><button class="modal-secondary" onclick="closeAddNodeModal()">Отмена</button><button class="primary" onclick="createNode()" title="Создать узел с введёнными параметрами и группами">Добавить узел</button></div>
         </div>
     </div>
     <div id="playbook_modal" class="modal-backdrop" hidden>
         <div id="playbook_editor_card" class="modal-card playbook-editor-modal" role="dialog" aria-modal="true" aria-labelledby="playbook_modal_title">
             <div class="modal-head"><div><div class="modal-kicker">Редактор плейбука</div><h3 id="playbook_modal_title">Плейбук</h3></div><button class="modal-close" onclick="closePlaybookModal()" aria-label="Закрыть">×</button></div>
             <div class="modal-body playbook-editor-body"><textarea id="playbook_editor" class="playbook-editor" spellcheck="false" title="Текст плейбука (YAML)"></textarea></div>
-            <div class="modal-footer"><button class="modal-secondary" onclick="closePlaybookModal()">Отмена</button><button class="primary" onclick="savePlaybookFromModal()" title="Сохранить изменения плейбука на сервере (Ctrl+S); YAML проверяется перед сохранением">Сохранить</button></div>
+            <div class="check-result" id="playbook_check" hidden></div>
+            <div class="modal-footer"><button type="button" class="footer-left editor-check-btn" onclick="checkEditorSyntax('playbook')" title="Проверить синтаксис плейбука (ansible-playbook --syntax-check) — проверяется текст в редакторе, в том числе несохранённый">Синтаксис</button><button type="button" class="editor-history-btn" onclick="openFileHistory('playbook')" title="Прежние версии файла: сравнить с текущей и вернуть">История</button><button class="modal-secondary" onclick="closePlaybookModal()">Отмена</button><button class="primary" id="playbook_save_btn" disabled onclick="savePlaybookFromModal()" title="Сохранить изменения плейбука на сервере (Ctrl+S); YAML проверяется перед сохранением">Сохранить</button></div>
         </div>
     </div>
     <div id="nmap_modal" class="modal-backdrop" hidden>
@@ -344,6 +357,14 @@
                     <div class="modal-label wizard-gap">Роли</div>
                     <div id="wizard_roles" class="chips-input" data-placeholder="common, nginx — Enter или запятая"></div>
                     <div class="wizard-hint">Каждая роль — стандартный скелет: tasks, handlers, defaults, vars, meta, templates, files.</div>
+                    <div class="modal-label wizard-gap">Импорт из других проектов</div>
+                    <div id="wizard_imports" class="draft-roles"></div>
+                    <button type="button" class="draft-add-role" onclick="openWizardImport()" title="Скопировать плейбуки и роли из существующих проектов в новый">Импортировать…</button>
+                    <div class="modal-label wizard-gap">ansible.cfg</div>
+                    <div class="wizard-cfg-row">
+                        <div id="wizard_cfg_source" class="ui-select import-select"></div>
+                        <button type="button" id="wizard_cfg_compare_btn" onclick="openCfgCompare()" disabled title="Предпросмотр выбранного ansible.cfg и сравнение со стандартным">Сравнить</button>
+                    </div>
                     <div class="modal-label wizard-gap">Плейбуки</div>
                     <label class="wizard-check"><input type="checkbox" id="wizard_site" checked><span><b>site.yml</b> — общий плейбук со всеми ролями</span></label>
                     <label class="wizard-check"><input type="checkbox" id="wizard_role_playbooks"><span>Отдельный плейбук для каждой роли (01-роль.yml, 02-…)</span></label>
@@ -383,13 +404,23 @@
                 <div class="nmap-mode-select playbook-mode" role="radiogroup" aria-label="Состав плейбука">
                     <label class="nmap-mode-option" title="Плейбук с примером задачи — задачи пишутся прямо в нём"><input type="radio" name="playbook_mode" value="plain" checked><span>Без ролей</span></label>
                     <label class="nmap-mode-option" title="Плейбук подключает роли — существующие или новые"><input type="radio" name="playbook_mode" value="roles"><span>С ролями</span></label>
+                    <label class="nmap-mode-option" title="Скопировать готовый плейбук из другого проекта вместе с его ролями"><input type="radio" name="playbook_mode" value="import"><span>Из другого проекта</span></label>
                 </div>
-                <div id="create_playbook_roles_block" class="wizard-collapsible">
-                    <div class="modal-label wizard-gap">Существующие роли</div>
-                    <div id="create_playbook_roles" class="role-pick-list"></div>
-                    <div class="modal-label wizard-gap">Новые роли</div>
-                    <div id="create_playbook_new_roles" class="chips-input" data-placeholder="имя роли — Enter или запятая"></div>
-                    <div class="wizard-hint">Новая роль создаётся со стандартным скелетом: tasks, handlers, defaults, vars, meta, templates, files.</div>
+                <div class="add-role-panes playbook-mode-panes">
+                    <div id="create_playbook_plain_block" class="add-role-pane is-active">
+                        <div class="playbook-mode-note">Плейбук создаётся с примером задачи — задачи пишутся прямо в нём. Роли можно подключить и позже, в «Файлах плейбука».</div>
+                    </div>
+                    <div id="create_playbook_roles_block" class="add-role-pane">
+                        <div class="modal-label">Роли плейбука</div>
+                        <div id="create_playbook_draft" class="draft-roles"></div>
+                        <button type="button" class="draft-add-role" onclick="openAddRoleForDraft()" title="Выбрать существующие роли (с подролями или без), создать новую или взять из другого проекта — как в «Файлах плейбука»">Добавить роль</button>
+                    </div>
+                    <div id="create_playbook_import_block" class="add-role-pane">
+                        <div class="modal-label">Плейбуки из других проектов</div>
+                        <div id="create_playbook_import_choice" class="draft-roles"></div>
+                        <button type="button" class="draft-add-role" onclick="openPlaybookImport()" title="Выбрать плейбуки в другом проекте; можно повторить для других проектов">Выбрать плейбуки</button>
+                        <div class="wizard-hint">Плейбуки копируются как есть, их роли — в папку ролей проекта (с зависимостями), а используемые переменные общего defaults — в defaults этого объекта. Если имя уже занято, добавляется «-copy».</div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer"><span id="create_playbook_status" class="constants-status"></span><button class="modal-secondary" onclick="hideModalSmooth('create_playbook_modal')">Отмена</button><button class="primary" onclick="createPlaybook()">Создать и открыть</button></div>
@@ -400,10 +431,10 @@
         <div class="modal-card playbook-files-card" role="dialog" aria-modal="true" aria-labelledby="playbook_files_title">
             <div class="modal-head"><div><div class="modal-kicker" id="playbook_files_context">Файлы плейбука</div><h3 id="playbook_files_title">—</h3></div><button class="modal-close" onclick="hideModalSmooth('playbook_files_modal')" aria-label="Закрыть">×</button></div>
             <div class="playbook-files-toolbar">
-                <button type="button" class="primary" onclick="openAddRole()" title="Подключить существующие роли (с подролями или без) или создать новую">＋ Добавить роль</button>
+                <button type="button" onclick="openAddRole()" title="Подключить существующие роли (с подролями или без) или создать новую">Добавить роль</button>
             </div>
             <div class="modal-body playbook-files-body" id="playbook_files_body"><div class="muted">Загрузка…</div></div>
-            <div class="modal-footer"><button type="button" class="danger playbook-delete-btn" onclick="deletePlaybookFromFiles()" title="Удалить файл плейбука (в корзину backups/deleted); роли не удаляются">Удалить плейбук</button><button class="modal-secondary" onclick="hideModalSmooth('playbook_files_modal')">Закрыть</button></div>
+            <div class="modal-footer"><button class="modal-secondary" onclick="hideModalSmooth('playbook_files_modal')">Закрыть</button></div>
         </div>
     </div>
     <!-- Добавить роль в плейбук: существующие (деревом, с подролями или без) или новая -->
@@ -414,11 +445,20 @@
                 <div class="nmap-mode-select add-role-mode" role="radiogroup" aria-label="Какую роль добавить">
                     <label class="nmap-mode-option"><input type="radio" name="add_role_mode" value="existing" checked><span>Существующие</span></label>
                     <label class="nmap-mode-option"><input type="radio" name="add_role_mode" value="new"><span>Новая роль</span></label>
+                    <label class="nmap-mode-option" title="Скопировать роли из другого проекта (вместе с их зависимостями) и подключить"><input type="radio" name="add_role_mode" value="import"><span>Из других проектов</span></label>
                 </div>
                 <div class="add-role-panes">
                     <div id="add_role_existing" class="add-role-pane is-active">
                         <label class="wizard-check add-role-sub-toggle"><input type="checkbox" id="add_role_with_sub" checked><span>С подролями — вместе с ролью или группой отмечаются все её подроли</span></label>
-                        <div id="add_role_tree" class="role-pick-list role-pick-tree"></div>
+                        <div id="add_role_tree" class="role-pick-list role-pick-tree" data-sub-toggle="add_role_with_sub"></div>
+                    </div>
+                    <div id="add_role_import" class="add-role-pane">
+                        <div class="import-source-row">
+                            <div><label class="modal-label">Проект</label><div id="add_role_src_project" class="ui-select import-select"></div></div>
+                            <div class="import-object-wrap"><label class="modal-label">Объект</label><div id="add_role_src_object" class="ui-select import-select"></div></div>
+                        </div>
+                        <label class="wizard-check add-role-sub-toggle"><input type="checkbox" id="add_role_import_sub" checked><span>С подролями</span></label>
+                        <div id="add_role_import_tree" class="role-pick-list role-pick-tree" data-sub-toggle="add_role_import_sub"></div>
                     </div>
                     <div id="add_role_new" class="add-role-pane">
                         <label class="modal-label" for="add_role_name">Имя роли</label>
@@ -445,6 +485,75 @@
             <div class="modal-footer"><span id="add_role_status" class="constants-status"></span><button class="modal-secondary" onclick="hideModalSmooth('add_role_modal')">Отмена</button><button class="primary" onclick="submitAddRole()">Добавить</button></div>
         </div>
     </div>
+    <!-- Импорт из другого проекта: плейбуки и/или роли (мастер нового проекта, «Новый плейбук») -->
+    <div id="import_modal" class="modal-backdrop" hidden>
+        <div class="modal-card create-card add-role-card" role="dialog" aria-modal="true" aria-labelledby="import_title">
+            <div class="modal-head"><div><div class="modal-kicker" id="import_context"></div><h3 id="import_title">Импорт из другого проекта</h3></div><button class="modal-close" onclick="hideModalSmooth('import_modal')" aria-label="Закрыть">×</button></div>
+            <div class="modal-body">
+                <div class="import-source-row">
+                    <div><label class="modal-label">Проект</label><div id="import_project" class="ui-select import-select"></div></div>
+                    <div class="import-object-wrap"><label class="modal-label">Объект</label><div id="import_object" class="ui-select import-select"></div></div>
+                </div>
+                <div class="nmap-mode-select add-role-mode import-kind" role="radiogroup" aria-label="Что импортировать">
+                    <label class="nmap-mode-option" data-kind="playbooks"><input type="radio" name="import_kind" value="playbooks" checked><span>Плейбуки</span></label>
+                    <label class="nmap-mode-option" data-kind="roles"><input type="radio" name="import_kind" value="roles"><span>Роли</span></label>
+                    <label class="nmap-mode-option" data-kind="hosts"><input type="radio" name="import_kind" value="hosts"><span>Узлы</span></label>
+                </div>
+                <div class="add-role-panes import-panes">
+                    <div id="import_playbooks" class="add-role-pane is-active"><div id="import_playbooks_list" class="role-pick-list role-pick-tree"></div><div class="wizard-hint">Роли выбранных плейбуков копируются вместе с ними.</div></div>
+                    <div id="import_hosts" class="add-role-pane">
+                        <div id="import_hosts_tree" class="role-pick-list role-pick-tree"></div>
+                        <div class="wizard-hint">Узлы копируются с параметрами и группами; узел, чьё имя или адрес уже заняты, пропускается.</div>
+                    </div>
+                    <div id="import_roles" class="add-role-pane">
+                        <label class="wizard-check add-role-sub-toggle"><input type="checkbox" id="import_with_sub" checked><span>С подролями</span></label>
+                        <div id="import_roles_tree" class="role-pick-list role-pick-tree" data-sub-toggle="import_with_sub"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer"><span id="import_status" class="constants-status"></span><button class="modal-secondary" onclick="hideModalSmooth('import_modal')">Отмена</button><button class="primary" onclick="submitImportPicker()">Добавить</button></div>
+        </div>
+    </div>
+    <!-- ansible.cfg: стандартный ↔ из другого проекта (мастер нового проекта) -->
+    <div id="cfg_compare_modal" class="modal-backdrop" hidden>
+        <div class="modal-card cfg-compare-card" role="dialog" aria-modal="true" aria-labelledby="cfg_compare_title">
+            <div class="modal-head"><div><div class="modal-kicker" id="cfg_compare_context">ansible.cfg</div><h3 id="cfg_compare_title">Сравнение ansible.cfg</h3></div><button class="modal-close" onclick="hideModalSmooth('cfg_compare_modal')" aria-label="Закрыть">×</button></div>
+            <div class="modal-body">
+                <div class="nmap-mode-select add-role-mode" role="radiogroup" aria-label="Вид">
+                    <label class="nmap-mode-option"><input type="radio" name="cfg_view" value="diff" checked><span>Сравнение</span></label>
+                    <label class="nmap-mode-option"><input type="radio" name="cfg_view" value="file"><span>Файл проекта</span></label>
+                </div>
+                <div id="cfg_compare_problem" class="cfg-problem" hidden></div>
+                <div class="add-role-panes cfg-panes">
+                    <div id="cfg_view_diff" class="add-role-pane is-active"><div class="cfg-diff" id="cfg_diff"></div></div>
+                    <div id="cfg_view_file" class="add-role-pane"><pre class="cfg-file code-highlight" id="cfg_file"></pre></div>
+                </div>
+            </div>
+            <div class="modal-footer"><span class="cfg-legend"><i class="is-del"></i>только в стандартном <i class="is-add"></i>только в выбранном <i class="is-change"></i>отличается</span><button type="button" class="modal-secondary" onclick="useStandardCfg()">Оставить стандартный</button><button type="button" class="primary" onclick="hideModalSmooth('cfg_compare_modal')">Использовать выбранный</button></div>
+        </div>
+    </div>
+
+    <!-- Журнал запусков: краткие итоги выполнения плейбуков по ролям и задачам -->
+    <div id="run_report_modal" class="modal-backdrop" hidden>
+        <div class="modal-card run-report-card" role="dialog" aria-modal="true" aria-labelledby="run_report_title">
+            <div class="modal-head"><div><div class="modal-kicker" id="run_report_path">Журнал</div><h3 id="run_report_title">Журнал запусков</h3></div><button class="modal-close" onclick="hideModalSmooth('run_report_modal')" aria-label="Закрыть">×</button></div>
+            <div class="modal-body"><div id="run_report_list" class="run-report-list"></div></div>
+            <div class="modal-footer"><button type="button" class="danger footer-left" onclick="clearRunReport()">Очистить</button><button type="button" onclick="loadRunReport()">Обновить</button><button type="button" class="modal-secondary" onclick="hideModalSmooth('run_report_modal')">Закрыть</button></div>
+        </div>
+    </div>
+
+    <!-- История изменений файла (из резервных копий backups/) -->
+    <div id="history_modal" class="modal-backdrop" hidden>
+        <div class="modal-card history-card" role="dialog" aria-modal="true" aria-labelledby="history_title">
+            <div class="modal-head"><div><div class="modal-kicker" id="history_context">Файл</div><h3 id="history_title">История изменений</h3></div><button class="modal-close" onclick="hideModalSmooth('history_modal')" aria-label="Закрыть">×</button></div>
+            <div class="modal-body history-body">
+                <div class="history-versions" id="history_versions"></div>
+                <div class="history-diff cfg-diff" id="history_diff"></div>
+            </div>
+            <div class="modal-footer"><span class="cfg-legend"><i class="is-del"></i>только в версии <i class="is-add"></i>только в текущем <i class="is-change"></i>отличается</span><button type="button" class="modal-secondary" onclick="hideModalSmooth('history_modal')">Закрыть</button><button type="button" class="primary" id="history_restore" disabled onclick="restoreHistoryVersion()" title="Загрузить эту версию в редактор — применится после «Сохранить»">Вернуть эту версию</button></div>
+        </div>
+    </div>
+
     <!-- Редактор файла роли -->
     <div id="file_editor_modal" class="modal-backdrop" hidden>
         <div class="modal-card file-editor-card" role="dialog" aria-modal="true" aria-labelledby="file_editor_title">
@@ -453,7 +562,8 @@
                 <div class="editor-error" id="file_editor_error" hidden></div>
                 <textarea id="file_editor" class="file-editor" spellcheck="false" autocomplete="off"></textarea>
             </div>
-            <div class="modal-footer"><span id="file_editor_status" class="constants-status"></span><button class="modal-secondary" onclick="closeFileEditor()">Закрыть</button><button class="primary" id="file_editor_save" onclick="saveFileEditor()" disabled title="Ctrl+S">Сохранить</button></div>
+            <div class="check-result" id="file_check" hidden></div>
+            <div class="modal-footer"><button type="button" class="footer-left editor-check-btn" id="file_check_btn" onclick="checkEditorSyntax('file')" title="Проверить синтаксис — проверяется текст в редакторе, в том числе несохранённый">Синтаксис</button><button type="button" class="editor-history-btn" onclick="openFileHistory('file')" title="Прежние версии файла: сравнить с текущей и вернуть">История</button><span id="file_editor_status" class="constants-status"></span><button class="modal-secondary" onclick="closeFileEditor()">Закрыть</button><button class="primary" id="file_editor_save" onclick="saveFileEditor()" disabled title="Ctrl+S">Сохранить</button></div>
         </div>
     </div>
     <script src="/constants.js"></script>

@@ -11,7 +11,6 @@ const API = {
     STATUS: '/status',
     SYSTEM_STATUS: '/system_status',
     LOG_NEW: '/log_new',
-    ROLES: '/roles',
     ROLE_FILE: '/role_file',
     PLAYBOOK: '/playbook',
     SAVE_PLAYBOOK: '/save_playbook',
@@ -36,7 +35,6 @@ const API = {
     PROJECT_CREATE: '/project_create',
     ROLE_CREATE: '/role_create',
     PLAYBOOK_CREATE: '/playbook_create',
-    ROLES_LIST: '/roles_list',
     ROLE_FILE_SAVE: '/role_file_save',
     ROLE_FILE_CREATE: '/role_file_create',
     ANSIBLE_CATALOG: '/ansible_catalog',
@@ -44,7 +42,6 @@ const API = {
     ANSIBLE_CONTEXT: '/ansible_context',
     PLAYBOOK_FILES: '/playbook_files',
     PLAYBOOK_DELETE: '/playbook_delete',
-    PLAYBOOK_ROLE_ADD: '/playbook_role_add',
     PLAYBOOK_ROLE_REMOVE: '/playbook_role_remove',
     ROLE_FILE_DELETE: '/role_file_delete',
     OBJECT_FILE_OPEN: '/object_file_open',
@@ -56,6 +53,17 @@ const API = {
     SUBNET_SCAN_START: '/subnet_scan_start',
     SUBNET_SCAN_RESET: '/subnet_scan_reset',
     ROLE_RENAME: '/role_rename',
+    IMPORT_SOURCES: '/import_sources',
+    IMPORT_CATALOG: '/import_catalog',
+    ROLES_IMPORT: '/roles_import',
+    PLAYBOOK_IMPORT: '/playbook_import',
+    HOSTS_IMPORT: '/hosts_import',
+    CFG_COMPARE: '/cfg_compare',
+    RUN_REPORT: '/run_report',
+    RUN_REPORT_CLEAR: '/run_report_clear',
+    SYNTAX_CHECK: '/syntax_check',
+    FILE_HISTORY: '/file_history',
+    FILE_HISTORY_VERSION: '/file_history_version',
     NMAP_SWITCH_HOSTKEY: '/nmap_switch_hostkey',
     NMAP_SWITCH_TRUST: '/nmap_switch_trust',
     NMAP_SWITCH_FORGET: '/nmap_switch_forget',
@@ -94,4 +102,4 @@ const THEME_STORAGE_KEY = 'awc-theme';
 
 // Версия интерфейса. Если сервер сообщает другую (поле version в /data) — значит, файлы обновили,
 // а web1x.py не перезапустили: интерфейс покажет предупреждение.
-const APP_VERSION = '0.0.33';
+const APP_VERSION = '0.0.49';

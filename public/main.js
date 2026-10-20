@@ -72,12 +72,19 @@ function playbookRoleBoxes(name) { return [...document.querySelectorAll('#playbo
 function setPlaybookChecked(box, value) {
     box.checked = value;
     box.indeterminate = false;
-    playbookRoleBoxes(box.value).forEach((role) => { role.checked = value; });
+    playbookRoleBoxes(box.value).forEach((role) => { role.checked = value; role.closest('.pb-role-row')?.classList.toggle('is-checked', value); });
     box.closest('.playbook-card')?.classList.remove('is-partial');
 }
 window.setPlaybookChecked = setPlaybookChecked;
 // отмечены все роли — плейбук целиком; часть — частично (будут выполнены только они); ни одной — не выбран
 function syncPlaybookFromRoles(name) {
+    if (name === '@autodeploy') {
+        const roles = playbookRoleBoxes(name), checked = roles.filter((role) => role.checked).length;
+        roles.forEach((role) => role.closest('.pb-role-row')?.classList.toggle('is-checked', role.checked));
+        document.querySelector('#playbooks .autodeploy-card')?.classList.toggle('is-partial', checked > 0 && checked < roles.length);
+        return;
+    }
+    playbookRoleBoxes(name).forEach((role) => role.closest('.pb-role-row')?.classList.toggle('is-checked', role.checked));
     const box = [...document.querySelectorAll('#playbooks .pb')].find((item) => item.value === name);
     if (!box) return;
     const roles = playbookRoleBoxes(name), checked = roles.filter((role) => role.checked).length;
@@ -209,9 +216,10 @@ function renderNode(node) {
     else if (available) { state = '<span class="node-status available"><span class="status-dot status-up"></span>доступен</span>'; statusClass = 'node-available'; }
     else { state = '<span class="node-status unavailable"><span class="status-dot status-down"></span>недоступен</span>'; statusClass = 'node-unavailable'; }
 
-    const nameField = `<div class="param-name" title="Имя узла">Имя узла</div><input class="param-value" data-key="hostname" value="${esc(node.hostname)}" readonly>`;
+    const nameField = `<div class="param-name" title="Имя узла">Имя узла</div><input class="param-value" data-key="hostname" value="${esc(node.hostname)}" readonly>`
+        + `<div class="param-name node-template-name" title="Шаблон — набор параметров узла">Шаблон</div><div class="node-template-cell"><div class="ui-select node-template-pick"></div><div class="node-template-note"></div></div>`;
     const fields = params.length
-        ? nameField + params.map(([key, value]) => `<div class="param-name" title="${esc(key)}">${esc(key)}</div>${key === HWTYPE_PARAM_NAME ? renderHwtypeField(value) : `<input class="param-value" data-key="${esc(key)}" value="${esc(value)}" readonly>`}`).join('')
+        ? nameField + params.map(([key, value]) => paramFieldHTML(key, value)).join('')
         : nameField + '<div class="empty" style="grid-column: 1 / -1;">Дополнительных параметров нет</div>';
 
     const memberOf = new Set(nodeGroupNames(node.hostname));
@@ -233,6 +241,7 @@ function renderNode(node) {
                     <span class="node-name" title="${esc(node.hostname)}">${esc(node.hostname)}</span>
                     <span class="node-ip" title="${esc(node.ip || '—')}">${esc(node.ip || '—')}</span>
                     <span class="node-template" title="${esc(templateLabel(node))}">${esc(templateLabel(node))}</span>
+                    <span class="node-groups" title="${esc(nodeGroupNames(node.hostname).join(', ') || 'не входит ни в одну группу')}">${esc(nodeGroupNames(node.hostname).join(', ') || '—')}</span>
                 </div>
                 <button class="node-edit" title="Раскрыть параметры узла для правки; в режиме правки работает как «Отмена»" onclick="toggleNodeEdit(event, '${esc(node.hostname)}')">Изменить</button>
             </div>
@@ -249,17 +258,35 @@ function renderNode(node) {
 }
 
 // плавно разворачивает/сворачивает блок через max-height и opacity
+// плавно раскрывает/сворачивает панель параметров узла — через Web Animations API (element.animate):
+// начальные и конечные значения задаются явно, поэтому анимация не зависит от того, когда браузер
+// пересчитает стили (на CSS-переходах в Firefox при раскрытии бывала «ступенька»). Вместе с высотой
+// меняются вертикальные отступы и рамка панели. Если за время раскрытия высота содержимого изменилась
+// (например, появилась полоса прокрутки), панель плавно добирает разницу, а не прыгает в конце.
+const NODE_PANEL_PROPS = ['paddingTop', 'paddingBottom', 'marginTop', 'marginBottom', 'borderTopWidth', 'borderBottomWidth'];
 function animatePanel(body, open) {
+    const ms = ANIM.BODY_COLLAPSE_MS || 220;
+    if (body._anim) { body._anim.onfinish = null; body._anim.cancel(); body._anim = null; }
+    if (open) body.hidden = false;
+    const style = getComputedStyle(body);
+    const full = { height: `${body.offsetHeight}px`, opacity: 1 };
+    const zero = { height: '0px', opacity: 0 };
+    NODE_PANEL_PROPS.forEach((prop) => { full[prop] = style[prop]; zero[prop] = '0px'; });
     body.style.overflow = 'hidden';
-    body.style.transition = 'max-height 220ms ease, opacity 180ms ease';
-    if (open) {
-        body.hidden = false; body.style.opacity = '0'; body.style.maxHeight = '0px';
-        requestAnimationFrame(() => { body.style.maxHeight = `${body.scrollHeight}px`; body.style.opacity = '1'; });
-    } else {
-        body.style.maxHeight = `${body.scrollHeight}px`; body.style.opacity = '1';
-        requestAnimationFrame(() => { body.style.maxHeight = '0px'; body.style.opacity = '0'; });
-        setTimeout(() => { body.hidden = true; body.style.maxHeight = ''; body.style.opacity = ''; body.style.overflow = ''; }, ANIM.BODY_COLLAPSE_MS);
-    }
+    body.style.boxSizing = 'border-box';                     // высота — вместе с отступами (как и измеренная)
+    const finish = () => { body._anim = null; body.style.overflow = ''; body.style.boxSizing = ''; };
+    const anim = body.animate(open ? [zero, full] : [full, zero], { duration: ms, easing: 'ease', fill: open ? 'none' : 'forwards' });
+    body._anim = anim;
+    anim.onfinish = () => {
+        if (!open) { body.hidden = true; anim.cancel(); return finish(); }
+        // высота содержимого изменилась за время раскрытия — плавно добрать разницу
+        const natural = body.offsetHeight, target = parseFloat(full.height);
+        if (Math.abs(natural - target) > 2) {
+            const tail = body.animate([{ height: full.height }, { height: `${natural}px` }], { duration: 120, easing: 'ease-out' });
+            body._anim = tail;
+            tail.onfinish = finish;
+        } else finish();
+    };
 }
 
 // клик по строке узла отмечает его чекбокс (не раскрывает карточку)
@@ -292,6 +319,7 @@ function openNodeEdit(card) {
     }
     card.querySelectorAll('.param-value').forEach((el) => { el.readOnly = false; el.disabled = false; });
     card.querySelectorAll('.node-group-check').forEach((el) => el.disabled = false);
+    mountNodeTemplatePick(card);
     card.querySelectorAll('[data-key]').forEach((el) => { el.dataset.original = el.value; });
     card.querySelectorAll('.node-group-check').forEach((el) => { el.dataset.originalChecked = el.checked ? '1' : '0'; });
     card.querySelector('.param-value')?.focus();
@@ -312,6 +340,10 @@ function openNodeEdit(card) {
 // сворачивает форму, откатывая несохранённые правки к исходным значениям
 function closeNodeEdit(card) {
     const body = card.querySelector('.host-body');
+    if (card.dataset.templateChanged === '1') {
+        card.dataset.templateChanged = '0';
+        setTimeout(loadMain, (ANIM.BODY_COLLAPSE_MS || 220) + 60);   // исходные поля шаблона — перерисовкой
+    }
 
     card.querySelectorAll('[data-key]').forEach((el) => { if (el.dataset.original !== undefined) el.value = el.dataset.original; });
     card.querySelectorAll('.node-group-check').forEach((el) => { el.checked = el.dataset.originalChecked === '1'; });
@@ -332,7 +364,10 @@ function closeNodeEdit(card) {
     card.querySelector('.node-expand').textContent = '▸';
     setTimeout(() => card.dataset.animating = '0', ANIM.PANEL_TOGGLE_MS);
 
-    card.classList.remove('editing');
+    // признак «правка» снимается после анимации: иначе кнопка «Сохранить» в подвале исчезает сразу
+    // и панель в первый же кадр уменьшается рывком
+    // (если за это время форму открыли снова — панель видима, и признак остаётся)
+    setTimeout(() => { if (body.hidden) card.classList.remove('editing'); }, (ANIM.BODY_COLLAPSE_MS || 220) + 40);
     card.querySelectorAll('.param-value').forEach((el) => { el.readOnly = true; el.disabled = true; });
     card.querySelectorAll('.node-group-check').forEach((el) => el.disabled = true);
 
@@ -373,7 +408,8 @@ function saveNode(event, hostname) {
         })
         .catch((error) => notify(error.message, 'error'));
     showChoice('Сохранить изменения узла?', `Узел <strong>${esc(newHostname)}</strong>${renamed ? ` (новое имя; было ${esc(hostname)})` : ''} — изменения будут записаны в hosts.yml.${renamed ? '<br><br>Имя изменено — после сохранения форма закроется.' : ''}`,
-        [{ label: 'Сохранить', action: () => save(false), hidden: renamed }, { label: 'Сохранить и закрыть', className: 'primary', action: () => save(true) }], 'Редактирование узла');
+        [{ label: 'Сохранить', className: 'primary', action: () => save(false), hidden: renamed }, { label: 'Сохранить и закрыть', className: 'save-close is-main', action: () => save(true) }],
+        'Редактирование узла', 'danger');
 }
 
 // запрашивает подтверждение и удаляет отмеченные узлы одним запросом
@@ -443,9 +479,14 @@ function createNode() {
     if (!keys.length) return notify('Выберите шаблон параметров.', 'warning');
     const values = {};
     document.querySelectorAll('[data-new-key]').forEach((input) => values[input.dataset.newKey] = input.value);
-    api(API.ADD_HOST, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname: name, values, groups: SELECTED_GROUPS })
+    const add = () => api(API.ADD_HOST, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hostname: name, values, groups: SELECTED_GROUPS })
         .then(() => { window.closeAddNodeModal(); notify(`Узел «${name}» добавлен`, 'success'); loadMain(); })
         .catch((error) => showErrorModal('Не удалось добавить узел', esc(error.message)));
+    // не все параметры заполнены — спросить: да / нет
+    const empty = Object.keys(values).filter((key) => !String(values[key] ?? '').trim());
+    if (!empty.length) return add();
+    showChoice('Не все параметры назначены', `У узла <strong>${esc(name)}</strong> не заполнены параметры: <strong>${empty.map(esc).join(', ')}</strong>.<br><br>Вы действительно хотите добавить узел?`,
+        [{ label: 'Да', className: 'primary is-main', action: add }], 'Добавление узла', 'danger', 'Нет');
 }
 
 // показывает одноразовое окно с текстом ошибки и кнопкой «Понятно»
@@ -641,17 +682,22 @@ function editPlaybook(name, scope = '') {
     modal.hidden = false;
     fetch(`${API.PLAYBOOK}?${contextQuery(`&name=${encodeURIComponent(name)}${scope ? `&scope=${scope}` : ''}`)}`)
         .then((response) => { if (!response.ok) throw Error('Не удалось открыть плейбук'); return response.json(); })
-        .then((data) => { editor.value = data.content || ''; editor.readOnly = false; playbookErrorBox().hidden = true; const code = enhanceCodeEditor(editor, { onSave: () => savePlaybookFromModal() }); code.ctx = { kind: 'playbook', path: name, scope }; prepareCompletion(code); code.refresh(); fitPlaybookEditor(); editor.focus(); editor.setSelectionRange(0, 0); editor.scrollTop = 0; code.refresh(); })
+        .then((data) => { editor.value = data.content || ''; editor.readOnly = false; playbookErrorBox().hidden = true; const code = enhanceCodeEditor(editor, { onSave: () => savePlaybookFromModal() }); code.ctx = { kind: 'playbook', path: name, scope }; prepareCompletion(code); code.refresh(); fitPlaybookEditor(); editor.focus(); editor.setSelectionRange(0, 0); editor.scrollTop = 0; code.refresh(); window.PLAYBOOK_ORIGINAL = editor.value; updatePlaybookSaveState(); })
         .catch((error) => { editor.value = ''; notify(error.message, 'error'); window.closePlaybookModal(); });
 }
 
-window.closePlaybookModal = function() { document.getElementById('playbook_modal').hidden = true; window.CURRENT_EDITING_PLAYBOOK = ''; };
+window.closePlaybookModal = function() { hideModalSmooth('playbook_modal'); window.CURRENT_EDITING_PLAYBOOK = ''; };   // плавно, как остальные окна
 
 // сохраняет отредактированный текст плейбука на сервере
 function savePlaybookFromModal(force = false) {
     const name = window.CURRENT_EDITING_PLAYBOOK;
     const editor = document.getElementById('playbook_editor');
     if (!name || !editor) return;
+    if (!force) {
+        if (editor.value === window.PLAYBOOK_ORIGINAL) return;   // изменений нет — сохранять нечего
+        return confirmAction('Сохранить изменения?', `Плейбук <strong>${esc(name)}</strong> будет перезаписан. Предыдущая версия сохранится в backups/.`, 'Сохранить', () => savePlaybookFromModal('confirmed'), 'primary', 'Редактор плейбука');
+    }
+    force = force === true;
     editor.disabled = true;
     const errorBox = playbookErrorBox();
     fetch(API.SAVE_PLAYBOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ project: CURRENT_PROJECT, object: CURRENT_OBJECT, name, content: editor.value, force, scope: window.CURRENT_EDITING_SCOPE || '' }) })
@@ -698,13 +744,14 @@ function renderAutodeploy(enabled) { HAS_AUTODEPLOY = Boolean(enabled); }
 function autodeployRowHTML() {
     return `<div class="playbook-card autodeploy-card" data-name="autodeploy.yml">
         <div class="playbook-row">
-            <span class="autodeploy-label" title="Autodeploy проекта"><span class="autodeploy-file">autodeploy.yml</span></span>
+            <span class="autodeploy-label" title="Autodeploy проекта"><span class="autodeploy-mark" aria-hidden="true"><svg viewBox="0 0 16 16" width="10" height="10"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg></span><span class="autodeploy-file">autodeploy.yml</span></span>
             <div class="playbook-actions">
-                <button type="button" class="autodeploy-run" onclick="runAutodeploy()" title="Запустить autodeploy.yml проекта на отмеченных узлах (с подтверждением)">▶ Запустить</button>
+                <button type="button" class="autodeploy-run" onclick="runAutodeploy()" title="Запустить autodeploy.yml проекта на отмеченных узлах (с подтверждением); отмечены роли — только они">▶ Запустить</button>
+                ${tagsButtonHTML('@autodeploy', DATA.autodeploy_tags || [])}
                 <button onclick="editPlaybook('autodeploy.yml', 'autodeploy')" title="Открыть autodeploy.yml в редакторе">Просмотр плейбука</button>
                 <button onclick="openPlaybookFiles('autodeploy.yml', 'autodeploy')" title="Роли и файлы Autodeploy">Файлы плейбука</button>
             </div>
-        </div>
+        </div>${roleStepsHTML('@autodeploy', DATA.autodeploy_roles || [], 'Выполнить только эту роль Autodeploy (можно отметить несколько; ничего не отмечено — все роли)')}
     </div>`;
 }
 
@@ -724,6 +771,12 @@ function roleTree(nodes) {
 // перерисовывает список плейбуков и чекбоксов выбора
 function renderPlaybooks(items) {
     const element = document.getElementById('playbooks');
+    // выбор переживает перерисовку списка (после добавления роли, импорта и т.п.): отмеченные плейбуки и роли
+    const keptPlaybooks = new Set([...element.querySelectorAll('.pb:checked')].map((box) => box.value));
+    const keptRoles = new Set([...element.querySelectorAll('.pb-role:checked')].map((box) => `${box.dataset.playbook}\n${box.value}`));
+    if (PLAYBOOK_RENDER_KEPT.project !== CURRENT_PROJECT || PLAYBOOK_RENDER_KEPT.object !== CURRENT_OBJECT) { keptPlaybooks.clear(); keptRoles.clear(); TAG_SELECTION.clear(); }
+    PLAYBOOK_RENDER_KEPT = { project: CURRENT_PROJECT, object: CURRENT_OBJECT };
+    requestAnimationFrame(() => restorePlaybookSelection(keptPlaybooks, keptRoles));
     const autodeployRow = HAS_AUTODEPLOY ? autodeployRowHTML() : '';
     if (!items?.length) return element.innerHTML = autodeployRow + `<div class="empty-state"><b>Плейбуков нет</b><span>Создайте плейбук кнопкой «Новый плейбук» или положите файлы *.yml в папку ${CURRENT_OBJECT ? 'объекта' : 'плейбуков проекта'}.</span></div>`;
     element.innerHTML = autodeployRow + items.map((playbook) => `
@@ -731,13 +784,11 @@ function renderPlaybooks(items) {
             <div class="playbook-row">
                 <label><input type="checkbox" class="pb" value="${esc(playbook.name)}"><span title="${esc(playbook.name)}">${esc(playbook.name)}</span></label>
                 <div class="playbook-actions">
+                    ${tagsButtonHTML(playbook.name, playbook.tags || [])}
                     <button onclick="editPlaybook('${esc(playbook.name)}')">Просмотр плейбука</button>
                     <button onclick="openPlaybookFiles('${esc(playbook.name)}')" title="Роли и файлы плейбука: открыть, добавить, удалить">Файлы плейбука</button>
                 </div>
-            </div>${(playbook.roles || []).length >= 2 ? `
-            <div class="playbook-role-steps" aria-label="Роли плейбука ${esc(playbook.name)}">${playbook.roles.map((role) => `
-                <label class="pb-role-row" title="Выполнить только эту роль плейбука (можно отметить несколько)"><input type="checkbox" class="pb-role" data-playbook="${esc(playbook.name)}" value="${esc(role)}"><span>${esc(role)}</span></label>`).join('')}
-            </div>` : ''}
+            </div>${roleStepsHTML(playbook.name, playbook.roles || [], 'Выполнить только эту роль плейбука (можно отметить несколько)')}
         </div>
     `).join('');
     applyListSearch('playbooks');
@@ -751,9 +802,14 @@ function shownPath(path) { return String(path || '').replace('|', '/'); }
 function openRoleFile(path) { openFileEditor(path, { scope: PLAYBOOK_FILES.scope }); }
 
 // запускает плейбук автодеплоя для текущего проекта
+// роли Autodeploy к запуску: отмечена часть — только они; ничего или все — весь autodeploy.yml
+function autodeployRoles() {
+    const roles = playbookRoleBoxes('@autodeploy'), checked = roles.filter((role) => role.checked).map((role) => role.value);
+    return checked.length && checked.length < roles.length ? checked : null;
+}
 function runAutodeploy() {
     const hosts = selectedHosts();
-    api(API.RUN_AUTODEPLOY, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hosts, verbosity: selectedVerbosity() })
+    api(API.RUN_AUTODEPLOY, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, hosts, verbosity: selectedVerbosity(), roles: autodeployRoles(), tags: [...(TAG_SELECTION.get('@autodeploy') || [])] })
         .then(() => { setRunState('Выполняется', 'running'); notify('Autodeploy запущен', 'info'); })
         .catch((error) => notify(error.message, 'error'));
 }
@@ -768,7 +824,7 @@ function runSelected() {
     const playbooks = selectedPlaybooks();
     const hosts = selectedHosts();
     if (!playbooks.length) return notify('Выберите хотя бы один плейбук', 'warning');
-    api(API.RUN, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, playbooks, hosts, verbosity: selectedVerbosity(), roles: selectedRoleMap() })
+    api(API.RUN, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, playbooks, hosts, verbosity: selectedVerbosity(), roles: selectedRoleMap(), tags: selectedTagMap(playbooks) })
         .then(() => setRunState('Выполняется', 'running'))
         .then(() => notify(`Запущено плейбуков: ${playbooks.length}${hosts.length ? ` на узлах: ${hosts.length}` : ' на всех узлах'}`, 'info'))
         .catch((error) => notify(error.message, 'error'));
@@ -779,13 +835,16 @@ function runCheck() {
     const playbooks = selectedPlaybooks();
     const hosts = selectedHosts();
     if (!playbooks.length) return notify('Выберите хотя бы один плейбук', 'warning');
-    api(API.RUN, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, playbooks, hosts, verbosity: selectedVerbosity(), check: true, roles: selectedRoleMap() })
+    api(API.RUN, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, playbooks, hosts, verbosity: selectedVerbosity(), check: true, roles: selectedRoleMap(), tags: selectedTagMap(playbooks) })
         .then(() => { setRunState('Проверка (--check)', 'check'); notify('Проверка запущена: изменения на узлах не вносятся', 'info'); })
         .catch((error) => notify(error.message, 'error'));
 }
 
 // останавливает текущий запущенный процесс ansible-playbook
-function stopExecution() { api(API.STOP, {}).then(() => notify('Выполнение остановлено', 'info')).finally(() => setRunState('Остановлено', 'stopped')); }
+function stopExecution() {
+    confirmAction('Завершить выполнение?', 'Запущенный ansible-playbook будет остановлен — задачи, которые выполнялись в этот момент, могут остаться незавершёнными на узлах.', 'Завершить', doStopExecution, 'danger', 'Выполнение');
+}
+function doStopExecution() { api(API.STOP, {}).then(() => notify('Выполнение остановлено', 'info')).finally(() => setRunState('Остановлено', 'stopped')); }
 
 // показывает общее модальное окно подтверждения действия
 function showConfirmation(title, text, action, actionLabel = 'Запустить', actionClass = 'primary', kicker = 'Подтверждение запуска') {
@@ -807,6 +866,8 @@ function showConfirmation(title, text, action, actionLabel = 'Запустить
     modal.querySelector('#run_confirm_kicker').textContent = kicker;
     modal.querySelector('#run_confirm_title').textContent = title;
     modal.querySelector('#run_confirm_text').innerHTML = text;
+    // действие красное (удалить, убрать…) — «Отмена» серая, чтобы рядом не стояли две красные кнопки
+    modal.querySelector('#run_confirm_cancel').classList.toggle('is-neutral', actionClass === 'danger');
     const ok = modal.querySelector('#run_confirm_ok');
     ok.textContent = actionLabel;
     ok.className = actionClass;
@@ -829,9 +890,11 @@ function interceptRunButtons() {
             const playbooks = selectedPlaybooks();
             if (!playbooks.length) return notify('Выберите хотя бы один плейбук', 'warning');
             const partial = selectedRoleMap();
-            showConfirmation('Запустить выбранные плейбуки?', `<strong>Плейбуки:</strong><br>${playbooks.map((name) => partial[name] ? `${esc(name)} — <span class="confirm-roles">только роли: ${partial[name].map(esc).join(', ')}</span>` : esc(name)).join('<br>')}<br><br><strong>Узлы:</strong> ${hosts.length ? `${hosts.length} ${hosts.length === 1 ? 'узел' : 'узлов'}` : 'все узлы'}`, runSelected);
+            const tagMap = selectedTagMap(playbooks);
+            showConfirmation('Запустить выбранные плейбуки?', `<strong>Плейбуки:</strong><br>${playbooks.map((name) => `${esc(name)}${partial[name] ? ` — <span class="confirm-roles">только роли: ${partial[name].map(esc).join(', ')}</span>` : ''}${tagMap[name] ? ` — <span class="confirm-tags">теги: ${tagMap[name].map(esc).join(', ')}</span>` : ''}`).join('<br>')}<br><br><strong>Узлы:</strong> ${hosts.length ? `${hosts.length} ${hosts.length === 1 ? 'узел' : 'узлов'}` : 'все узлы'}`, runSelected);
         } else {
-            showConfirmation('Запустить Autodeploy?', `<strong>Плейбук:</strong> autodeploy.yml<br><br><strong>Узлы:</strong> ${hosts.length ? `${hosts.length} ${hosts.length === 1 ? 'выбранный узел' : 'выбранных узлов'}` : 'все узлы'}`, runAutodeploy);
+            const adRoles = autodeployRoles(), adTags = [...(TAG_SELECTION.get('@autodeploy') || [])];
+            showConfirmation('Запустить Autodeploy?', `<strong>Плейбук:</strong> autodeploy.yml${adRoles ? ` — <span class="confirm-roles">только роли: ${adRoles.map(esc).join(', ')}</span>` : ''}${adTags.length ? ` — <span class="confirm-tags">теги: ${adTags.map(esc).join(', ')}</span>` : ''}<br><br><strong>Узлы:</strong> ${hosts.length ? `${hosts.length} ${hosts.length === 1 ? 'выбранный узел' : 'выбранных узлов'}` : 'все узлы'}`, runAutodeploy);
         }
     }, true);
 }
@@ -996,7 +1059,14 @@ function setUiSelectDisabled(container, disabled) {
 document.addEventListener('pointerdown', (event) => { if (UI_SELECT && !event.target.closest('.ui-select')) closeUiSelectList(); });
 window.addEventListener('resize', closeUiSelectList);
 document.addEventListener('scroll', closeUiSelectList, true);
-window.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeUiSelectList(); }, true);
+// Esc при раскрытом общем списке закрывает только список — событие дальше не идёт, окно остаётся открытым
+// (раньше список закрывался, но событие доходило и до обработчика окон — закрывалось и окно)
+window.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !document.getElementById('ui_select_list')?.classList.contains('is-open')) return;
+    event.stopImmediatePropagation();
+    event.preventDefault();
+    closeUiSelectList();
+}, true);
 
 // === Режим прослушки: обнаружение MAC-адресов в сети ===
 // Два независимых варианта — переключаются радиокнопками в самой модалке:
@@ -1285,6 +1355,7 @@ function plural(count, one, few, many) {
 
 // счётчики в заголовках, доступность «Удалить выбранные» и строка «что будет запущено»
 function updateSelectionSummary() {
+    updatePlaybookDeleteButton();
     const nodes = document.querySelectorAll('#nodes .node-check').length, nodesChecked = selectedHosts().length;
     const books = document.querySelectorAll('#playbooks .pb').length, booksChecked = selectedPlaybooks().length;
     const count = (id, total, checked) => {
@@ -1666,6 +1737,12 @@ function cancelConstants() {
 
 // «Применить»: отправляет изменённые значения; при ошибках подсвечивает поля, правки не теряются
 function applyConstants() {
+    const changed = [...document.querySelectorAll('#constants_list .constant-row.is-changed')];
+    if (!changed.length) return;
+    const names = changed.map((row) => constantItem(row.dataset.name)?.label || row.dataset.name);
+    confirmAction('Применить изменения настроек?', `Будет изменено в constants.py: <strong>${names.map(esc).join(', ')}</strong>.<br><br>Предыдущая версия сохранится в constants.py.bak.`, 'Применить', doApplyConstants, 'primary', 'Настройки');
+}
+function doApplyConstants() {
     const changes = {};
     document.querySelectorAll('#constants_list .constant-row.is-changed').forEach((row) => { changes[row.dataset.name] = constantRowValue(row); });
     if (!Object.keys(changes).length) return;
@@ -2036,9 +2113,9 @@ function autobuildNetmap() {
             const source = found.total ? 'discovered' : 'hosts';
             showConfirmation('Автопостроение сети', `
                 <div class="autobuild-sources" role="radiogroup">
-                    <label class="autobuild-source"><input type="radio" name="autobuild_source" value="discovered" ${source === 'discovered' ? 'checked' : ''} ${found.total ? '' : 'disabled'}>
+                    <label class="autobuild-source${source === 'discovered' ? ' is-checked' : ''}${found.total ? '' : ' is-disabled'}"><input type="radio" name="autobuild_source" value="discovered" ${source === 'discovered' ? 'checked' : ''} ${found.total ? '' : 'disabled'}>
                         <span><b>Устройства, найденные прослушкой</b><small>${foundText}</small></span></label>
-                    <label class="autobuild-source"><input type="radio" name="autobuild_source" value="hosts" ${source === 'hosts' ? 'checked' : ''} ${onMap ? '' : 'disabled'}>
+                    <label class="autobuild-source${source === 'hosts' ? ' is-checked' : ''}${onMap ? '' : ' is-disabled'}"><input type="radio" name="autobuild_source" value="hosts" ${source === 'hosts' ? 'checked' : ''} ${onMap ? '' : 'disabled'}>
                         <span><b>Устройства на карте (из hosts.yml и добавленные)</b><small>${onMap ? `с IP: ${onMap}` : 'на карте нет устройств с IP'}</small></span></label>
                 </div>
                 Сервер проследит маршрут до каждого устройства (traceroute) и построит схему по числу хопов: Autodeploy слева, дальше — по удалённости. Найденные прослушкой устройства, которых нет на карте, будут добавлены; устройства из таблицы коммутатора подключаются к коммутатору с подписью порта и VLAN.<br><br>
@@ -2054,6 +2131,10 @@ function autobuildNetmap() {
 
 // забывает найденное прослушкой (например, после переезда оборудования) — прямо из окна автопостроения
 function clearDiscoveredDevices(button) {
+    confirmAction('Очистить список найденных устройств?', 'Все устройства, найденные прослушкой и в таблице коммутатора, будут забыты. Чтобы построить карту по ним снова, прослушку придётся запустить заново.',
+        'Очистить', () => doClearDiscoveredDevices(button));
+}
+function doClearDiscoveredDevices(button) {
     button.disabled = true;
     api(API.DISCOVERED_CLEAR, {})
         .then(() => {
@@ -2425,17 +2506,22 @@ function onNetmapPopoverAction(event, node) {
     if (action === 'menu' || action === 'info' || action === 'edit') return renderNetmapPopover(node, action);
     if (action === 'link') return startNetmapLink(node);
     if (action === 'unlink') {
-        NETMAP.links = NETMAP.links.filter((link) => !((link.a === node.id && link.b === target.dataset.peer) || (link.b === node.id && link.a === target.dataset.peer)));
-        renderNetmapLinks();
-        renderNetmapPopover(node, 'edit');
-        return scheduleNetmapSave();
+        const peer = NETMAP.nodes.find((item) => item.id === target.dataset.peer);
+        return confirmAction('Удалить соединение?', `Соединение <strong>${esc(node.name)}</strong> — <strong>${esc(peer?.name || target.dataset.peer)}</strong> будет удалено с карты.`, 'Удалить', () => {
+            NETMAP.links = NETMAP.links.filter((link) => !((link.a === node.id && link.b === target.dataset.peer) || (link.b === node.id && link.a === target.dataset.peer)));
+            renderNetmapLinks();
+            renderNetmapPopover(node, 'edit');
+            scheduleNetmapSave();
+        }, 'danger', 'Карта сети');
     }
     if (action === 'delete') {
-        NETMAP.nodes = NETMAP.nodes.filter((item) => item !== node);
-        NETMAP.links = NETMAP.links.filter((link) => link.a !== node.id && link.b !== node.id);
-        closeNetmapPopover();
-        renderNetmap();
-        scheduleNetmapSave();
+        confirmAction('Удалить устройство с карты?', `Устройство <strong>${esc(node.name)}</strong> и все его соединения будут удалены с карты.`, 'Удалить', () => {
+            NETMAP.nodes = NETMAP.nodes.filter((item) => item !== node);
+            NETMAP.links = NETMAP.links.filter((link) => link.a !== node.id && link.b !== node.id);
+            closeNetmapPopover();
+            renderNetmap();
+            scheduleNetmapSave();
+        }, 'danger', 'Карта сети');
     }
 }
 
@@ -2544,10 +2630,12 @@ function openNetmapLinkPopover(index, clientX, clientY) {
         scheduleNetmapSave();
     });
     popover.querySelector('.netmap-delete-btn').addEventListener('click', () => {
-        NETMAP.links.splice(index, 1);
-        closeNetmapPopover();
-        renderNetmapLinks();
-        scheduleNetmapSave();
+        confirmAction('Удалить соединение?', 'Соединение будет удалено с карты.', 'Удалить', () => {
+            NETMAP.links.splice(index, 1);
+            closeNetmapPopover();
+            renderNetmapLinks();
+            scheduleNetmapSave();
+        }, 'danger', 'Карта сети');
     });
     positionNetmapPopover();
     requestAnimationFrame(() => popover.classList.add('is-open'));
@@ -2803,6 +2891,11 @@ function openFileEditor(path, options = {}) {
     code.ctx = kind === 'role' ? { kind: 'role', path, scope } : { kind: 'object', path };
     prepareCompletion(code);
     FILE_EDITOR = { path, kind, scope, original: '' };
+    // «Синтаксис» — только там, где есть что проверять: YAML, шаблоны .j2, ansible.cfg
+    const checkable = kind !== 'role' || /\.(ya?ml|j2)$/i.test(path);
+    const checkButton = document.getElementById('file_check_btn');
+    checkButton.disabled = !checkable;
+    checkButton.title = checkable ? 'Проверить синтаксис — проверяется текст в редакторе, в том числе несохранённый' : 'Для этого файла проверка синтаксиса не нужна';
     const where = `${CURRENT_OBJECT ? `${CURRENT_PROJECT} / ${CURRENT_OBJECT}` : CURRENT_PROJECT}${scope === 'autodeploy' ? ' · Autodeploy' : ''}`;
     const [roleRef, inside] = path.includes('|') ? path.split('|') : [path.split('/')[0], path.split('/').slice(1).join('/')];
     document.getElementById('file_editor_title').textContent = kind === 'role' ? (inside || path) : path;
@@ -2851,6 +2944,8 @@ function setStatusText(id, text, type = 'info') {
 function saveFileEditor(force = false) {
     const textarea = document.getElementById('file_editor');
     if (textarea.readOnly || (!force && textarea.value === FILE_EDITOR.original)) return;
+    if (!force) return confirmAction('Сохранить изменения?', `Файл <strong>${esc(shownPath(FILE_EDITOR.path))}</strong> будет перезаписан. Предыдущая версия сохранится в backups/.`, 'Сохранить', () => saveFileEditor('confirmed'), 'primary', 'Редактор');
+    force = force === true;
     const errorBox = document.getElementById('file_editor_error');
     const content = textarea.value;
     document.getElementById('file_editor_save').disabled = true;
@@ -2942,6 +3037,10 @@ let WIZARD = null;
 
 // открывает мастер нового проекта
 function openProjectWizard() {
+    WIZARD_IMPORTS = [];
+    WIZARD_CFG = null;
+    setTimeout(loadWizardCfgSources, 0);
+    setTimeout(renderWizardImports, 0);
     closeSettingsMenu();
     document.querySelectorAll('.project-select-list.is-open').forEach((list) => list.classList.remove('is-open'));
     const update = () => updateProjectWizard();
@@ -2989,14 +3088,22 @@ function updateProjectWizard() {
     // предпросмотр
     const lines = [`${name || 'имя-проекта'}/`];
     const folder = (prefix, last) => {
-        const items = ['hosts.yml', 'defaults.yml', 'ansible.cfg'];
+        const items = ['hosts.yml', 'defaults.yml', WIZARD_CFG ? `ansible.cfg  (из ${sourceLabel(WIZARD_CFG)})` : 'ansible.cfg'];
         if (site) items.push('site.yml');
         if (perRole) roles.forEach((role, index) => items.push(`${String(index + 1).padStart(2, '0')}-${role}.yml`));
+        WIZARD_IMPORTS.forEach((entry) => entry.playbooks.forEach((name) => { if (!items.includes(name)) items.push(`${name}  (импорт)`); }));
+        const hostCount = WIZARD_IMPORTS.reduce((sum, entry) => sum + (entry.hosts || []).length, 0);
+        if (hostCount) items[0] = `${items[0]}  (+${hostCount} ${plural(hostCount, 'узел', 'узла', 'узлов')} — импорт)`;
         items.forEach((item) => lines.push(`${prefix}├── ${item}`));
-        lines.push(`${prefix}└── roles/`);
-        roles.forEach((role, index) => lines.push(`${prefix}    ${index === roles.length - 1 ? '└' : '├'}── ${role}/  (скелет роли)`));
+        lines.push(`${prefix}└── roles → ${kind === 'simple' ? '../roles' : '../../roles'}  (ссылка на общую папку ролей)`);
     };
-    const top = [];
+    // общая папка ролей проекта — рядом с playbooks/ (или object/)
+    const top = [['roles/', (prefix) => {
+        const imported = [...new Set(WIZARD_IMPORTS.flatMap((entry) => entry.roles.concat(entry.playbookRoles || [])))].filter((ref) => !roles.includes(ref));
+        const all = roles.map((role) => `${role}/  (скелет роли)`).concat(imported.map((ref) => `${ref}/  (импорт)`));
+        if (!all.length) lines.push(`${prefix}└── (роли появятся здесь)`);
+        all.forEach((item, index) => lines.push(`${prefix}${index === all.length - 1 ? '└' : '├'}── ${item}`));
+    }]];
     if (kind === 'simple') top.push(['playbooks/', (prefix) => folder(prefix)]);
     else top.push(['object/', (prefix) => (objects.length ? objects : ['объект']).forEach((obj, index, list) => {
         const lastObject = index === list.length - 1;
@@ -3026,6 +3133,8 @@ function createProjectFromWizard() {
         name, kind, objects: kind === 'objects' ? WIZARD.objects() : [], roles: WIZARD.roles(),
         site_playbook: document.getElementById('wizard_site').checked, role_playbooks: document.getElementById('wizard_role_playbooks').checked,
         autodeploy: document.getElementById('wizard_autodeploy').checked, autodeploy_source: document.getElementById('wizard_autodeploy_source').value || null,
+        imports: WIZARD_IMPORTS,
+        cfg_source: WIZARD_CFG,
     }).then((data) => {
         setStatusText('wizard_status', `Создано файлов: ${data.files.length}`, 'success');
         notify(`Проект «${name}» создан — переходим в него`, 'success');
@@ -3042,48 +3151,76 @@ function nextPlaybookNumber() {
     return String((numbers.length ? Math.max(...numbers) : 0) + 1).padStart(2, '0');
 }
 
-// --- «Новый плейбук»: без ролей или с ролями (существующими и новыми) ---
-let NEW_PLAYBOOK_ROLES = () => [];
+// --- «Новый плейбук»: без ролей или с ролями. Роли выбираются в том же окне «Добавить роль»,
+// что и в «Файлах плейбука», и копятся в черновике — создаются вместе с плейбуком ---
+let DRAFT_ROLES = [];   // [{ ref, isNew, parts }]
 function openCreatePlaybook() {
     document.getElementById('create_playbook_context').textContent = contextLabel();
     document.getElementById('create_playbook_name').value = `${nextPlaybookNumber()}-`;
+    document.getElementById('create_playbook_name').dataset.auto = '0';
     document.getElementById('create_playbook_hosts').value = 'all';
     document.getElementById('create_playbook_become').checked = true;
     document.querySelector('input[name="playbook_mode"][value="plain"]').checked = true;
     document.getElementById('create_playbook_roles_block').classList.remove('is-open');
-    NEW_PLAYBOOK_ROLES = mountChips(document.getElementById('create_playbook_new_roles'), () => {});
+    DRAFT_ROLES = [];
+    renderDraftRoles();
+    IMPORT_PLAYBOOKS = [];
+    renderPlaybookImportChoice();
+    syncPlaybookMode();
     setStatusText('create_playbook_status', '');
-    const list = document.getElementById('create_playbook_roles');
-    list.innerHTML = '<div class="muted">Загрузка ролей…</div>';
     showModalSmooth('create_playbook_modal');
     setTimeout(() => { const input = document.getElementById('create_playbook_name'); input.focus(); input.setSelectionRange(input.value.length, input.value.length); }, 80);
-    fetch(`${API.ROLES_LIST}?${contextQuery()}`)
-        .then((response) => response.json())
-        .then((data) => {
-            list.innerHTML = (data.roles || []).map((role) => `<label class="wizard-check"><input type="checkbox" value="${esc(role)}"><span>${esc(role)}</span></label>`).join('')
-                || '<div class="muted">Ролей пока нет — добавьте новые в поле ниже.</div>';
-        })
-        .catch(() => { list.innerHTML = '<div class="muted">Не удалось загрузить роли</div>'; });
 }
 document.querySelectorAll('input[name="playbook_mode"]').forEach((input) => input.addEventListener('change', () => {
-    const block = document.getElementById('create_playbook_roles_block');
-    // высота раскрытого блока — по содержимому (раньше упиралась в 260px, и последние роли обрезались)
-    block.style.setProperty('--open-h', `${block.scrollHeight + 24}px`);
-    block.classList.toggle('is-open', input.value === 'roles' && input.checked);
+    if (input.checked) syncPlaybookMode();
 }));
+// варианты «Состава» сменяют друг друга в одной области — окно не меняет размер
+function syncPlaybookMode() {
+    const mode = document.querySelector('input[name="playbook_mode"]:checked').value;
+    [['create_playbook_plain_block', 'plain'], ['create_playbook_roles_block', 'roles'], ['create_playbook_import_block', 'import']].forEach(([id, value]) => {
+        const pane = document.getElementById(id);
+        pane.classList.toggle('is-active', mode === value);
+        pane.inert = mode !== value;
+    });
+    // из другого проекта: имя файла, hosts и become — из исходных плейбуков
+    document.querySelector('#create_playbook_modal .create-row').classList.toggle('is-disabled', mode === 'import');
+    document.getElementById('create_playbook_name').closest('.modal-body').classList.toggle('is-importing', mode === 'import');
+}
+
+// роли черновика: фишки с «×»; новые роли помечены
+function renderDraftRoles() {
+    const box = document.getElementById('create_playbook_draft');
+    box.innerHTML = DRAFT_ROLES.length
+        ? DRAFT_ROLES.map((item, index) => `<span class="chip${item.isNew ? ' is-new' : ''}${item.source ? ' is-import' : ''}" title="${item.isNew ? `новая роль — будет создана: ${esc((item.parts || []).join(', ') || 'все папки')}` : item.source ? `будет скопирована из ${esc(sourceLabel(item.source))}` : 'существующая роль'}">${esc(item.ref)}${item.isNew ? ' <small>новая</small>' : ''}${item.source ? ` <small>из ${esc(sourceLabel(item.source))}</small>` : ''}<button type="button" aria-label="Убрать ${esc(item.ref)}" onclick="removeDraftRole(${index})">×</button></span>`).join('')
+        : '<span class="muted">Роли не выбраны — нажмите «Добавить роль».</span>';
+}
+function removeDraftRole(index) { DRAFT_ROLES.splice(index, 1); renderDraftRoles(); }
+
+// окно «Добавить роль» для черновика нового плейбука
+function openAddRoleForDraft() {
+    openAddRole({ mode: 'draft', scope: '', context: `${document.getElementById('create_playbook_name').value.trim() || 'новый плейбук'}`, present: new Set(DRAFT_ROLES.map((item) => item.ref)) });
+}
 
 // создаёт плейбук (и новые роли) и сразу открывает его в редакторе
 function createPlaybook() {
     const name = document.getElementById('create_playbook_name').value.trim();
-    const withRoles = document.querySelector('input[name="playbook_mode"]:checked').value === 'roles';
-    const roles = withRoles ? [...document.querySelectorAll('#create_playbook_roles input:checked')].map((input) => input.value) : [];
-    const newRoles = withRoles ? NEW_PLAYBOOK_ROLES() : [];
-    if (newRoles.some((role) => !isItemName(role))) return setStatusText('create_playbook_status', 'Имя роли: латинские буквы, цифры, точка, дефис, подчёркивание', 'error');
-    if (withRoles && !roles.length && !newRoles.length) return setStatusText('create_playbook_status', 'Отметьте роли или добавьте новые', 'error');
-    api(API.PLAYBOOK_CREATE, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, name, roles, new_roles: newRoles, hosts: document.getElementById('create_playbook_hosts').value.trim() || 'all', become: document.getElementById('create_playbook_become').checked })
+    const playbookMode = document.querySelector('input[name="playbook_mode"]:checked').value;
+    if (playbookMode === 'import') return createImportedPlaybook();
+    const withRoles = playbookMode === 'roles';
+    const roles = withRoles ? DRAFT_ROLES.filter((item) => !item.isNew && !item.source).map((item) => item.ref) : [];
+    // роли из других проектов — по источникам: [{project, object, roles}]
+    const importRoles = [];
+    (withRoles ? DRAFT_ROLES.filter((item) => item.source) : []).forEach((item) => {
+        let group = importRoles.find((entry) => entry.project === item.source.project && entry.object === item.source.object);
+        if (!group) importRoles.push(group = { project: item.source.project, object: item.source.object, roles: [] });
+        group.roles.push(item.ref);
+    });
+    const newRoles = withRoles ? DRAFT_ROLES.filter((item) => item.isNew).map((item) => ({ name: item.ref, parts: item.parts })) : [];
+    if (withRoles && !roles.length && !newRoles.length && !importRoles.length) return setStatusText('create_playbook_status', 'Добавьте хотя бы одну роль', 'error');
+    api(API.PLAYBOOK_CREATE, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, name, roles, new_roles: newRoles, import_roles: importRoles, hosts: document.getElementById('create_playbook_hosts').value.trim() || 'all', become: document.getElementById('create_playbook_become').checked })
         .then((data) => {
             hideModalSmooth('create_playbook_modal');
-            notify(newRoles.length ? `Плейбук «${data.name}» и роли ${newRoles.join(', ')} созданы` : `Плейбук «${data.name}» создан`, 'success');
+            notify(newRoles.length ? `Плейбук «${data.name}» и роли ${newRoles.map((item) => item.name).join(', ')} созданы` : `Плейбук «${data.name}» создан`, 'success');
             loadMain();
             setTimeout(() => editPlaybook(data.name), 350);
         })
@@ -3108,7 +3245,6 @@ function openPlaybookFiles(name, scope = '') {
     PLAYBOOK_FILES = { name, scope, data: null };
     document.getElementById('playbook_files_title').textContent = name;
     document.getElementById('playbook_files_context').textContent = scope === 'autodeploy' ? `Autodeploy · ${CURRENT_PROJECT}` : `Файлы плейбука · ${contextLabel()}`;
-    document.querySelector('#playbook_files_modal .playbook-delete-btn').hidden = scope === 'autodeploy';
     document.getElementById('playbook_files_body').innerHTML = '<div class="muted">Загрузка…</div>';
     showModalSmooth('playbook_files_modal');
     refreshPlaybookFiles();
@@ -3137,13 +3273,13 @@ function renderPlaybookFiles() {
         const where = role.found && role.location && role.location !== 'roles' ? `<span class="role-card-where" title="Папка роли">${esc(role.location)}/</span>` : '';
         const body = role.found
             ? `<div class="role-card-tree">${roleTree(role.children)}<button type="button" class="role-add-file" onclick="promptRoleFile('${esc(role.name)}|')">＋ Новый файл в корне роли…</button></div>`
-            : `<div class="role-card-missing">${role.collection ? 'Роль из коллекции Ansible — её файлов нет в проекте.' : 'Папка роли не найдена ни в roles/, ни по roles_path из ansible.cfg.'}${role.collection ? '' : ` <button type="button" onclick="createMissingRole('${esc(role.name)}')">Создать роль</button>`}</div>`;
+            : `<div class="role-card-missing">${role.collection ? 'Роль из коллекции Ansible — её файлов нет в проекте.' : 'Папка роли не найдена ни в roles/, ни по roles_path из ansible.cfg.'}${role.collection ? '' : ` <button type="button" class="primary" onclick="createMissingRole('${esc(role.name)}')">Создать роль</button>`}</div>`;
         return `<section class="role-card${role.found ? '' : ' is-missing'}${role.dependency_of ? ' is-dependency' : ''}">
             <div class="role-card-head">
                 <span class="role-card-name">${esc(role.name)}</span>${where}${dependency}${usage}
                 <span class="role-card-actions">
-                    ${role.found ? `<button type="button" onclick="renameRole('${esc(role.name)}')" title="Переименовать роль — папку и ссылки во всех плейбуках">Переименовать</button>` : ''}
-                    ${role.dependency_of ? '' : `<button type="button" onclick="removeRoleFromPlaybook('${esc(role.name)}')" title="Убрать роль из этого плейбука (по желанию — удалить и её файлы)">Убрать из плейбука</button>`}
+                    ${role.found ? `<button type="button" class="edit-action" onclick="renameRole('${esc(role.name)}')" title="Переименовать роль — папку и ссылки во всех плейбуках">Переименовать</button>` : ''}
+                    ${role.dependency_of ? '' : `<button type="button" class="danger" onclick="removeRoleFromPlaybook('${esc(role.name)}')" title="Убрать роль из этого плейбука (по желанию — удалить и её файлы)">Убрать из плейбука</button>`}
                 </span>
             </div>
             ${body}
@@ -3154,8 +3290,15 @@ function renderPlaybookFiles() {
 // --- Окно «Добавить роль»: существующие роли деревом (с подролями или без) или новая роль ---
 let ADD_ROLE_SUBROLES = () => [];
 
-function openAddRole() {
-    document.getElementById('add_role_context').textContent = `${PLAYBOOK_FILES.name}${PLAYBOOK_FILES.scope === 'autodeploy' ? ' · Autodeploy' : ''}`;
+let ADD_ROLE_TARGET = { mode: 'playbook' };
+// target: { mode: 'draft', scope, context, present } — для «Нового плейбука»; без него — плейбук окна «Файлы плейбука»
+function openAddRole(target = null) {
+    ADD_ROLE_TARGET = target || { mode: 'playbook', scope: PLAYBOOK_FILES.scope, context: `${PLAYBOOK_FILES.name}${PLAYBOOK_FILES.scope === 'autodeploy' ? ' · Autodeploy' : ''}`,
+        present: new Set((PLAYBOOK_FILES.data?.roles || []).filter((role) => !role.dependency_of).map((role) => role.name)) };
+    document.getElementById('add_role_context').textContent = ADD_ROLE_TARGET.context;
+    document.getElementById('add_role_src_project').innerHTML = '';
+    document.getElementById('add_role_src_project').dataset.value = '';
+    document.getElementById('add_role_import_tree').innerHTML = '';
     document.querySelector('input[name="add_role_mode"][value="existing"]').checked = true;
     document.getElementById('add_role_with_sub').checked = true;
     document.getElementById('add_role_name').value = '';
@@ -3168,19 +3311,11 @@ function openAddRole() {
     const tree = document.getElementById('add_role_tree');
     tree.innerHTML = '<div class="muted">Загрузка ролей…</div>';
     showModalSmooth('add_role_modal');
-    const present = new Set((PLAYBOOK_FILES.data?.roles || []).filter((role) => !role.dependency_of).map((role) => role.name));
-    fetch(`${API.ROLES_TREE}?${contextQuery(`&scope=${PLAYBOOK_FILES.scope}`)}`)
+    const present = ADD_ROLE_TARGET.present;
+    fetch(`${API.ROLES_TREE}?${contextQuery(`&scope=${ADD_ROLE_TARGET.scope || ''}`)}`)
         .then((response) => response.json())
         .then((data) => {
-            const render = (items, depth) => items.map((item) => {
-                const inPlaybook = item.role && present.has(item.ref);
-                const label = item.ref.split('/').pop();
-                return `<label class="wizard-check role-pick-item${item.role ? '' : ' is-group'}" style="padding-left:${depth * 20}px" title="${esc(item.ref)}">
-                        <input type="checkbox" data-ref="${esc(item.ref)}" data-role="${item.role ? 1 : 0}" ${inPlaybook ? 'checked disabled' : ''}>
-                        <span>${esc(label)}${item.role ? '' : ' <small>— группа подролей</small>'}${inPlaybook ? ' <small>(уже в плейбуке)</small>' : ''}</span>
-                    </label>${render(item.children || [], depth + 1)}`;
-            }).join('');
-            tree.innerHTML = render(data.roles || [], 0) || '<div class="muted">Ролей пока нет — создайте новую на вкладке «Новая роль».</div>';
+            renderRolePickTree(tree, data.roles || [], present, ADD_ROLE_TARGET.mode === 'draft' ? 'уже выбрана' : 'уже в плейбуке', 'Ролей пока нет — создайте новую на вкладке «Новая роль».');
         })
         .catch(() => { tree.innerHTML = '<div class="muted">Не удалось загрузить роли</div>'; });
 }
@@ -3188,7 +3323,8 @@ function openAddRole() {
 // вкладки «Существующие» / «Новая роль»
 function syncAddRoleMode() {
     const mode = document.querySelector('input[name="add_role_mode"]:checked').value;
-    [['add_role_existing', 'existing'], ['add_role_new', 'new']].forEach(([id, value]) => {
+    if (mode === 'import' && !document.getElementById('add_role_src_project').dataset.value) loadAddRoleImportSources();
+    [['add_role_existing', 'existing'], ['add_role_new', 'new'], ['add_role_import', 'import']].forEach(([id, value]) => {
         const pane = document.getElementById(id);
         pane.classList.toggle('is-active', mode === value);
         pane.inert = mode !== value;   // скрытая панель не ловит фокус по Tab
@@ -3198,20 +3334,21 @@ function syncAddRoleMode() {
 document.querySelectorAll('input[name="add_role_mode"]').forEach((input) => input.addEventListener('change', syncAddRoleMode));
 document.getElementById('add_role_new_sub')?.addEventListener('change', (event) => document.getElementById('add_role_sub_block').classList.toggle('is-open', event.target.checked));
 
-// отметка роли или группы: с «С подролями» (а у группы — всегда) отмечаются и все её подроли
-document.getElementById('add_role_tree')?.addEventListener('change', (event) => {
-    const box = event.target.closest('input[data-ref]');
-    if (!box || (box.dataset.role === '1' && !document.getElementById('add_role_with_sub').checked)) return;
+// отметка роли или группы в любом дереве ролей: с «С подролями» (а у группы — всегда) отмечаются и все её подроли
+document.addEventListener('change', (event) => {
+    const box = event.target.closest?.('.role-pick-tree[data-sub-toggle] input[data-ref]');
+    if (!box) return;
+    const tree = box.closest('.role-pick-tree');
+    if (box.dataset.role === '1' && !document.getElementById(tree.dataset.subToggle)?.checked) return;
     const prefix = `${box.dataset.ref}/`;
-    document.querySelectorAll('#add_role_tree input[data-ref]').forEach((other) => {
-        if (other.dataset.ref.startsWith(prefix) && !other.disabled) other.checked = box.checked;
-    });
+    tree.querySelectorAll('input[data-ref]').forEach((other) => { if (other.dataset.ref.startsWith(prefix) && !other.disabled) other.checked = box.checked; });
 });
 
 // добавляет выбранные роли (или создаёт новую — с подролями или без)
 function submitAddRole() {
     const mode = document.querySelector('input[name="add_role_mode"]:checked').value;
     let roles = [];
+    if (mode === 'import') return submitRoleImport();
     if (mode === 'existing') {
         roles = [...document.querySelectorAll('#add_role_tree input[data-role="1"]:checked:not(:disabled)')].map((box) => box.dataset.ref);
         if (!roles.length) return setStatusText('add_role_status', 'Отметьте роли', 'error');
@@ -3225,6 +3362,13 @@ function submitAddRole() {
     }
     const parts = mode === 'new' ? [...document.querySelectorAll('#add_role_parts input:checked')].map((box) => box.value) : null;
     if (parts && !parts.length) return setStatusText('add_role_status', 'Отметьте хотя бы одну папку роли', 'error');
+    if (ADD_ROLE_TARGET.mode === 'draft') {
+        // черновик «Нового плейбука»: роли запоминаются, создаются вместе с плейбуком
+        roles.forEach((ref) => { if (!DRAFT_ROLES.some((item) => item.ref === ref)) DRAFT_ROLES.push({ ref, isNew: mode === 'new', parts }); });
+        hideModalSmooth('add_role_modal');
+        renderDraftRoles();
+        return;
+    }
     api(API.PLAYBOOK_ROLES_ADD, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, playbook: PLAYBOOK_FILES.name, roles, scope: PLAYBOOK_FILES.scope, parts })
         .then((data) => {
             hideModalSmooth('add_role_modal');
@@ -3234,6 +3378,7 @@ function submitAddRole() {
             if (data.skipped.length) parts.push(`уже были: ${data.skipped.join(', ')}`);
             notify(`Роли — ${parts.join('; ')}`, data.added.length ? 'success' : 'info');
             refreshPlaybookFiles();
+            loadMain();   // строки ролей под плейбуком в списке — сразу
         })
         .catch((error) => setStatusText('add_role_status', error.message, 'error'));
 }
@@ -3257,7 +3402,11 @@ function removeRoleFromPlaybook(role) {
         () => {
             const deleteFiles = Boolean(document.getElementById('remove_role_files')?.checked);
             api(API.PLAYBOOK_ROLE_REMOVE, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, playbook: PLAYBOOK_FILES.name, role, delete_files: deleteFiles, scope: PLAYBOOK_FILES.scope })
-                .then(() => { notify(deleteFiles ? `Роль «${role}» убрана и удалена` : `Роль «${role}» убрана из плейбука`, 'success'); refreshPlaybookFiles(); })
+                .then((data) => {
+                    notify(`${deleteFiles ? `Роль «${role}» убрана и удалена` : `Роль «${role}» убрана из плейбука`}${data.pruned?.length ? `; удалена опустевшая папка ${data.pruned.join(', ')}` : ''}`, 'success');
+                    refreshPlaybookFiles();
+                    loadMain();
+                })
                 .catch((error) => notify(error.message, 'error'));
         }, 'Убрать', 'danger', 'Файлы плейбука');
 }
@@ -3271,29 +3420,20 @@ function deleteRoleFile(path) {
         'Удалить', 'danger', 'Файлы плейбука');
 }
 
-// удаление плейбука (в корзину); роли остаются
-function deletePlaybookFromFiles() {
-    const name = PLAYBOOK_FILES.name;
-    showConfirmation('Удалить плейбук?', `Плейбук <strong>${esc(name)}</strong> будет удалён (копия — в корзине backups/deleted). Роли и их файлы не удаляются: они могут использоваться другими плейбуками.`,
-        () => api(API.PLAYBOOK_DELETE, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, name })
-            .then(() => { hideModalSmooth('playbook_files_modal'); notify(`Плейбук «${name}» удалён`, 'success'); loadMain(); })
-            .catch((error) => notify(error.message, 'error')),
-        'Удалить плейбук', 'danger', 'Файлы плейбука');
-}
 
 // Enter в полях окон создания — как основная кнопка; Esc и щелчок по фону — закрыть
 [['create_playbook_name', createPlaybook], ['create_playbook_hosts', createPlaybook], ['wizard_name', () => { if (!document.getElementById('wizard_create_btn').disabled) createProjectFromWizard(); }]]
     .forEach(([id, action]) => document.getElementById(id)?.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); action(); } }));
 document.addEventListener('click', (event) => {
     if (event.target.id === 'project_wizard_modal') closeProjectWizard();
-    if (['create_playbook_modal', 'playbook_files_modal', 'add_role_modal'].includes(event.target.id)) hideModalSmooth(event.target.id);
+    if (['create_playbook_modal', 'playbook_files_modal', 'add_role_modal', 'import_modal', 'cfg_compare_modal', 'run_report_modal', 'history_modal'].includes(event.target.id)) hideModalSmooth(event.target.id);
     if (event.target.id === 'file_editor_modal') closeFileEditor();
 });
 window.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || document.querySelector('#run_confirm_modal:not([hidden])')) return;
     if (!document.getElementById('file_editor_modal').hidden) return closeFileEditor();
     // по одному окну за нажатие: сначала верхнее (окна создания лежат поверх «Файлов плейбука»)
-    const top = ['add_role_modal', 'project_wizard_modal', 'create_playbook_modal', 'playbook_files_modal'].find((id) => !document.getElementById(id).hidden);
+    const top = ['history_modal', 'cfg_compare_modal', 'run_report_modal', 'import_modal', 'add_role_modal', 'project_wizard_modal', 'create_playbook_modal', 'playbook_files_modal'].find((id) => !document.getElementById(id).hidden);
     if (top) hideModalSmooth(top);
 });
 window.openProjectWizard = openProjectWizard;
@@ -3865,7 +4005,7 @@ function refreshSubnetScan() {
 document.addEventListener('click', (event) => {
     const cell = event.target.closest('.subnet-cell.is-free');
     if (!cell) return;
-    navigator.clipboard?.writeText(cell.dataset.ip).then(() => notify(`Адрес ${cell.dataset.ip} скопирован`, 'success'), () => {});
+    copyText(cell.dataset.ip).then(() => notify(`Адрес ${cell.dataset.ip} скопирован`, 'success'), () => notify(`Не удалось скопировать — адрес ${cell.dataset.ip}`, 'warning'));
 });
 
 function ipToNumber(ip) { return ip.split('.').reduce((sum, part) => sum * 256 + Number(part), 0); }
@@ -3910,7 +4050,7 @@ document.addEventListener('input', (event) => { if (event.target.matches?.(IP_FI
 // ============================================================================
 // Окно выбора из нескольких действий (например, «Сохранить» / «Сохранить и закрыть»)
 // ============================================================================
-function showChoice(title, text, choices, kicker = 'Подтверждение') {
+function showChoice(title, text, choices, kicker = 'Подтверждение', cancelClass = 'modal-secondary', cancelLabel = 'Отмена') {
     let modal = document.getElementById('choice_modal');
     if (!modal) {
         modal = document.createElement('div');
@@ -3919,28 +4059,38 @@ function showChoice(title, text, choices, kicker = 'Подтверждение')
         modal.hidden = true;
         modal.innerHTML = `<div class="modal-card run-confirm-card" role="dialog" aria-modal="true"><div class="modal-head"><div><div class="modal-kicker" id="choice_kicker"></div><h3 id="choice_title"></h3></div><button class="modal-close" type="button" aria-label="Закрыть">×</button></div><div class="modal-body"><div id="choice_text" class="run-confirm-text"></div></div><div class="modal-footer" id="choice_buttons"></div></div>`;
         document.body.appendChild(modal);
-        modal.querySelector('.modal-close').onclick = () => hideModalSmooth('choice_modal');
-        modal.addEventListener('click', (event) => { if (event.target === modal) hideModalSmooth('choice_modal'); });
+        modal.querySelector('.modal-close').onclick = () => { hideModalSmooth('choice_modal'); modal._restoreFocus?.(); };
+        modal.addEventListener('click', (event) => { if (event.target === modal) { hideModalSmooth('choice_modal'); modal._restoreFocus?.(); } });
     }
+    // после закрытия фокус возвращается туда, где был (например, в редактор после Ctrl+S → «Сохранить»)
+    const returnFocus = document.activeElement;
+    const restoreFocus = () => setTimeout(() => { if (returnFocus && document.contains(returnFocus) && !returnFocus.closest('[hidden]')) returnFocus.focus({ preventScroll: true }); }, 60);
+    modal._restoreFocus = restoreFocus;
     modal.querySelector('#choice_kicker').textContent = kicker;
     modal.querySelector('#choice_title').textContent = title;
     modal.querySelector('#choice_text').innerHTML = text;
     const footer = modal.querySelector('#choice_buttons');
-    footer.innerHTML = '<button type="button" class="modal-secondary" data-choice="-1">Отмена</button>'
+    footer.innerHTML = `<button type="button" class="${cancelClass}" data-choice="-1">${esc(cancelLabel)}</button>`
         + choices.map((choice, index) => choice.hidden ? '' : `<button type="button" class="${choice.className || ''}" data-choice="${index}">${esc(choice.label)}</button>`).join('');
     footer.onclick = (event) => {
         const button = event.target.closest('button[data-choice]');
         if (!button) return;
         hideModalSmooth('choice_modal');
         const choice = choices[Number(button.dataset.choice)];
+        restoreFocus();
         if (choice) choice.action();
     };
     showModalSmooth('choice_modal');
-    setTimeout(() => footer.querySelector('button.primary')?.focus(), 60);
+    setTimeout(() => (footer.querySelector('button.primary, button.is-main'))?.focus(), 60);
 }
 window.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && !document.getElementById('choice_modal')?.hidden) { event.stopImmediatePropagation(); hideModalSmooth('choice_modal'); }
+    if (event.key === 'Escape' && document.getElementById('choice_modal') && !document.getElementById('choice_modal').hidden) { event.stopImmediatePropagation(); hideModalSmooth('choice_modal'); document.getElementById('choice_modal')._restoreFocus?.(); }
 }, true);
+
+// подтверждение критического действия: «Отмена» (красная) или действие (его цвет — по смыслу)
+function confirmAction(title, text, actionLabel, action, actionClass = 'danger', kicker = 'Подтверждение') {
+    showChoice(title, text, [{ label: actionLabel, className: `${actionClass} is-main`, action }], kicker, actionClass === 'danger' ? 'modal-secondary is-neutral' : 'modal-secondary');
+}
 
 // сохранённые значения формы узла становятся «исходными» (для «Отмены» и признака изменений)
 function commitNodeOriginals(card) {
@@ -3957,23 +4107,28 @@ function commitNodeOriginals(card) {
 function toggleHostsGroups(event) {
     event?.stopPropagation();
     const panel = document.getElementById('hosts_groups');
-    if (panel.classList.contains('is-open')) return panel.classList.remove('is-open');
+    if (panel.classList.contains('is-open')) return closeHostsGroups();
     const input = document.getElementById('create_playbook_hosts');
     const current = new Set(input.value.split(/[:,]/).map((item) => item.trim()).filter(Boolean));
     const groups = [{ name: 'all', hosts: (DATA.hosts || []).map((host) => host.hostname), title: 'все узлы' }]
         .concat((DATA.groups || []).filter((group) => group.name !== 'all'));
-    panel.innerHTML = groups.map((group) => `<label class="wizard-check"><input type="checkbox" value="${esc(group.name)}" ${current.has(group.name) ? 'checked' : ''}><span><b>${esc(group.name)}</b> <small>${group.title || ''}${group.title ? ' · ' : ''}${(group.hosts || []).length} ${plural((group.hosts || []).length, 'узел', 'узла', 'узлов')}</small></span></label>`).join('')
-        + '<div class="wizard-hint">Несколько групп объединяются через «:» (например, web:db). Поле можно править и вручную.</div>';
+    panel.innerHTML = groups.map((group) => `<label class="wizard-check group-pick${current.has(group.name) ? ' is-active' : ''}"><input type="radio" name="hosts_group" value="${esc(group.name)}" ${current.has(group.name) ? 'checked' : ''}><span><b>${esc(group.name)}</b> <small>${group.title || ''}${group.title ? ' · ' : ''}${(group.hosts || []).length} ${plural((group.hosts || []).length, 'узел', 'узла', 'узлов')}</small></span></label>`).join('');
     panel.classList.add('is-open');
 }
+// выбирается одна группа: она становится значением поля, список закрывается
 document.getElementById('hosts_groups')?.addEventListener('change', (event) => {
-    // «all» и отдельные группы взаимоисключающие: «все узлы» вместе с группами смысла не имеет
-    const boxes = [...document.querySelectorAll('#hosts_groups input')];
-    if (event.target.checked) boxes.forEach((box) => { if ((event.target.value === 'all') !== (box.value === 'all')) box.checked = false; });
-    const chosen = boxes.filter((box) => box.checked).map((box) => box.value);
-    document.getElementById('create_playbook_hosts').value = chosen.length ? chosen.join(':') : 'all';
+    if (!event.target.matches('input[name="hosts_group"]')) return;
+    document.getElementById('create_playbook_hosts').value = event.target.value;
+    setTimeout(closeHostsGroups, 120);
 });
-document.addEventListener('pointerdown', (event) => { if (!event.target.closest('.hosts-combo')) document.getElementById('hosts_groups')?.classList.remove('is-open'); });
+document.addEventListener('pointerdown', (event) => { if (!event.target.closest('.hosts-combo')) closeHostsGroups(); });
+// плавное закрытие списка групп
+function closeHostsGroups() {
+    const panel = document.getElementById('hosts_groups');
+    if (!panel?.classList.contains('is-open') || panel.classList.contains('is-closing')) return;
+    panel.classList.add('is-closing');
+    setTimeout(() => panel.classList.remove('is-open', 'is-closing'), 170);
+}
 
 // ============================================================================
 // «Файлы плейбука»: переименование роли (папка и все ссылки на неё)
@@ -3994,4 +4149,683 @@ function renameRole(role) {
                 .catch((error) => notify(error.message, 'error'));
         }, 'Переименовать', 'primary', 'Файлы плейбука');
     setTimeout(() => { const input = document.getElementById('rename_role_input'); input?.focus(); input?.select(); }, 80);
+}
+
+
+// «Сохранить» в редакторе плейбука — неактивна, пока текст не изменён
+function updatePlaybookSaveState() {
+    const editor = document.getElementById('playbook_editor'), button = document.getElementById('playbook_save_btn');
+    if (editor && button) button.disabled = editor.value === window.PLAYBOOK_ORIGINAL;
+}
+document.getElementById('playbook_editor')?.addEventListener('input', updatePlaybookSaveState);
+
+
+// ============================================================================
+// «Удалить» в панели плейбуков: отмеченные целиком плейбуки — в корзину (роли остаются)
+// ============================================================================
+function checkedPlaybooks() { return [...document.querySelectorAll('#playbooks .pb')].filter((box) => box.checked).map((box) => box.value); }
+function updatePlaybookDeleteButton() {
+    const button = document.getElementById('delete_playbooks_btn');
+    if (button) button.disabled = !checkedPlaybooks().length;
+}
+function deleteSelectedPlaybooks() {
+    const names = checkedPlaybooks();
+    if (!names.length) return;
+    confirmAction(`Удалить ${names.length} ${plural(names.length, 'плейбук', 'плейбука', 'плейбуков')}?`,
+        `${names.map((name) => `<strong>${esc(name)}</strong>`).join('<br>')}<br><br>Файлы плейбуков переносятся в корзину backups/deleted рядом с web1x.py. Роли и их файлы не удаляются — они могут использоваться другими плейбуками.`,
+        'Удалить', async () => {
+            const failed = [];
+            for (const name of names) {
+                try { await api(API.PLAYBOOK_DELETE, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, name }); } catch (error) { failed.push(`${name}: ${error.message}`); }
+            }
+            if (failed.length) notify(`Не удалось удалить: ${failed.join('; ')}`, 'error');
+            else notify(names.length === 1 ? `Плейбук «${names[0]}» удалён` : `Удалено плейбуков: ${names.length}`, 'success');
+            loadMain();
+        }, 'danger', 'Плейбуки');
+}
+
+
+// ============================================================================
+// Импорт ролей и плейбуков из других проектов (мастер, «Новый плейбук», «Добавить роль»)
+// ============================================================================
+let IMPORT_SOURCES = [];
+function sourceLabel(source) { return source.object ? `${source.project} / ${source.object}` : source.project; }
+
+// дерево ролей с флажками (используется в «Добавить роль» и в окне импорта)
+function renderRolePickTree(container, roles, present, presentLabel, emptyText) {
+    const render = (items, depth) => items.map((item) => {
+        const already = item.role && present.has(item.ref);
+        return `<label class="wizard-check role-pick-item${item.role ? '' : ' is-group'}" style="padding-left:${depth * 20}px" title="${esc(item.ref)}">
+                <input type="checkbox" data-ref="${esc(item.ref)}" data-role="${item.role ? 1 : 0}" ${already ? 'checked disabled' : ''}>
+                <span>${esc(item.ref.split('/').pop())}${item.role ? '' : ' <small>— группа подролей</small>'}${already ? ` <small>(${presentLabel})</small>` : ''}</span>
+            </label>${render(item.children || [], depth + 1)}`;
+    }).join('');
+    container.innerHTML = render(roles, 0) || `<div class="muted">${emptyText}</div>`;
+}
+
+// источники: все проекты (у проекта с объектами — его объекты), кроме текущего объекта
+function loadImportSources() {
+    return fetch(`${API.IMPORT_SOURCES}?_=${Date.now()}`).then((response) => response.json()).then((data) => { IMPORT_SOURCES = data.sources || []; return IMPORT_SOURCES; });
+}
+// excludeCurrent — не показывать текущий объект (для «Добавить роль»: его роли и так на вкладке «Существующие»);
+// для нового проекта и «Нового плейбука» текущий проект — обычный источник (файлы копируются, а не переносятся)
+// preferCurrent — по умолчанию выбрать текущий проект и объект
+function fillImportSelects(projectBox, objectBox, onChange, { excludeCurrent = true, preferCurrent = false } = {}) {
+    const isCurrent = (project, obj) => project === CURRENT_PROJECT && (obj || null) === (CURRENT_OBJECT || null);
+    const objectsOf = (item) => item.objects.filter((obj) => !(excludeCurrent && isCurrent(item.project, obj)));
+    const options = IMPORT_SOURCES.filter((item) => item.objects.length ? objectsOf(item).length : !(excludeCurrent && isCurrent(item.project, null)));
+    const syncObjects = () => {
+        const source = IMPORT_SOURCES.find((item) => item.project === projectBox.dataset.value);
+        const objects = source ? objectsOf(source) : [];
+        objectBox.closest('.import-object-wrap').hidden = !objects.length;
+        if (objects.length) {
+            const initial = preferCurrent && source.project === CURRENT_PROJECT && objects.includes(CURRENT_OBJECT) ? CURRENT_OBJECT : objects[0];
+            mountUiSelect(objectBox, objects.map((obj) => ({ value: obj, label: obj, sub: isCurrent(source.project, obj) ? 'текущий' : '' })), initial, () => onChange());
+        } else objectBox.dataset.value = '';
+        onChange();
+    };
+    const initialProject = preferCurrent && options.some((item) => item.project === CURRENT_PROJECT) ? CURRENT_PROJECT : options[0]?.project;
+    mountUiSelect(projectBox, options.map((item) => ({ value: item.project, label: item.project,
+        sub: [item.project === CURRENT_PROJECT ? 'текущий' : '', item.objects.length ? `${item.objects.length} ${plural(item.objects.length, 'объект', 'объекта', 'объектов')}` : ''].filter(Boolean).join(' · ') })),
+        initialProject, () => syncObjects());
+    if (options.length) syncObjects();
+    return options.length;
+}
+function fetchImportCatalog(project, object) {
+    return fetch(`${API.IMPORT_CATALOG}?src_project=${encodeURIComponent(project)}&src_object=${encodeURIComponent(object || '')}&_=${Date.now()}`)
+        .then(async (response) => { const data = await response.json(); if (!response.ok || data.ok === false) throw Error(data.error || 'Не удалось прочитать проект-источник'); return data; });
+}
+function currentSource(projectBox, objectBox) {
+    return { project: projectBox.dataset.value || '', object: objectBox.closest('.import-object-wrap').hidden ? null : objectBox.dataset.value || null };
+}
+
+// --- «Добавить роль» → «Из других проектов» ---
+function loadAddRoleImportSources() {
+    const tree = document.getElementById('add_role_import_tree');
+    tree.innerHTML = '<div class="muted">Загрузка проектов…</div>';
+    loadImportSources().then(() => {
+        const count = fillImportSelects(document.getElementById('add_role_src_project'), document.getElementById('add_role_src_object'), refreshAddRoleImportTree, { excludeCurrent: ADD_ROLE_TARGET.scope !== 'autodeploy' });
+        if (!count) tree.innerHTML = '<div class="muted">Других проектов нет.</div>';
+    }).catch(() => { tree.innerHTML = '<div class="muted">Не удалось загрузить список проектов</div>'; });
+}
+function refreshAddRoleImportTree() {
+    const tree = document.getElementById('add_role_import_tree');
+    const source = currentSource(document.getElementById('add_role_src_project'), document.getElementById('add_role_src_object'));
+    if (!source.project) return;
+    tree.innerHTML = '<div class="muted">Загрузка ролей…</div>';
+    fetchImportCatalog(source.project, source.object)
+        .then((data) => renderRolePickTree(tree, data.roles || [], ADD_ROLE_TARGET.present, ADD_ROLE_TARGET.mode === 'draft' ? 'уже выбрана' : 'уже в плейбуке', 'В этом проекте нет ролей.'))
+        .catch((error) => { tree.innerHTML = `<div class="muted">${esc(error.message)}</div>`; });
+}
+function submitRoleImport() {
+    const source = currentSource(document.getElementById('add_role_src_project'), document.getElementById('add_role_src_object'));
+    const roles = [...document.querySelectorAll('#add_role_import_tree input[data-role="1"]:checked:not(:disabled)')].map((box) => box.dataset.ref);
+    if (!source.project || !roles.length) return setStatusText('add_role_status', 'Выберите проект и отметьте роли', 'error');
+    if (ADD_ROLE_TARGET.mode === 'draft') {
+        roles.forEach((ref) => { if (!DRAFT_ROLES.some((item) => item.ref === ref)) DRAFT_ROLES.push({ ref, isNew: false, source }); });
+        hideModalSmooth('add_role_modal');
+        return renderDraftRoles();
+    }
+    api(API.ROLES_IMPORT, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, scope: PLAYBOOK_FILES.scope, src_project: source.project, src_object: source.object, roles, playbook: PLAYBOOK_FILES.name })
+        .then((data) => {
+            hideModalSmooth('add_role_modal');
+            const parts = [];
+            if (data.copied.length) parts.push(`скопированы: ${data.copied.join(', ')}`);
+            if (data.skipped.length) parts.push(`уже были в проекте: ${data.skipped.join(', ')}`);
+            if (data.added.length) parts.push(`подключены к плейбуку: ${data.added.join(', ')}`);
+            if (data.defaults_added?.length) parts.push(`в defaults добавлены: ${data.defaults_added.join(', ')}`);
+            notify(`Импорт из ${sourceLabel(source)} — ${parts.join('; ') || 'нечего добавлять'}`, data.copied.length || data.added.length ? 'success' : 'info');
+            refreshPlaybookFiles();
+            loadMain();
+        })
+        .catch((error) => setStatusText('add_role_status', error.message, 'error'));
+}
+
+// --- Окно импорта (мастер, «Новый плейбук») ---
+let IMPORT_PICKER = null;   // { kinds, single, onPick }
+function openImportPicker(options) {
+    IMPORT_PICKER = options;
+    document.getElementById('import_context').textContent = options.context || '';
+    document.querySelectorAll('#import_modal .import-kind .nmap-mode-option').forEach((label) => { label.hidden = !options.kinds.includes(label.dataset.kind); });
+    document.querySelector('#import_modal .import-kind').hidden = options.kinds.length < 2;   // одна вкладка — переключатель не нужен
+    document.querySelector(`input[name="import_kind"][value="${options.kinds[0]}"]`).checked = true;
+    syncImportKind();
+    setStatusText('import_status', '');
+    document.getElementById('import_playbooks_list').innerHTML = document.getElementById('import_roles_tree').innerHTML = document.getElementById('import_hosts_tree').innerHTML = '<div class="muted">Загрузка…</div>';
+    showModalSmooth('import_modal');
+    loadImportSources().then(() => {
+        if (!fillImportSelects(document.getElementById('import_project'), document.getElementById('import_object'), refreshImportCatalog, { excludeCurrent: Boolean(options.excludeCurrent), preferCurrent: !options.excludeCurrent })) {
+            document.getElementById('import_playbooks_list').innerHTML = document.getElementById('import_roles_tree').innerHTML = '<div class="muted">Других проектов нет.</div>';
+        }
+    });
+}
+function syncImportKind() {
+    const kind = document.querySelector('input[name="import_kind"]:checked').value;
+    [['import_playbooks', 'playbooks'], ['import_roles', 'roles'], ['import_hosts', 'hosts']].forEach(([id, value]) => {
+        const pane = document.getElementById(id);
+        pane.classList.toggle('is-active', kind === value);
+        pane.inert = kind !== value;
+    });
+}
+document.querySelectorAll('input[name="import_kind"]').forEach((input) => input.addEventListener('change', syncImportKind));
+function refreshImportCatalog() {
+    const source = currentSource(document.getElementById('import_project'), document.getElementById('import_object'));
+    if (!source.project) return;
+    const list = document.getElementById('import_playbooks_list'), tree = document.getElementById('import_roles_tree'), hostsTree = document.getElementById('import_hosts_tree');
+    list.innerHTML = tree.innerHTML = hostsTree.innerHTML = '<div class="muted">Загрузка…</div>';
+    fetchImportCatalog(source.project, source.object).then((data) => {
+        const type = IMPORT_PICKER?.single ? 'radio' : 'checkbox';
+        list.innerHTML = (data.playbooks || []).map((item) => `<label class="wizard-check role-pick-item" title="${esc(item.name)}"><input type="${type}" name="import_playbook" value="${esc(item.name)}" data-roles="${esc(item.roles.join(','))}"><span>${esc(item.name)}${item.roles.length ? ` <small>роли: ${esc(item.roles.join(', '))}</small>` : ' <small>без ролей</small>'}</span></label>`).join('')
+            || '<div class="muted">В этом проекте нет плейбуков.</div>';
+        renderRolePickTree(tree, data.roles || [], new Set(), '', 'В этом проекте нет ролей.');
+        renderHostPickTree(hostsTree, data.hosts || [], data.groups || []);
+    }).catch((error) => { list.innerHTML = tree.innerHTML = hostsTree.innerHTML = `<div class="muted">${esc(error.message)}</div>`; });
+}
+function submitImportPicker() {
+    const source = currentSource(document.getElementById('import_project'), document.getElementById('import_object'));
+    const boxes = [...document.querySelectorAll('#import_playbooks_list input:checked')];
+    const selection = {
+        ...source,
+        playbooks: IMPORT_PICKER.kinds.includes('playbooks') ? boxes.map((box) => box.value) : [],
+        playbookRoles: boxes.flatMap((box) => box.dataset.roles ? box.dataset.roles.split(',') : []),
+        roles: IMPORT_PICKER.kinds.includes('roles') ? [...document.querySelectorAll('#import_roles_tree input[data-role="1"]:checked')].map((box) => box.dataset.ref) : [],
+        hosts: IMPORT_PICKER.kinds.includes('hosts') ? [...new Set([...document.querySelectorAll('#import_hosts_tree input[data-host]:checked')].map((box) => box.dataset.host))] : [],
+    };
+    if (!source.project || (!selection.playbooks.length && !selection.roles.length && !selection.hosts.length)) return setStatusText('import_status', 'Отметьте, что импортировать', 'error');
+    hideModalSmooth('import_modal');
+    IMPORT_PICKER.onPick(selection);
+}
+
+// --- Мастер: список импорта ---
+let WIZARD_IMPORTS = [];
+function openWizardImport() {
+    openImportPicker({ kinds: ['playbooks', 'roles', 'hosts'], context: `Новый проект ${document.getElementById('wizard_name').value.trim()}`, onPick: (selection) => {
+        WIZARD_IMPORTS.push(selection);
+        renderWizardImports();
+        updateProjectWizard();
+    } });
+}
+function renderWizardImports() {
+    const box = document.getElementById('wizard_imports');
+    if (!box) return;
+    const chips = [];
+    WIZARD_IMPORTS.forEach((entry, index) => {
+        entry.playbooks.forEach((name) => chips.push(`<span class="chip is-import" title="плейбук из ${esc(sourceLabel(entry))} — вместе с его ролями">${esc(name)} <small>из ${esc(sourceLabel(entry))}</small><button type="button" aria-label="Убрать" onclick="removeWizardImport(${index}, 'playbooks', '${esc(name)}')">×</button></span>`));
+        entry.roles.forEach((ref) => chips.push(`<span class="chip is-import" title="роль из ${esc(sourceLabel(entry))}">роль ${esc(ref)} <small>из ${esc(sourceLabel(entry))}</small><button type="button" aria-label="Убрать" onclick="removeWizardImport(${index}, 'roles', '${esc(ref)}')">×</button></span>`));
+        (entry.hosts || []).forEach((host) => chips.push(`<span class="chip is-import" title="узел из ${esc(sourceLabel(entry))} — с параметрами и группами">узел ${esc(host)} <small>из ${esc(sourceLabel(entry))}</small><button type="button" aria-label="Убрать" onclick="removeWizardImport(${index}, 'hosts', '${esc(host)}')">×</button></span>`));
+    });
+    box.innerHTML = chips.join('') || '<span class="muted">Ничего не выбрано — плейбуки и роли можно взять из существующих проектов.</span>';
+}
+function removeWizardImport(index, kind, value) {
+    const entry = WIZARD_IMPORTS[index];
+    if (!entry) return;
+    entry[kind] = entry[kind].filter((item) => item !== value);
+    if (kind === 'playbooks') entry.playbookRoles = [];   // роли плейбуков пересчитает сервер
+    if (!entry.playbooks.length && !entry.roles.length && !(entry.hosts || []).length) WIZARD_IMPORTS.splice(index, 1);
+    renderWizardImports();
+    updateProjectWizard();
+}
+
+// --- «Новый плейбук» → «Из другого проекта»: несколько плейбуков, в том числе из разных проектов ---
+let IMPORT_PLAYBOOKS = [];   // [{ project, object, name, target, roles }]
+function openPlaybookImport() {
+    openImportPicker({ kinds: ['playbooks'], context: 'Новый плейбук', onPick: (selection) => {
+        selection.playbooks.forEach((name) => {
+            if (IMPORT_PLAYBOOKS.some((item) => item.project === selection.project && item.object === selection.object && item.name === name)) return;
+            IMPORT_PLAYBOOKS.push({ project: selection.project, object: selection.object, name, target: freePlaybookName(name, IMPORT_PLAYBOOKS.map((item) => item.target)) });
+        });
+        renderPlaybookImportChoice();
+    } });
+}
+function renderPlaybookImportChoice() {
+    const box = document.getElementById('create_playbook_import_choice');
+    if (!box) return;
+    box.innerHTML = IMPORT_PLAYBOOKS.length
+        ? IMPORT_PLAYBOOKS.map((item, index) => `<span class="chip is-import" title="будет создан как ${esc(item.target)}">${esc(item.target)}${item.target !== item.name ? ` <small>← ${esc(item.name)}</small>` : ''} <small>из ${esc(sourceLabel(item))}</small><button type="button" aria-label="Убрать" onclick="removePlaybookImport(${index})">×</button></span>`).join('')
+        : '<span class="muted">Плейбуки не выбраны — нажмите «Выбрать плейбуки».</span>';
+}
+function removePlaybookImport(index) { IMPORT_PLAYBOOKS.splice(index, 1); renderPlaybookImportChoice(); }
+async function createImportedPlaybook() {
+    if (!IMPORT_PLAYBOOKS.length) return setStatusText('create_playbook_status', 'Выберите плейбуки в других проектах', 'error');
+    const done = [], failed = [], copied = new Set(), variables = new Set();
+    for (const item of IMPORT_PLAYBOOKS) {
+        try {
+            const data = await api(API.PLAYBOOK_IMPORT, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, src_project: item.project, src_object: item.object, name: item.name, new_name: item.target });
+            done.push(data.name);
+            data.copied.forEach((role) => copied.add(role));
+            (data.defaults_added || []).forEach((name) => variables.add(name));
+        } catch (error) { failed.push(`${item.target}: ${error.message}`); }
+    }
+    if (failed.length && !done.length) return setStatusText('create_playbook_status', failed.join('; '), 'error');
+    hideModalSmooth('create_playbook_modal');
+    notify(`Импортировано плейбуков: ${done.join(', ')}${copied.size ? `; роли: ${[...copied].join(', ')}` : ''}${variables.size ? `; в defaults добавлены: ${[...variables].join(', ')}` : ''}${failed.length ? `; не удалось: ${failed.join('; ')}` : ''}`, failed.length ? 'warning' : 'success');
+    loadMain();
+    if (done.length === 1) setTimeout(() => editPlaybook(done[0]), 350);
+}
+
+
+// свободное имя плейбука в текущем объекте: «web.yml» → «web-copy.yml», «web-copy2.yml»… (если такое уже есть)
+function freePlaybookName(name, reserved = []) {
+    const taken = new Set((DATA?.playbooks || []).map((item) => item.name).concat(reserved));
+    if (!taken.has(name)) return name;
+    const match = name.match(/^(.*?)(\.ya?ml)$/i), stem = match ? match[1] : name, ext = match ? match[2] : '.yml';
+    for (let index = 1; ; index += 1) {
+        const candidate = `${stem}-copy${index > 1 ? index : ''}${ext}`;
+        if (!taken.has(candidate)) return candidate;
+    }
+}
+document.getElementById('create_playbook_name')?.addEventListener('input', (event) => { event.target.dataset.auto = '0'; });
+
+
+
+// --- Узлы из других проектов: дерево «группа → узлы» (узел в нескольких группах отмечается везде) ---
+function renderHostPickTree(container, hosts, groups) {
+    const ipOf = Object.fromEntries(hosts.map((host) => [host.hostname, host.ip]));
+    const grouped = new Set(groups.flatMap((group) => group.hosts));
+    const sections = groups.filter((group) => group.hosts.length).map((group) => ({ title: group.name, hosts: group.hosts }));
+    const loose = hosts.map((host) => host.hostname).filter((name) => !grouped.has(name));
+    if (loose.length) sections.push({ title: 'без группы', hosts: loose, loose: true });
+    container.innerHTML = sections.map((section) => `
+        <label class="wizard-check role-pick-item is-group"><input type="checkbox" data-group-of="${esc(section.title)}"><span>${esc(section.title)} <small>${section.loose ? '' : 'группа · '}${section.hosts.length} ${plural(section.hosts.length, 'узел', 'узла', 'узлов')}</small></span></label>
+        ${section.hosts.map((name) => `<label class="wizard-check role-pick-item" style="padding-left:20px"><input type="checkbox" data-host="${esc(name)}" data-in="${esc(section.title)}"><span>${esc(name)}${ipOf[name] ? ` <small>${esc(ipOf[name])}</small>` : ''}</span></label>`).join('')}`).join('')
+        || '<div class="muted">В этом проекте нет узлов.</div>';
+}
+document.getElementById('import_hosts_tree')?.addEventListener('change', (event) => {
+    const tree = event.currentTarget, box = event.target;
+    const setHost = (name, value) => tree.querySelectorAll(`input[data-host]`).forEach((other) => { if (other.dataset.host === name) other.checked = value; });
+    if (box.dataset.groupOf !== undefined) tree.querySelectorAll('input[data-host]').forEach((other) => { if (other.dataset.in === box.dataset.groupOf) setHost(other.dataset.host, box.checked); });
+    else if (box.dataset.host) setHost(box.dataset.host, box.checked);
+    // флажок группы: отмечены все её узлы
+    tree.querySelectorAll('input[data-group-of]').forEach((group) => {
+        const members = [...tree.querySelectorAll('input[data-host]')].filter((other) => other.dataset.in === group.dataset.groupOf);
+        group.checked = members.length > 0 && members.every((other) => other.checked);
+    });
+});
+
+// «Добавить узел» → «Импорт из другого проекта…»
+function openHostsImport() {
+    openImportPicker({ kinds: ['hosts'], excludeCurrent: true, context: `Узлы → ${contextLabel()}`, onPick: (selection) => {
+        api(API.HOSTS_IMPORT, { project: CURRENT_PROJECT, object: CURRENT_OBJECT, src_project: selection.project, src_object: selection.object, hosts: selection.hosts })
+            .then((data) => {
+                if (data.added.length) window.closeAddNodeModal?.();
+                notify(`Узлы из ${sourceLabel(selection)} — ${data.added.length ? `добавлены: ${data.added.join(', ')}` : 'ничего не добавлено'}${data.skipped.length ? `; пропущены: ${data.skipped.join('; ')}` : ''}`, data.skipped.length ? 'warning' : 'success');
+                loadMain();
+            })
+            .catch((error) => notify(error.message, 'error'));
+    } });
+}
+
+
+// Подсветка выбранного варианта классами is-checked / is-disabled (вместо CSS :has() — его нет в штатных
+// браузерах Astra Linux 1.7: Firefox ESR < 121, Chromium < 105)
+document.addEventListener('change', (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+    const holder = input.closest('.autobuild-source, .pb-role-row, .group-pick');
+    if (!holder) return;
+    // у переключателей (radio) меняется и соседний вариант — обновляем всю группу
+    const scope = input.type === 'radio' ? (holder.parentElement || document) : holder;
+    const items = input.type === 'radio' ? scope.querySelectorAll(':scope > .autobuild-source, :scope > .group-pick') : [holder];
+    items.forEach((item) => {
+        const box = item.querySelector('input');
+        if (!box) return;
+        item.classList.toggle('is-checked', box.checked);
+        item.classList.toggle('is-active', box.checked && item.classList.contains('group-pick'));
+        item.classList.toggle('is-disabled', box.disabled);
+    });
+});
+
+// копирование в буфер обмена: navigator.clipboard есть только на https и localhost — интерфейс же обычно
+// открыт по http с другой машины; тогда — через скрытое поле и execCommand('copy')
+function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+    return new Promise((resolve, reject) => {
+        const area = document.createElement('textarea');
+        area.value = text;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        const ok = document.execCommand('copy');
+        area.remove();
+        ok ? resolve() : reject(new Error('copy'));
+    });
+}
+
+
+// ============================================================================
+// Роли «ступенькой» и теги плейбуков (и Autodeploy)
+// ============================================================================
+function roleStepsHTML(name, roles, title) {
+    if (roles.length < 2) return '';
+    return `
+            <div class="playbook-role-steps" aria-label="Роли ${esc(name)}">${roles.map((role) => `
+                <label class="pb-role-row" title="${esc(title)}"><input type="checkbox" class="pb-role" data-playbook="${esc(name)}" value="${esc(role)}"><span>${esc(role)}</span></label>`).join('')}
+            </div>`;
+}
+
+// выбранные теги: плейбук (или '@autodeploy') → Set тегов; сохраняются при перерисовке списка
+const TAG_SELECTION = new Map();
+function tagsButtonHTML(name, tags) {
+    if (!tags.length) return '';
+    const chosen = [...(TAG_SELECTION.get(name) || [])].filter((tag) => tags.includes(tag));
+    TAG_SELECTION.set(name, new Set(chosen));
+    return `<button type="button" class="tags-btn${chosen.length ? ' is-active' : ''}" data-playbook="${esc(name)}" onclick="toggleTagsMenu(event, this)" title="Теги задач: выполнить только задачи с выбранными тегами (--tags)">Теги${chosen.length ? ` · ${chosen.length}` : ''}</button>`;
+}
+// плейбук → выбранные теги (только для запускаемых плейбуков)
+function selectedTagMap(playbooks) {
+    const map = {};
+    playbooks.forEach((name) => { const chosen = [...(TAG_SELECTION.get(name) || [])]; if (chosen.length) map[name] = chosen; });
+    return map;
+}
+function tagsOf(name) {
+    return name === '@autodeploy' ? (DATA.autodeploy_tags || []) : ((DATA.playbooks || []).find((item) => item.name === name)?.tags || []);
+}
+
+// список тегов под кнопкой «Теги» (шириной не меньше кнопки)
+function toggleTagsMenu(event, button) {
+    event.stopPropagation();
+    let menu = document.getElementById('tags_menu');
+    if (menu?.classList.contains('is-open') && menu.dataset.playbook === button.dataset.playbook) return closeTagsMenu();
+    if (!menu) {
+        menu = document.createElement('div');
+        menu.id = 'tags_menu';
+        menu.className = 'tags-menu';
+        document.body.appendChild(menu);
+        menu.addEventListener('change', onTagToggle);
+        menu.addEventListener('click', (clickEvent) => {
+            if (clickEvent.target.closest('[data-tags-clear]')) {
+                TAG_SELECTION.set(menu.dataset.playbook, new Set());
+                menu.querySelectorAll('input').forEach((box) => { box.checked = false; });
+                updateTagsButton(menu.dataset.playbook);
+            }
+        });
+    }
+    const name = button.dataset.playbook, chosen = TAG_SELECTION.get(name) || new Set();
+    menu.dataset.playbook = name;
+    menu.innerHTML = `<div class="tags-menu-list">${tagsOf(name).map((tag) => `<label class="wizard-check tags-menu-item"><input type="checkbox" value="${esc(tag)}" ${chosen.has(tag) ? 'checked' : ''}><span>${esc(tag)}${tag === 'always' || tag === 'never' ? ' <small>особый</small>' : ''}</span></label>`).join('')}</div>
+        <div class="tags-menu-foot"><span class="muted">Выполнятся только задачи с этими тегами</span><button type="button" data-tags-clear>Сбросить</button></div>`;
+    const rect = button.getBoundingClientRect();
+    menu.style.minWidth = `${Math.max(rect.width, 220)}px`;
+    menu.classList.remove('is-closing');
+    menu.classList.add('is-open');
+    const width = menu.offsetWidth;
+    menu.style.left = `${Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8))}px`;
+    const below = rect.bottom + 6, height = menu.offsetHeight;
+    menu.style.top = `${below + height > window.innerHeight - 8 ? Math.max(8, rect.top - height - 6) : below}px`;
+}
+function onTagToggle(event) {
+    const menu = event.currentTarget, name = menu.dataset.playbook;
+    const chosen = new Set([...menu.querySelectorAll('input:checked')].map((box) => box.value));
+    TAG_SELECTION.set(name, chosen);
+    updateTagsButton(name);
+    // выбран тег у неотмеченного плейбука — отметить его: теги выбирают для запуска
+    if (chosen.size && name !== '@autodeploy') {
+        const box = [...document.querySelectorAll('#playbooks .pb')].find((item) => item.value === name);
+        if (box && !box.checked && !box.indeterminate) { setPlaybookChecked(box, true); updateSelectionSummary(); window.updatePlaybookSelectionButton?.(); }
+    }
+}
+function updateTagsButton(name) {
+    const count = (TAG_SELECTION.get(name) || new Set()).size;
+    document.querySelectorAll('#playbooks .tags-btn').forEach((button) => {
+        if (button.dataset.playbook !== name) return;
+        button.textContent = count ? `Теги · ${count}` : 'Теги';
+        button.classList.toggle('is-active', Boolean(count));
+    });
+}
+function closeTagsMenu() {
+    const menu = document.getElementById('tags_menu');
+    if (!menu?.classList.contains('is-open') || menu.classList.contains('is-closing')) return;
+    menu.classList.add('is-closing');
+    setTimeout(() => menu.classList.remove('is-open', 'is-closing'), 160);
+}
+document.addEventListener('pointerdown', (event) => { if (!event.target.closest('#tags_menu, .tags-btn')) closeTagsMenu(); });
+window.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !document.getElementById('tags_menu')?.classList.contains('is-open')) return;
+    event.stopImmediatePropagation();
+    closeTagsMenu();
+}, true);
+document.getElementById('playbooks')?.addEventListener('scroll', closeTagsMenu, { passive: true });
+
+
+// восстановление выбора после перерисовки списка плейбуков (в том же проекте и объекте)
+let PLAYBOOK_RENDER_KEPT = { project: null, object: null };
+function restorePlaybookSelection(playbooks, roles) {
+    if (!playbooks.size && !roles.size) return;
+    document.querySelectorAll('#playbooks .pb').forEach((box) => { if (playbooks.has(box.value)) setPlaybookChecked(box, true); });
+    const touched = new Set();
+    document.querySelectorAll('#playbooks .pb-role').forEach((box) => {
+        const kept = roles.has(`${box.dataset.playbook}\n${box.value}`);
+        if (box.checked !== kept) { box.checked = kept; touched.add(box.dataset.playbook); }
+    });
+    touched.forEach((name) => syncPlaybookFromRoles(name));
+    updateSelectionSummary();
+    window.updatePlaybookSelectionButton?.();
+}
+
+
+// ============================================================================
+// Мастер: ansible.cfg — стандартный или из другого проекта (с предпросмотром и сравнением)
+// ============================================================================
+let WIZARD_CFG = null;   // { project, object } или null — стандартный
+function loadWizardCfgSources() {
+    const box = document.getElementById('wizard_cfg_source');
+    loadImportSources().then(() => {
+        const options = [{ value: '', label: 'Стандартный', sub: 'для нового проекта' }];
+        IMPORT_SOURCES.forEach((item) => (item.objects.length ? item.objects : [null]).forEach((obj) =>
+            options.push({ value: `${item.project}\n${obj || ''}`, label: obj ? `${item.project} / ${obj}` : item.project, sub: item.project === CURRENT_PROJECT && (obj || null) === (CURRENT_OBJECT || null) ? 'текущий' : '' })));
+        mountUiSelect(box, options, '', (value) => {
+            const [project, obj] = value ? value.split('\n') : [];
+            WIZARD_CFG = value ? { project, object: obj || null } : null;
+            document.getElementById('wizard_cfg_compare_btn').disabled = !WIZARD_CFG;
+            updateProjectWizard();
+            if (WIZARD_CFG) openCfgCompare();   // выбран файл другого проекта — сразу показать сравнение
+        });
+        document.getElementById('wizard_cfg_compare_btn').disabled = true;
+    });
+}
+function openCfgCompare() {
+    if (!WIZARD_CFG) return;
+    document.getElementById('cfg_compare_context').textContent = `стандартный ↔ ${sourceLabel(WIZARD_CFG)}`;
+    document.getElementById('cfg_diff').innerHTML = document.getElementById('cfg_file').innerHTML = '<div class="muted">Загрузка…</div>';
+    document.querySelector('input[name="cfg_view"][value="diff"]').checked = true;
+    syncCfgView();
+    showModalSmooth('cfg_compare_modal');
+    fetch(`${API.CFG_COMPARE}?src_project=${encodeURIComponent(WIZARD_CFG.project)}&src_object=${encodeURIComponent(WIZARD_CFG.object || '')}&_=${Date.now()}`)
+        .then(async (response) => { const data = await response.json(); if (!response.ok || data.ok === false) throw Error(data.error || 'Не удалось прочитать ansible.cfg'); return data; })
+        .then((data) => {
+            document.getElementById('cfg_diff').innerHTML = renderDiffTable(data.rows, 'Стандартный', sourceLabel(WIZARD_CFG), 'ini');
+            document.getElementById('cfg_file').innerHTML = highlightCode(data.source, 'ini');
+            const problem = document.getElementById('cfg_compare_problem');
+            problem.hidden = !data.problem;
+            problem.textContent = data.problem ? `В этом ansible.cfg ошибка: ${data.problem}` : '';
+        })
+        .catch((error) => { document.getElementById('cfg_diff').innerHTML = `<div class="muted">${esc(error.message)}</div>`; });
+}
+function syncCfgView() {
+    const view = document.querySelector('input[name="cfg_view"]:checked').value;
+    [['cfg_view_diff', 'diff'], ['cfg_view_file', 'file']].forEach(([id, value]) => { const pane = document.getElementById(id); pane.classList.toggle('is-active', view === value); pane.inert = view !== value; });
+}
+document.querySelectorAll('input[name="cfg_view"]').forEach((input) => input.addEventListener('change', syncCfgView));
+function useStandardCfg() {
+    WIZARD_CFG = null;
+    const box = document.getElementById('wizard_cfg_source');
+    mountUiSelect(box, box._options, '', box._onChange);
+    document.getElementById('wizard_cfg_compare_btn').disabled = true;
+    updateProjectWizard();
+    hideModalSmooth('cfg_compare_modal');
+}
+
+// ============================================================================
+// Шестерёнка → «Журнал запусков»: краткие итоги выполнения плейбуков
+// ============================================================================
+function openRunReport() {
+    closeSettingsMenu();
+    showModalSmooth('run_report_modal');
+    loadRunReport();
+}
+function loadRunReport() {
+    const list = document.getElementById('run_report_list');
+    list.innerHTML = '<div class="muted">Загрузка…</div>';
+    fetch(`${API.RUN_REPORT}?_=${Date.now()}`).then((response) => response.json()).then((data) => {
+        document.getElementById('run_report_path').textContent = data.path;
+        list.innerHTML = data.entries.length ? data.entries.map((entry) => {
+            const lines = entry.split('\n');
+            const verdict = /ИТОГ: УСПЕШНО/.test(entry) ? 'is-ok' : /ИТОГ: ПРЕРВАНО/.test(entry) ? 'is-stopped' : 'is-failed';
+            return `<div class="run-report-entry ${verdict}"><div class="run-report-head">${esc(lines[0])}</div>${lines.slice(1).map((line) =>
+                `<div class="run-report-line${/✗/.test(line) ? ' is-bad' : ''}${/ИТОГ/.test(line) ? ' is-total' : ''}">${esc(line)}</div>`).join('')}</div>`;
+        }).join('') : '<div class="empty-state"><b>Запусков пока не было</b><span>После каждого запуска или проверки плейбука здесь появится краткий итог: успешно или с ошибкой, по ролям и задачам.</span></div>';
+    }).catch(() => { list.innerHTML = '<div class="muted">Не удалось загрузить журнал</div>'; });
+}
+function clearRunReport() {
+    confirmAction('Очистить журнал запусков?', 'Все записи об итогах выполнения плейбуков будут удалены.', 'Очистить', () =>
+        api(API.RUN_REPORT_CLEAR, {}).then(() => { notify('Журнал запусков очищен', 'success'); loadRunReport(); }).catch((error) => notify(error.message, 'error')), 'danger', 'Журнал запусков');
+}
+
+
+// ============================================================================
+// Узел: смена шаблона (набора параметров) в режиме правки
+// ============================================================================
+function paramFieldHTML(key, value) {
+    return `<div class="param-name" title="${esc(key)}">${esc(key)}</div>${key === HWTYPE_PARAM_NAME ? renderHwtypeField(value) : `<input class="param-value" data-key="${esc(key)}" value="${esc(value)}" readonly>`}`;
+}
+function mountNodeTemplatePick(card) {
+    const pick = card.querySelector('.node-template-pick');
+    if (!pick) return;
+    const schemas = DATA?.template_schemas || {};
+    const node = (DATA?.hosts || []).find((item) => item.hostname === card.dataset.hostname);
+    const current = node?.template;
+    const options = Object.keys(schemas).map((name) => ({ value: name, label: name, sub: `${schemas[name].length} ${plural(schemas[name].length, 'параметр', 'параметра', 'параметров')}` }));
+    if (current && !schemas[current]) options.unshift({ value: current, label: current, sub: 'текущий' });
+    mountUiSelect(pick, options, current, (value) => applyNodeTemplate(card, value));
+    card.querySelector('.node-template-note').innerHTML = '';
+}
+// поля — по набору параметров выбранного шаблона: значения общих параметров сохраняются, новые — пустые,
+// лишние удаляются при сохранении (видно в пояснении)
+function applyNodeTemplate(card, template) {
+    const schema = (DATA?.template_schemas || {})[template];
+    if (!schema) return;
+    const grid = card.querySelector('.param-grid');
+    const values = {};
+    grid.querySelectorAll('[data-key]').forEach((el) => { if (el.dataset.key !== 'hostname') values[el.dataset.key] = el.value; });
+    const node = (DATA?.hosts || []).find((item) => item.hostname === card.dataset.hostname);
+    const original = Object.keys(node?.parameters || {});
+    // имя узла и строку шаблона оставить, остальное — заново
+    const keep = [...grid.children].slice(0, 4);
+    grid.innerHTML = '';
+    keep.forEach((el) => grid.appendChild(el));
+    grid.insertAdjacentHTML('beforeend', schema.map((key) => paramFieldHTML(key, values[key] ?? '')).join(''));
+    grid.querySelectorAll('.param-value').forEach((el) => { el.readOnly = false; el.disabled = false; });
+    const added = schema.filter((key) => !original.includes(key)), removed = original.filter((key) => !schema.includes(key));
+    card.querySelector('.node-template-note').innerHTML = [
+        added.length ? `<span class="is-added">добавятся: ${added.map(esc).join(', ')}</span>` : '',
+        removed.length ? `<span class="is-removed">удалятся при сохранении: ${removed.map(esc).join(', ')}</span>` : '',
+    ].filter(Boolean).join('');
+    card.dataset.templateChanged = '1';
+    card._markChanged?.();
+    applyIpHints();
+}
+
+
+// ============================================================================
+// Сравнение рядом (ansible.cfg в мастере, история файлов)
+// ============================================================================
+function renderDiffTable(rows, leftTitle, rightTitle, language) {
+    const line = (text) => text === null ? '' : (highlightCode(text, language) || esc(text) || '&nbsp;');
+    const changed = rows.some((row) => row[0] !== 'same');
+    return `<table class="cfg-diff-table"><thead><tr><th>${esc(leftTitle)}</th><th>${esc(rightTitle)}</th></tr></thead><tbody>${
+        rows.map(([type, left, right]) => `<tr class="is-${type}"><td>${line(left)}</td><td>${line(right)}</td></tr>`).join('')}</tbody></table>`
+        + (changed ? '' : '<div class="muted cfg-same">Совпадает с текущим.</div>');
+}
+
+// ============================================================================
+// Редакторы: проверка синтаксиса и история изменений
+// ============================================================================
+// что открыто в редакторе: плейбук или файл (роли, defaults, ansible.cfg)
+function editorContext(which) {
+    if (which === 'playbook') return { kind: 'playbook', path: window.CURRENT_EDITING_PLAYBOOK, scope: window.CURRENT_EDITING_SCOPE || '', textarea: 'playbook_editor', result: 'playbook_check', title: window.CURRENT_EDITING_PLAYBOOK, language: 'yaml' };
+    const kind = FILE_EDITOR.kind === 'role' ? 'role' : FILE_EDITOR.kind;
+    return { kind, path: kind === 'role' ? FILE_EDITOR.path : kind, scope: FILE_EDITOR.scope || '', textarea: 'file_editor', result: 'file_check',
+        title: kind === 'role' ? shownPath(FILE_EDITOR.path) : (kind === 'cfg' ? 'ansible.cfg' : 'defaults'), language: codeLanguage(kind === 'role' ? { kind: 'role', path: FILE_EDITOR.path } : { kind: 'object', path: kind === 'cfg' ? 'ansible.cfg' : 'defaults.yml' }) };
+}
+function showCheckResult(boxId, state, title, output) {
+    const box = document.getElementById(boxId);
+    box.className = `check-result is-${state}`;
+    box.innerHTML = `<div class="check-result-head"><span>${esc(title)}</span><button type="button" class="check-result-close" aria-label="Скрыть" onclick="hideCheckResult('${boxId}')">×</button></div>${output ? `<pre>${esc(output)}</pre>` : ''}`;
+    if (box.hidden) { box.hidden = false; box.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 180, easing: 'ease-out' }); }
+}
+function hideCheckResult(boxId) {
+    const box = document.getElementById(boxId);
+    if (box.hidden) return;
+    box.animate([{ opacity: 1 }, { opacity: 0, transform: 'translateY(6px)' }], { duration: 150, easing: 'ease-in' }).onfinish = () => { box.hidden = true; };
+}
+function checkEditorSyntax(which) {
+    const ctx = editorContext(which);
+    const button = document.querySelector(`#${which === 'playbook' ? 'playbook_modal' : 'file_editor_modal'} .editor-check-btn`);
+    button.disabled = true;
+    button.textContent = 'Проверка…';
+    // напрямую, не через api(): «ok: false» здесь — найденные ошибки синтаксиса, а не сбой запроса
+    fetch(API.SYNTAX_CHECK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ project: CURRENT_PROJECT, object: CURRENT_OBJECT, scope: ctx.scope, kind: ctx.kind, path: ctx.path, content: document.getElementById(ctx.textarea).value }) })
+        .then(async (response) => { const data = await response.json(); if (!response.ok) throw Error(data.error || 'Проверка не выполнена'); return data; })
+        .then((data) => {
+            const state = data.ok === true ? 'ok' : data.ok === false ? 'error' : 'info';
+            const title = data.ok === true ? `Синтаксис в порядке${data.tool ? ` · ${data.tool}` : ''}` : data.ok === false ? `Найдены ошибки${data.tool ? ` · ${data.tool}` : ''}` : data.output;
+            showCheckResult(ctx.result, state, title, data.ok === null ? '' : data.output);
+        })
+        .catch((error) => showCheckResult(ctx.result, 'error', 'Проверка не выполнена', error.message))
+        .finally(() => { button.disabled = false; button.textContent = 'Синтаксис'; });
+}
+// при открытии редактора результат прошлой проверки не показывается
+['playbook_check', 'file_check'].forEach((id) => {
+    const modal = document.getElementById(id)?.closest('.modal-backdrop');
+    if (modal) new MutationObserver(() => { if (!modal.hidden) document.getElementById(id).hidden = true; }).observe(modal, { attributes: true, attributeFilter: ['hidden'] });
+});
+
+let HISTORY = null;   // { ctx, versions, selected, content }
+function openFileHistory(which) {
+    const ctx = editorContext(which);
+    HISTORY = { ctx, versions: [], selected: null, content: null };
+    document.getElementById('history_context').textContent = ctx.title;
+    document.getElementById('history_versions').innerHTML = '<div class="muted">Загрузка…</div>';
+    document.getElementById('history_diff').innerHTML = '';
+    document.getElementById('history_restore').disabled = true;
+    showModalSmooth('history_modal');
+    const query = `project=${encodeURIComponent(CURRENT_PROJECT)}&object=${encodeURIComponent(CURRENT_OBJECT || '')}&scope=${encodeURIComponent(ctx.scope)}&kind=${encodeURIComponent(ctx.kind)}&path=${encodeURIComponent(ctx.path)}`;
+    HISTORY.query = query;
+    fetch(`${API.FILE_HISTORY}?${query}&_=${Date.now()}`).then(async (response) => { const data = await response.json(); if (!response.ok || data.ok === false) throw Error(data.error || 'Не удалось прочитать историю'); return data; })
+        .then((data) => {
+            HISTORY.versions = data.versions;
+            const box = document.getElementById('history_versions');
+            if (!data.versions.length) {
+                box.innerHTML = '<div class="empty-state"><b>Версий пока нет</b><span>Прежняя версия сохраняется при каждом сохранении файла.</span></div>';
+                return;
+            }
+            box.innerHTML = data.versions.map((item, index) => `<button type="button" class="history-version" data-id="${esc(item.id)}"><b>${esc(item.time)}</b><small>${index === 0 ? 'последняя · ' : ''}${formatBytes(item.size)}</small></button>`).join('');
+            box.querySelectorAll('.history-version').forEach((button) => button.addEventListener('click', () => selectHistoryVersion(button.dataset.id)));
+            selectHistoryVersion(data.versions[0].id);
+        })
+        .catch((error) => { document.getElementById('history_versions').innerHTML = `<div class="muted">${esc(error.message)}</div>`; });
+}
+function selectHistoryVersion(id) {
+    HISTORY.selected = id;
+    document.querySelectorAll('#history_versions .history-version').forEach((button) => button.classList.toggle('active', button.dataset.id === id));
+    document.getElementById('history_diff').innerHTML = '<div class="muted">Загрузка…</div>';
+    fetch(`${API.FILE_HISTORY_VERSION}?${HISTORY.query}&id=${encodeURIComponent(id)}&_=${Date.now()}`).then(async (response) => { const data = await response.json(); if (!response.ok || data.ok === false) throw Error(data.error || 'Не удалось прочитать версию'); return data; })
+        .then((data) => {
+            if (HISTORY.selected !== id) return;
+            HISTORY.content = data.content;
+            document.getElementById('history_diff').innerHTML = renderDiffTable(data.rows, `Версия ${data.time}`, 'Сейчас в файле', HISTORY.ctx.language);
+            document.getElementById('history_restore').disabled = false;
+        })
+        .catch((error) => { document.getElementById('history_diff').innerHTML = `<div class="muted">${esc(error.message)}</div>`; });
+}
+// версия загружается в редактор как правка — применяется после «Сохранить» (текущая версия тоже попадёт в историю)
+function restoreHistoryVersion() {
+    if (HISTORY?.content == null) return;
+    const textarea = document.getElementById(HISTORY.ctx.textarea);
+    textarea.value = HISTORY.content;
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    hideModalSmooth('history_modal');
+    notify('Версия загружена в редактор — нажмите «Сохранить», чтобы применить', 'info');
 }

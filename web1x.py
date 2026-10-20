@@ -11,6 +11,7 @@ AnsibleWebControl — простой веб-интерфейс для запус
 import ast
 import concurrent.futures
 import configparser
+import difflib
 import importlib
 import gzip
 import hashlib
@@ -39,7 +40,6 @@ from constants import (
     ANSIBLE_CFG_FILE_NAME,
     AUTODEPLOY_DIR_NAME,
     AUTODEPLOY_PLAYBOOK_NAME,
-    BACKGROUND_IMAGE_NAME,
     LOGO_MARK_IMAGE_NAME,
     DEFAULT_PROJECTS_ROOT,
     DEFAULTS_FILE_CANDIDATES,
@@ -88,7 +88,7 @@ from constants import (
 
 # Версия приложения: интерфейс сравнивает её со своей (APP_VERSION в constants.js) и предупреждает,
 # если файлы обновили, а сервер не перезапустили.
-APP_VERSION = "0.0.33"
+APP_VERSION = "0.0.49"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PUBLIC_DIR = os.path.join(BASE_DIR, PUBLIC_DIR_NAME)
@@ -178,11 +178,6 @@ def paths(project, obj):
         "cfg": os.path.join(directory, ANSIBLE_CFG_FILE_NAME),
     }
 
-def roles_dir(project, obj):
-    """Каталог ролей выбранного объекта."""
-    directory = object_dir(project, obj)
-    return os.path.join(directory, ROLES_DIR_NAME) if directory else None
-
 def _find_subdir(root, name):
     """Ищет поддиректорию с именем `name` где-то внутри `root`, на любом
     уровне вложенности, и возвращает путь к первой найденной. Используется
@@ -236,7 +231,7 @@ def load_inventory(project, obj):
     if not file_paths or not os.path.exists(file_paths["hosts"]):
         return {}
     try:
-        return yaml.safe_load(read(file_paths["hosts"])) or {}
+        return yaml.load(read(file_paths["hosts"]), Loader=FAST_SAFE_LOADER) or {}   # libyaml, если есть
     except yaml.YAMLError as error:
         log(f"HOSTS YAML ERROR: {error}")
         return {}
@@ -369,10 +364,13 @@ def _represent_none_as_empty(dumper, value):
     return dumper.represent_scalar("tag:yaml.org,2002:null", "")
 
 InventoryDumper.add_representer(type(None), _represent_none_as_empty)
+# порядок ключей — как в исходном словаре: так работает в любой PyYAML (в 3.13 из Debian 10 / Astra 1.7
+# нет параметра sort_keys, а по умолчанию ключи сортируются; у dict_items нет .items — сортировки не будет)
+InventoryDumper.add_representer(dict, lambda dumper, data: dumper.represent_mapping("tag:yaml.org,2002:map", data.items()))
 
 def save_hosts(path, data):
     """Полностью перезаписывает hosts.yml из словаря (теряет ручное форматирование)."""
-    dumped = yaml.dump(data, Dumper=InventoryDumper, allow_unicode=True, sort_keys=False, default_flow_style=False)
+    dumped = yaml.dump(data, Dumper=InventoryDumper, allow_unicode=True, default_flow_style=False)
     lines = dumped.splitlines(keepends=True)
     if len(lines) > 1:
         formatted = []
@@ -448,7 +446,7 @@ def _host_yaml_block(name, values, newline, indent):
     в обоих случаях старый/новый блок вставляется в файл построчно, а не
     через полную пересборку YAML.
     """
-    block = yaml.safe_dump({name: values}, allow_unicode=True, sort_keys=False, default_flow_style=False)
+    block = yaml.dump({name: values}, Dumper=InventoryDumper, allow_unicode=True, default_flow_style=False)
     if newline != "\n":
         block = block.replace("\n", newline)
     return "".join(f"{' ' * indent}{line}" if line.strip() else line for line in block.splitlines(keepends=True))
@@ -792,8 +790,10 @@ def delete_group(project, obj, group_name):
             if isinstance(all_after, dict) and not all_after.get("children"):
                 _remove_group_subsection(file_paths["hosts"], "all", "children")
 
-def add_host(project, obj, name, values, groups=None):
-    """Добавляет узел в hosts.yml (с проверкой дубликатов по имени и ansible_host) и в группы."""
+def add_host(project, obj, name, values, groups=None, blank_separator=None):
+    """Добавляет узел в hosts.yml (с проверкой дубликатов по имени и ansible_host) и в группы.
+    blank_separator — разделять ли узлы пустой строкой; None — как уже принято в файле (при импорте
+    в новый проект образца нет — оформление берётся из файла-источника)."""
     file_paths = paths(project, obj)
     if not file_paths:
         raise ValueError("Объект не найден")
@@ -835,7 +835,9 @@ def add_host(project, obj, name, values, groups=None):
             insert_at = end_index
             while insert_at > hosts_index + 1 and not lines[insert_at - 1].strip():
                 insert_at -= 1
-            separator = [newline] if _entries_use_blank_separator(lines, entry_indexes) and lines[insert_at - 1].strip() else []
+            # в файле уже есть хотя бы два узла — следовать его оформлению; иначе — заданному (оформлению источника)
+            spaced = _entries_use_blank_separator(lines, entry_indexes) if blank_separator is None or len(entry_indexes) > 1 else blank_separator
+            separator = [newline] if spaced and lines[insert_at - 1].strip() else []
         else:
             insert_at = hosts_index + 1
             separator = []
@@ -866,14 +868,6 @@ def _delete_host_no_cleanup(project, obj, file_paths, name):
     for group in inventory_groups(project, obj):
         _remove_host_from_group(file_paths["hosts"], group["name"], name)
 
-def delete_host(project, obj, name):
-    """Удаляет один узел и затем убирает опустевшие группы."""
-    file_paths = paths(project, obj)
-    if not file_paths:
-        raise ValueError("Объект не найден")
-    _delete_host_no_cleanup(project, obj, file_paths, name)
-    _cleanup_empty_groups(file_paths["hosts"])
-
 def delete_hosts(project, obj, names):
     """Удаляет несколько узлов за один проход и один раз чистит опустевшие группы."""
     file_paths = paths(project, obj)
@@ -900,9 +894,8 @@ def save_host(project, obj, old_name, new_name, values):
         raise ValueError("Узел не найден")
     if new_name != old_name and new_name in hosts:
         raise ValueError("Узел с таким именем уже существует")
-    updated = dict(hosts[old_name]) if isinstance(hosts[old_name], dict) else {}
-    for key, value in values.items():
-        updated[key] = scalar(value)
+    # параметры узла — ровно те, что пришли из формы (так можно и убрать лишние — например, при смене шаблона)
+    updated = {key: scalar(value) for key, value in values.items()}
     raw = read(file_paths["hosts"])
     lines = raw.splitlines(keepends=True)
     hosts_index, end_index, hosts_indent = _hosts_section_bounds(lines)
@@ -1076,7 +1069,10 @@ def role_path(project, obj, relative, scope=None):
     path = os.path.join(directory, *parts)
     return path if _inside(directory, path) else None
 
-class _TolerantLoader(yaml.SafeLoader):
+# libyaml (C) — заметно быстрее на больших inventory и плейбуках; без неё — обычный загрузчик
+FAST_SAFE_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
+class _TolerantLoader(FAST_SAFE_LOADER):
     """YAML-загрузчик, который не падает на тегах Ansible (!vault, !unsafe…): значение берётся как есть."""
 
 def _construct_tagged(loader, suffix, node):
@@ -1219,14 +1215,6 @@ def playbook_files(project, obj, playbook_name, scope=None):
     return {"playbook": playbook_name, "scope": scope, "roles": roles, "problem": problem,
             "available": [role for role in list_roles(project, obj, scope) if role not in refs]}
 
-def playbook_roles(project, obj, playbook_name):
-    """Дерево ролей плейбука (прежний формат ответа /roles) — на основе playbook_files."""
-    try:
-        data = playbook_files(project, obj, playbook_name)
-    except ValueError:
-        return []
-    return [{"name": role["name"], "type": "dir", "path": role["name"], "children": role["children"]} for role in data["roles"] if role["found"]]
-
 def role_file(project, obj, relative_path, scope=None):
     """Файл роли по пути «роль|…» (с защитой от выхода за каталог роли) или None."""
     path = role_path(project, obj, relative_path, scope)
@@ -1295,28 +1283,33 @@ def _role_files(role, parts=None):
         files[role] = None   # сама папка роли — всегда
     return files
 
-def _object_files(roles, where, site_playbook, role_playbooks, title):
-    """Содержимое папки playbooks/ или object/<объект>/: inventory, ansible.cfg, плейбуки, роли."""
+def _object_files(roles, where, site_playbook, role_playbooks, title, roles_link):
+    """Содержимое папки playbooks/ или object/<объект>/: inventory, ansible.cfg, плейбуки и символьная
+    ссылка roles → общая папка ролей проекта (roles_link — относительный путь к ней)."""
     files = {
         HOSTS_FILE_CANDIDATES[0]: HOSTS_TEMPLATE,
         DEFAULTS_FILE_CANDIDATES[0]: DEFAULTS_TEMPLATE.format(where=where),
         ANSIBLE_CFG_FILE_NAME: ANSIBLE_CFG_TEMPLATE.format(hosts=HOSTS_FILE_CANDIDATES[0], roles=ROLES_DIR_NAME),
-        ROLES_DIR_NAME: None,
+        ROLES_DIR_NAME: _Link(roles_link),
     }
     if site_playbook:
         files["site.yml"] = _playbook_text(title, roles)
     if role_playbooks:
         for index, role in enumerate(roles, 1):
             files[f"{index:02d}-{role}.yml"] = _playbook_text(f"{title}: {role}", [role])
-    for path, text in (item for role in roles for item in _role_files(role).items()):
-        files[f"{ROLES_DIR_NAME}/{path}"] = text
     return files
+
+class _Link(str):
+    """Элемент структуры проекта — символьная ссылка; значение — путь, на который она указывает (относительный)."""
 
 def _write_tree(root, files):
     """Создаёт папки и файлы по словарю «относительный путь → текст (None — папка)»."""
     for relative, text in sorted(files.items()):
         path = os.path.join(root, *relative.split("/"))
-        if text is None:
+        if isinstance(text, _Link):
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            os.symlink(str(text), path)
+        elif text is None:
             os.makedirs(path, exist_ok=True)
         else:
             os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -1334,13 +1327,17 @@ def project_plan(name, kind, objects, roles, site_playbook=True, role_playbooks=
         raise ValueError("Укажите хотя бы один объект")
     if len(roles) > 50 or len(objects) > 50:
         raise ValueError("Слишком много ролей или объектов за один раз (до 50)")
-    files = {}
+    # роли — одна общая папка roles/ на уровне проекта (рядом с playbooks/ или object/);
+    # в playbooks/ и в каждом object/<объект>/ — относительная символьная ссылка roles на неё
+    files = {ROLES_DIR_NAME: None}
+    for path, text in (item for role in roles for item in _role_files(role).items()):
+        files[f"{ROLES_DIR_NAME}/{path}"] = text
     if kind == "simple":
-        for path, text in _object_files(roles, "проекта", site_playbook, role_playbooks, name).items():
+        for path, text in _object_files(roles, "проекта", site_playbook, role_playbooks, name, f"../{ROLES_DIR_NAME}").items():
             files[f"{PLAYBOOKS_DIR_NAME}/{path}"] = text
     else:
         for obj in objects:
-            for path, text in _object_files(roles, "объекта", site_playbook, role_playbooks, f"{name} / {obj}").items():
+            for path, text in _object_files(roles, "объекта", site_playbook, role_playbooks, f"{name} / {obj}", f"../../{ROLES_DIR_NAME}").items():
                 files[f"{OBJECTS_DIR_NAME}/{obj}/{path}"] = text
     if with_autodeploy:
         # без проекта-образца — минимальная заготовка; с образцом папка копируется в create_project
@@ -1368,7 +1365,48 @@ def autodeploy_sources():
         result.append({"project": project, "files": count, "size": size})
     return result
 
-def create_project(name, kind, objects, roles, site_playbook=True, role_playbooks=False, with_autodeploy=False, autodeploy_source=None):
+def cfg_compare(src_project, src_obj):
+    """ansible.cfg проекта-источника и стандартный файл нового проекта: оба текста и построчное сравнение
+    (строки: [тип, слева, справа]; тип — same / change / del / add)."""
+    src_project, src_obj = _import_source(src_project, src_obj)
+    src_paths = paths(src_project, src_obj)
+    if not src_paths or not os.path.isfile(src_paths["cfg"]):
+        raise ValueError("У этого проекта нет ansible.cfg")
+    source = read(src_paths["cfg"])
+    standard = ANSIBLE_CFG_TEMPLATE.format(hosts=HOSTS_FILE_CANDIDATES[0], roles=ROLES_DIR_NAME)
+    rows = diff_rows(standard.splitlines(), source.splitlines())
+    problem = ini_problem(source)
+    return {"standard": standard, "source": source, "rows": rows, "problem": problem}
+
+def _import_into_new_project(staging, kind, objects, imports):
+    """Мастер: роли и плейбуки из других проектов — в общую roles/ нового проекта и в playbooks/
+    (или в каждый объект). Плейбук с тем же именем, что у созданной заготовки (например, site.yml),
+    заменяет заготовку."""
+    summary = []
+    for item in imports or []:
+        if not isinstance(item, dict):
+            continue
+        src_project, src_obj = _import_source(item.get("project"), item.get("object"))
+        playbooks = [str(name) for name in item.get("playbooks") or []]
+        refs = list(item.get("roles") or [])
+        sources = []
+        for name in playbooks:
+            path = playbook_path(src_project, src_obj, name)
+            if not path:
+                raise ValueError(f"Плейбук «{name}» не найден в {src_project}")
+            sources.append((name, path))
+            refs += playbook_role_refs(path)[0]
+        copied, _, _ = _copy_roles_into(src_project, src_obj, refs, os.path.join(staging, ROLES_DIR_NAME))
+        targets = [os.path.join(staging, PLAYBOOKS_DIR_NAME)] if kind == "simple" else [os.path.join(staging, OBJECTS_DIR_NAME, obj) for obj in objects]
+        texts = [read(path) for _, path in sources] + _role_texts(src_project, src_obj, refs)
+        for directory in targets:
+            for name, path in sources:
+                shutil.copy2(path, os.path.join(directory, name))
+            merge_imported_defaults(None, None, src_project, src_obj, texts, os.path.join(directory, DEFAULTS_FILE_CANDIDATES[0]))
+        summary.append(f"{src_project}{' / ' + src_obj if src_obj else ''}: плейбуки {', '.join(playbooks) or 'нет'}, роли {', '.join(copied) or 'нет'}")
+    return summary
+
+def create_project(name, kind, objects, roles, site_playbook=True, role_playbooks=False, with_autodeploy=False, autodeploy_source=None, imports=None, cfg_source=None):
     """Создаёт проект целиком. Сначала — во временной папке рядом, затем одно переименование:
     при ошибке не остаётся наполовину созданного проекта."""
     files = project_plan(name, kind, objects, roles, site_playbook, role_playbooks, with_autodeploy)
@@ -1384,12 +1422,25 @@ def create_project(name, kind, objects, roles, site_playbook=True, role_playbook
             files = {path: text for path, text in files.items() if not path.startswith(AUTODEPLOY_DIR_NAME + "/")}
             shutil.copytree(os.path.dirname(source), os.path.join(staging, AUTODEPLOY_DIR_NAME), symlinks=True)
         _write_tree(staging, files)
+        imported = _import_into_new_project(staging, kind, objects, imports)
+        if isinstance(cfg_source, dict) and cfg_source.get("project"):   # ansible.cfg — из другого проекта
+            text = cfg_compare(cfg_source.get("project"), cfg_source.get("object"))["source"]
+            for directory in ([os.path.join(staging, PLAYBOOKS_DIR_NAME)] if kind == "simple" else [os.path.join(staging, OBJECTS_DIR_NAME, obj) for obj in objects]):
+                write(os.path.join(directory, ANSIBLE_CFG_FILE_NAME), text)
+            imported.append(f"ansible.cfg из {cfg_source.get('project')}{' / ' + cfg_source['object'] if cfg_source.get('object') else ''}")
         os.rename(staging, target)
+        # узлы — уже в созданный проект (обычным добавлением узла, с проверкой совпадений)
+        for item in imports or []:
+            if isinstance(item, dict) and item.get("hosts"):
+                for target_obj in ([None] if kind == "simple" else objects):
+                    result = import_hosts(name, target_obj, item.get("project"), item.get("object"), item.get("hosts"))
+                    imported.append(f"узлы{' в ' + target_obj if target_obj else ''}: {', '.join(result['added']) or 'нет'}")
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise
     log(f"Создан проект {name}: {'простой' if kind == 'simple' else 'объекты: ' + ', '.join(objects)}; роли: {', '.join(roles) or 'нет'}"
-        + (f"; Autodeploy — копия из проекта {autodeploy_source}" if source else "; Autodeploy — заготовка" if with_autodeploy else ""))
+        + (f"; Autodeploy — копия из проекта {autodeploy_source}" if source else "; Autodeploy — заготовка" if with_autodeploy else "")
+        + (f"; импорт — {'; '.join(imported)}" if imported else ""))
     return sorted(path for path, text in files.items() if text is not None)
 
 def list_roles(project, obj, scope=None):
@@ -1416,10 +1467,17 @@ def add_role(project, obj, role, scope=None, parts=None):
     _write_tree(os.path.join(directory, ROLES_DIR_NAME), _role_files(ref, parts))
     log(f"Создана роль {ref} в {project}{' / ' + obj if obj else ''}{' (Autodeploy)' if scope else ''}")
 
-def add_playbook(project, obj, name, roles, hosts="all", become=True, new_roles=None):
-    """Добавляет плейбук с выбранными ролями; new_roles — роли, которые создаются тут же (скелет)."""
-    for role in new_roles or []:
-        _check_item_name(role, "Роль")
+def add_playbook(project, obj, name, roles, hosts="all", become=True, new_roles=None, import_roles=None):
+    """Добавляет плейбук с выбранными ролями; new_roles — роли, которые создаются тут же: имя или
+    {"name": имя, "parts": [папки скелета]} (подроль — «группа/роль»)."""
+    specs = []
+    for item in new_roles or []:
+        # не «name» — так называется параметр с именем самого плейбука
+        role_name, parts = (item.get("name"), item.get("parts")) if isinstance(item, dict) else (item, None)
+        ref = _role_ref(role_name)
+        if not ref:
+            raise ValueError(f"Роль «{role_name}»: латинские буквы, цифры, точка, дефис и подчёркивание (подроль — через «/»)")
+        specs.append((ref, [part for part in parts if part in ROLE_PARTS] if isinstance(parts, list) else None))
     name = name.strip() if isinstance(name, str) else ""
     if name and not name.lower().endswith((".yml", ".yaml")):
         name += ".yml"
@@ -1434,12 +1492,19 @@ def add_playbook(project, obj, name, roles, hosts="all", become=True, new_roles=
     path = os.path.join(directory, name)
     if os.path.exists(path):
         raise ValueError(f"Плейбук «{name}» уже есть")
-    for role in new_roles or []:
-        if not find_role_dir(project, obj, role):
-            add_role(project, obj, role)
-    roles = list(dict.fromkeys(list(roles or []) + list(new_roles or [])))
-    known = set(list_roles(project, obj))
-    unknown = [role for role in roles if role not in known]
+    imported_refs = []
+    for item in import_roles or []:   # роли из других проектов: [{"project", "object", "roles": [...]}] — копируются и подключаются
+        if isinstance(item, dict):
+            src_project, src_obj = _import_source(item.get("project"), item.get("object"))
+            _copy_roles_into(src_project, src_obj, item.get("roles") or [], os.path.join(directory, ROLES_DIR_NAME))
+            imported_refs += [ref for ref in (_role_ref(role) for role in item.get("roles") or []) if ref]
+            merge_imported_defaults(project, obj, src_project, src_obj, _role_texts(src_project, src_obj, item.get("roles") or []))
+    for ref, parts in specs:
+        if not find_role_dir(project, obj, ref):
+            add_role(project, obj, ref, None, parts)
+    roles = list(dict.fromkeys(list(roles or []) + imported_refs + [ref for ref, _ in specs]))
+    # роли проверяются тем же поиском, что и везде (подроли «группа/роль» — тоже)
+    unknown = [role for role in roles if not find_role_dir(project, obj, role)]
     if unknown:
         raise ValueError(f"Нет таких ролей: {', '.join(unknown)}")
     path = os.path.join(directory, name)
@@ -1450,10 +1515,19 @@ def add_playbook(project, obj, name, roles, hosts="all", become=True, new_roles=
     return name
 
 # --- Роли плейбука: добавить / убрать (правкой текста — комментарии и оформление сохраняются) ---
-def _first_play_roles_ok(text, role, present):
-    """Проверка результата правки: файл читается, и роль есть/нет среди ролей плейбука."""
+def _plays_without_roles(text):
+    """Плеи плейбука без ключа roles — чтобы убедиться, что правка ролей не задела hosts, vars и прочее."""
+    document = yaml.load(text, Loader=_TolerantLoader)
+    return [{key: value for key, value in play.items() if key != "roles"} if isinstance(play, dict) else play
+            for play in (document if isinstance(document, list) else [])]
+
+def _first_play_roles_ok(text, role, present, original=None):
+    """Проверка результата правки: файл читается, роль есть/нет среди ролей плейбука, а остальные ключи
+    плеев (hosts, vars, become…) не изменились."""
     try:
         document = yaml.load(text, Loader=_TolerantLoader)
+        if original is not None and _plays_without_roles(text) != _plays_without_roles(original):
+            return False
     except yaml.YAMLError:
         return False
     found = []
@@ -1491,14 +1565,31 @@ def _add_role_text(text, role):
     if play is None:
         raise ValueError("В плейбуке не найден плей — добавьте роль вручную в редакторе плейбука")
     key_indent = len(lines[play]) - len(lines[play].lstrip()) + 2
-    insert_at = play
+    # строка hosts: — сама строка плея («- hosts: …») или ключ плея ниже
+    hosts_line = play if re.match(r"^\s*-\s+hosts\s*:", lines[play]) else None
     for j in range(play + 1, len(lines)):
         current = lines[j]
-        if current.strip() and len(current) - len(current.lstrip()) < key_indent:
+        if hosts_line is not None:
             break
-        if re.match(rf"^ {{{key_indent}}}hosts:", current):
+        if current.strip() and not current.lstrip().startswith("#") and len(current) - len(current.lstrip()) < key_indent:
+            break
+        if re.match(rf"^ {{{key_indent}}}hosts\s*:", current):
+            hosts_line = j
+    insert_at = hosts_line if hosts_line is not None else play
+    # значение hosts: может быть списком ниже (с отступом или на том же отступе «- web») — пропустить его целиком,
+    # иначе roles: окажется внутри списка узлов, а узлы станут ролями
+    j = insert_at + 1
+    while j < len(lines):
+        current = lines[j]
+        indent = len(current) - len(current.lstrip())
+        if not current.strip() or current.lstrip().startswith("#"):
+            j += 1
+            continue
+        if indent > key_indent or (indent == key_indent and current.lstrip().startswith("- ")):
             insert_at = j
-            break
+            j += 1
+            continue
+        break
     lines[insert_at + 1:insert_at + 1] = [" " * key_indent + "roles:", " " * (key_indent + 2) + f"- {role}"]
     return "\n".join(lines)
 
@@ -1555,29 +1646,6 @@ def _remove_role_text(text, role):
         raise ValueError("Роль подключена не через roles: (например, include_role в задачах) — уберите её в редакторе плейбука")
     return "\n".join(lines)
 
-def playbook_role_add(project, obj, playbook_name, role, scope=None):
-    """Добавляет роль в плейбук; если такой роли нет — создаёт её стандартный скелет."""
-    path = playbook_path(project, obj, playbook_name, scope)
-    if not path:
-        raise ValueError("Плейбук не найден")
-    role = _role_ref(role)
-    if not role:
-        raise ValueError("Имя роли: латинские буквы, цифры, точка, дефис и подчёркивание (вложенная — через «/»)")
-    if role in playbook_role_refs(path)[0]:
-        raise ValueError(f"Роль «{role}» уже есть в плейбуке")
-    created = False
-    if not find_role_dir(project, obj, role, scope):
-        add_role(project, obj, role, scope)
-        created = True
-    text = read(path)
-    new_text = _add_role_text(text, role)
-    if not _first_play_roles_ok(new_text, role, True):
-        raise ValueError("Не удалось добавить роль автоматически — добавьте её в редакторе плейбука")
-    _backup_file(project, scope_key(obj, scope), "playbook", playbook_name, text)
-    write(path, new_text)
-    log(f"Роль {role} добавлена в плейбук {playbook_name}{' (роль создана)' if created else ''}")
-    return created
-
 def playbook_roles_add(project, obj, playbook_name, roles, scope=None, parts=None):
     """Добавляет в плейбук несколько ролей за раз (например, роль с подролями «группа/роль»);
     несуществующие создаются со всеми основными файлами и папками. Один файл — одна правка."""
@@ -1603,7 +1671,7 @@ def playbook_roles_add(project, obj, playbook_name, roles, scope=None, parts=Non
             add_role(project, obj, ref, scope, parts)
             created.append(ref)
         new_text = _add_role_text(text, ref)
-        if not _first_play_roles_ok(new_text, ref, True):
+        if not _first_play_roles_ok(new_text, ref, True, text):
             raise ValueError(f"Не удалось добавить роль «{ref}» автоматически — добавьте её в редакторе плейбука")
         text = new_text
         added.append(ref)
@@ -1637,6 +1705,313 @@ def roles_tree(project, obj, scope=None):
             merged.setdefault(item["ref"], item)
     return sorted(merged.values(), key=lambda item: item["ref"].lower())
 
+# --- Импорт ролей и плейбуков из других проектов ---
+def _import_source(src_project, src_obj):
+    """Проверенный источник импорта: (проект, объект или None). Объект — только у проекта с объектами."""
+    if src_project not in get_projects():
+        raise ValueError("Проект-источник не найден")
+    if single_project(src_project):
+        return src_project, None
+    if src_obj not in get_objects(src_project):
+        raise ValueError("Выберите объект проекта-источника")
+    return src_project, src_obj
+
+def import_sources():
+    """Проекты (и их объекты), из которых можно импортировать роли и плейбуки."""
+    return [{"project": name, "objects": [] if single_project(name) else get_objects(name)} for name in get_projects()]
+
+def import_catalog(src_project, src_obj):
+    """Что есть в источнике: плейбуки (с их ролями) и роли деревом (с подролями)."""
+    src_project, src_obj = _import_source(src_project, src_obj)
+    playbooks = [{"name": item["name"], "roles": playbook_role_refs(item["path"])[0]} for item in get_playbooks(src_project, src_obj)]
+    hosts = [{"hostname": host["hostname"], "ip": host.get("ip", "")} for host in parse_hosts(src_project, src_obj)]
+    groups = [{"name": group["name"], "hosts": group.get("hosts", [])} for group in inventory_groups(src_project, src_obj) if isinstance(group, dict)]
+    return {"project": src_project, "object": src_obj, "playbooks": playbooks, "roles": roles_tree(src_project, src_obj), "hosts": hosts, "groups": groups}
+
+def _copy_roles_into(src_project, src_obj, refs, dst_roles_dir):
+    """Копирует роли источника в папку ролей назначения — вместе с их зависимостями (meta/main.yml),
+    чтобы роль работала. Уже существующие роли не перезаписываются. → (скопированы, уже были, не найдены)"""
+    if not _inside(PROJECTS_ROOT, dst_roles_dir):
+        raise ValueError("Папка ролей назначения вне папки проектов")
+    copied, skipped, missing, seen, queue = [], [], [], set(), list(refs or [])
+    while queue:
+        ref = _role_ref(queue.pop(0))
+        if not ref or ref in seen:
+            continue
+        seen.add(ref)
+        source = find_role_dir(src_project, src_obj, ref)
+        if not source:
+            missing.append(ref)
+            continue
+        target = os.path.join(dst_roles_dir, *ref.split("/"))
+        if os.path.exists(target):
+            skipped.append(ref)
+        else:
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            shutil.copytree(source, target, symlinks=True)   # ссылки внутри роли — как ссылки, без перехода по ним
+            copied.append(ref)
+        queue += role_dependencies(source)
+    return copied, skipped, missing
+
+def _playbook_file_name(name):
+    name = name.strip() if isinstance(name, str) else ""
+    if name and not name.lower().endswith((".yml", ".yaml")):
+        name += ".yml"
+    _check_item_name(name, "Имя плейбука")
+    return name
+
+def import_roles(project, obj, src_project, src_obj, roles, playbook=None, scope=None):
+    """Копирует роли из другого проекта в текущую область; если указан плейбук — подключает их к нему."""
+    src_project, src_obj = _import_source(src_project, src_obj)
+    directory = scope_dir(project, obj, scope)
+    if not directory:
+        raise ValueError("Проект или объект не найден")
+    if (src_project, src_obj) == (project, obj or None) and not scope:
+        raise ValueError("Источник совпадает с текущим проектом")
+    refs = [ref for ref in (_role_ref(role) for role in roles or []) if ref]
+    if not refs:
+        raise ValueError("Не выбрано ни одной роли")
+    copied, skipped, missing = _copy_roles_into(src_project, src_obj, refs, os.path.join(directory, ROLES_DIR_NAME))
+    added = playbook_roles_add(project, obj, playbook, [ref for ref in refs if ref not in missing], scope)["added"] if playbook else []
+    defaults_added = merge_imported_defaults(project, obj, src_project, src_obj, _role_texts(src_project, src_obj, refs))
+    log(f"Импорт ролей из {src_project}{' / ' + src_obj if src_obj else ''}: скопированы {', '.join(copied) or 'нет'}"
+        + (f"; уже были: {', '.join(skipped)}" if skipped else "") + (f"; не найдены: {', '.join(missing)}" if missing else ""))
+    return {"copied": copied, "skipped": skipped, "missing": missing, "added": added, "defaults_added": defaults_added}
+
+def import_playbook(project, obj, src_project, src_obj, name, new_name=None):
+    """Копирует плейбук из другого проекта (под новым именем, если задано) вместе с его ролями."""
+    src_project, src_obj = _import_source(src_project, src_obj)
+    source = playbook_path(src_project, src_obj, name)
+    if not source:
+        raise ValueError("Плейбук-источник не найден")
+    target_name = _playbook_file_name(new_name or name)
+    directory = object_dir(project, obj)
+    if not directory or not os.path.isdir(directory):
+        raise ValueError("Проект или объект не найден")
+    target = os.path.join(directory, target_name)
+    if os.path.exists(target):
+        raise ValueError(f"Плейбук «{target_name}» уже есть — укажите другое имя")
+    copied, skipped, missing = _copy_roles_into(src_project, src_obj, playbook_role_refs(source)[0], os.path.join(directory, ROLES_DIR_NAME))
+    shutil.copy2(source, target)
+    defaults_added = merge_imported_defaults(project, obj, src_project, src_obj, [read(source)] + _role_texts(src_project, src_obj, playbook_role_refs(source)[0]))
+    log(f"Импорт плейбука {name} из {src_project}{' / ' + src_obj if src_obj else ''} как {target_name}; роли скопированы: {', '.join(copied) or 'нет'}"
+        + (f"; уже были: {', '.join(skipped)}" if skipped else ""))
+    return {"name": target_name, "copied": copied, "skipped": skipped, "missing": missing, "defaults_added": defaults_added}
+
+# --- Импорт: переменные общего defaults, которые используют скопированные роли и плейбуки ---
+_VAR_REF_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*")
+_VAR_INDEX_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\[['\"]([A-Za-z_][A-Za-z0-9_]*)['\"]\]")
+
+_JINJA_RE = re.compile(r"\{\{(.*?)\}\}|\{%(.*?)%\}", re.S)
+_EXPR_KEYS_RE = re.compile(r"(?m)^\s*-?\s*(?:when|changed_when|failed_when|until|that|loop|with_items|with_dict|var)\s*:\s*(.*)$")
+
+def _referenced_names(texts):
+    """Имена переменных, которые реально подставляются: внутри {{ … }} / {% … %} и в выражениях
+    when / that / until / loop… (а не любые слова текста — иначе «defaults/main.yml» в комментарии
+    считался бы обращением ко всему блоку defaults). x['y'] понимается как «x.y», а не «весь x»."""
+    names = set()
+    for text in texts:
+        expressions = [a or b for a, b in _JINJA_RE.findall(text)]
+        lines = text.split("\n")
+        for index, line in enumerate(lines):
+            match = _EXPR_KEYS_RE.match(line)
+            if not match:
+                continue
+            expressions.append(match.group(1))
+            if not match.group(1).strip():   # значение списком ниже: «when:\\n  - a\\n  - b»
+                indent = len(line) - len(line.lstrip())
+                for item in lines[index + 1:]:
+                    if item.strip() and len(item) - len(item.lstrip()) <= indent and not item.lstrip().startswith("-"):
+                        break
+                    if item.lstrip().startswith("- "):
+                        expressions.append(item.lstrip()[2:])
+        for expression in expressions:
+            expression = re.sub(r"(['\"]).*?\1(?!\])", " ", _VAR_INDEX_RE.sub(lambda m: f"{m.group(1)}.{m.group(2)}", expression))
+            names.update(_VAR_REF_RE.findall(expression))
+    return names
+
+def _role_texts(src_project, src_obj, refs):
+    """Тексты ролей (и их зависимостей), где обычно используются переменные: tasks, defaults, vars,
+    handlers, templates."""
+    texts, seen, queue = [], set(), list(refs or [])
+    while queue:
+        ref = _role_ref(queue.pop(0))
+        if not ref or ref in seen:
+            continue
+        seen.add(ref)
+        directory = find_role_dir(src_project, src_obj, ref)
+        if not directory:
+            continue
+        for folder in ("tasks", "defaults", "vars", "handlers", "templates"):
+            for path in _var_files(os.path.join(directory, folder)) if folder != "templates" else [
+                    os.path.join(d, n) for d, _, ns in os.walk(os.path.join(directory, folder)) for n in ns]:
+                try:
+                    if os.path.getsize(path) <= 1_000_000:
+                        texts.append(read(path))
+                except OSError:
+                    pass
+        queue += role_dependencies(directory)
+    return texts
+
+def _top_blocks(lines):
+    """Ключи верхнего уровня YAML-файла → (первая строка, конец блока) — по тексту."""
+    blocks, starts = {}, []
+    for index, line in enumerate(lines):
+        match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*:(.*)$", line)
+        if match:
+            starts.append((index, match.group(1)))
+    for number, (start, key) in enumerate(starts):
+        end = next((i for i in range(start + 1, len(lines)) if lines[i].strip() and not lines[i][0].isspace()), len(lines))
+        while end > start + 1 and not lines[end - 1].strip():
+            end -= 1
+        blocks[key] = (start, end)
+    return blocks
+
+def _child_blocks(lines, start, end):
+    """Вложенные ключи блока: {ключ: (начало, конец)} и их отступ (по первой вложенной строке)."""
+    indent = next((len(l) - len(l.lstrip()) for l in lines[start + 1:end] if l.strip() and not l.lstrip().startswith("#")), None)
+    children = {}
+    if indent is None:
+        return children, None
+    keys = [(i, m.group(1)) for i in range(start + 1, end) for m in [re.match(r"^ {%d}([A-Za-z_][A-Za-z0-9_]*)\s*:" % indent, lines[i])] if m]
+    for number, (begin, key) in enumerate(keys):
+        stop = next((i for i in range(begin + 1, end) if lines[i].strip() and not lines[i].lstrip().startswith("#") and len(lines[i]) - len(lines[i].lstrip()) <= indent), end)
+        while stop > begin + 1 and not lines[stop - 1].strip():
+            stop -= 1
+        children[key] = (begin, stop)
+    return children, indent
+
+def _reindent(lines, old, new):
+    return [(" " * new + line[old:]) if line.startswith(" " * old) else line for line in lines]
+
+def _merge_defaults_text(source_texts, target_text, names, label):
+    """Дописывает в текст общего defaults назначения переменные источника, которые используются (names).
+    Значения переносятся текстом (строка в строку — !vault, комментарии, многострочные значения не
+    портятся). Вложенные ключи («defaults.dhcpiface») — внутрь существующего блока. Уже заданное не трогается."""
+    target = target_text.split("\n")
+    appended, added = [], []
+    for source_text in source_texts:
+        source = source_text.split("\n")
+        for key, (start, end) in _top_blocks(source).items():
+            whole = key in names
+            subs = {name.split(".")[1] for name in names if name.startswith(key + ".")}
+            if not whole and not subs:
+                continue
+            target_blocks = _top_blocks(target)
+            source_children, source_indent = _child_blocks(source, start, end)
+            if key not in target_blocks and not any(line.startswith(f"{key}:") for line in appended):
+                if whole or not source_children:
+                    appended += [""] + source[start:end]
+                    added.append(key)
+                else:
+                    chosen = [sub for sub in source_children if sub in subs]
+                    if chosen:
+                        appended += ["", f"{key}:"] + [line for sub in chosen for line in _reindent(source[slice(*source_children[sub])], source_indent, 2)]
+                        added += [f"{key}.{sub}" for sub in chosen]
+                continue
+            if key not in target_blocks or not source_children:
+                continue
+            t_start, t_end = target_blocks[key]
+            if re.match(r"^%s\s*:\s*\S" % re.escape(key), target[t_start]) and not target[t_start].rstrip().endswith(":"):
+                continue   # в назначении значение в строку (например, {}), дописать внутрь нельзя
+            target_children, target_indent = _child_blocks(target, t_start, t_end)
+            insert = []
+            for sub in [sub for sub in source_children if whole or sub in subs]:   # в порядке источника
+                if sub in source_children and sub not in target_children:
+                    insert += _reindent(source[slice(*source_children[sub])], source_indent, target_indent or 2)
+                    added.append(f"{key}.{sub}")
+            target[t_end:t_end] = insert
+    if appended:
+        target = [line for line in target]
+        while target and not target[-1].strip():
+            target.pop()
+        target += ["", f"# --- добавлено при импорте из {label} ---"] + appended[1:] + [""]
+    return "\n".join(target), added
+
+def merge_imported_defaults(project, obj, src_project, src_obj, texts, target_path=None):
+    """Переменные общего defaults источника, которые используют импортированные роли/плейбуки (texts),
+    дописываются в общий defaults назначения. Возвращает список добавленных переменных."""
+    src_paths = paths(src_project, src_obj)
+    source_files = _var_files(src_paths["defaults"]) if src_paths else []
+    if not source_files or not texts:
+        return []
+    names = _referenced_names(texts)
+    if target_path is None:
+        target_path = object_file_path(project, obj, "defaults")
+    if not target_path or not _inside(PROJECTS_ROOT, target_path):
+        return []
+    old_text = read(target_path) if os.path.isfile(target_path) else "---\n"
+    label = f"{src_project}{' / ' + src_obj if src_obj else ''}"
+    new_text, added = _merge_defaults_text([read(path) for path in source_files], old_text, names, label)
+    if not added:
+        return []
+    try:
+        yaml.load(new_text, Loader=_TolerantLoader)
+    except yaml.YAMLError:
+        log(f"Импорт: не удалось дописать переменные в {os.path.basename(target_path)} — файл не изменён")
+        return []
+    if os.path.isfile(target_path) and project:
+        _backup_file(project, obj, "defaults", os.path.basename(target_path), old_text)
+    write(target_path, new_text)
+    log(f"Импорт из {label}: в {os.path.basename(target_path)} добавлены переменные {', '.join(added)}")
+    return added
+
+def _hosts_file_spaced(project, obj):
+    """Разделены ли узлы в hosts.yml пустыми строками (оформление файла)."""
+    file_paths = paths(project, obj)
+    if not file_paths or not os.path.isfile(file_paths["hosts"]):
+        return False
+    lines = read(file_paths["hosts"]).splitlines(keepends=True)
+    hosts_index, end_index, hosts_indent = _hosts_section_bounds(lines)
+    if hosts_index is None:
+        return False
+    return _entries_use_blank_separator(lines, _host_entry_indexes(lines, hosts_index, end_index, hosts_indent))
+
+# --- Импорт узлов ---
+def import_hosts(project, obj, src_project, src_obj, hostnames):
+    """Копирует узлы источника (с параметрами и группами) в inventory назначения. Узел с занятым
+    именем или адресом не перезаписывается — попадает в «пропущены» с причиной."""
+    src_project, src_obj = _import_source(src_project, src_obj)
+    if (src_project, src_obj) == (project, obj or None):
+        raise ValueError("Источник совпадает с текущим объектом")
+    source = {host["hostname"]: host for host in parse_hosts(src_project, src_obj)}
+    membership = {}
+    for group in inventory_groups(src_project, src_obj):
+        for host in group.get("hosts", []) if isinstance(group, dict) else []:
+            membership.setdefault(host, []).append(group["name"])
+    added, skipped = [], []
+    spaced = _hosts_file_spaced(src_project, src_obj)   # пустые строки между узлами — как в источнике
+    for name in hostnames or []:
+        host = source.get(name)
+        if not host:
+            skipped.append(f"{name}: нет в источнике")
+            continue
+        try:
+            add_host(project, obj, name, dict(host["parameters"]), membership.get(name, []), spaced)
+            added.append(name)
+        except ValueError as error:
+            skipped.append(f"{name}: {error}")
+    log(f"Импорт узлов из {src_project}{' / ' + src_obj if src_obj else ''}: добавлены {', '.join(added) or 'нет'}" + (f"; пропущены: {'; '.join(skipped)}" if skipped else ""))
+    return {"added": added, "skipped": skipped}
+
+def _prune_empty_role_parents(project, obj, removed_path, scope=None):
+    """После удаления подроли («группа/роль») удаляет опустевшие папки-группы над ней — вплоть до папки
+    ролей. Папка, в которой что-то осталось (другие подроли, свои файлы роли), не трогается."""
+    bases = {os.path.realpath(base) for base in role_search_paths(project, obj, scope)}
+    pruned, parent = [], os.path.dirname(removed_path)
+    while parent and os.path.realpath(parent) not in bases and _inside(PROJECTS_ROOT, parent):
+        real = os.path.realpath(parent)                       # путь — от настоящей папки ролей (roles/ может быть ссылкой)
+        base = next((b for b in bases if real.startswith(b + os.sep)), None)
+        try:
+            if os.listdir(parent):
+                break
+            os.rmdir(parent)
+        except OSError:
+            break
+        pruned.append(os.path.relpath(real, base) if base else os.path.basename(parent))
+        parent = os.path.dirname(parent)
+    return pruned
+
 def playbook_role_remove(project, obj, playbook_name, role, delete_files=False, scope=None):
     """Убирает роль из плейбука; по желанию — удаляет и папку роли (в корзину backups/deleted)."""
     role = _role_ref(role) or role
@@ -1645,16 +2020,19 @@ def playbook_role_remove(project, obj, playbook_name, role, delete_files=False, 
         raise ValueError("Плейбук не найден")
     text = read(path)
     new_text = _remove_role_text(text, role)
-    if not _first_play_roles_ok(new_text, role, False):
+    if not _first_play_roles_ok(new_text, role, False, text):
         raise ValueError("Не удалось убрать роль автоматически — уберите её в редакторе плейбука")
     _backup_file(project, scope_key(obj, scope), "playbook", playbook_name, text)
     write(path, new_text)
-    trashed = None
+    trashed, pruned = None, []
     if delete_files:
         directory = find_role_dir(project, obj, role, scope)
         if directory:
             trashed = _trash(project, scope_key(obj, scope), directory)
-    log(f"Роль {role} убрана из плейбука {playbook_name}{' и удалена (в корзине backups/deleted)' if trashed else ''}")
+            pruned = _prune_empty_role_parents(project, obj, directory, scope)
+    log(f"Роль {role} убрана из плейбука {playbook_name}{' и удалена (в корзине backups/deleted)' if trashed else ''}"
+        + (f"; удалена опустевшая папка {', '.join(pruned)}" if pruned else ""))
+    return pruned
 
 # --- Удаление: не насовсем, а в корзину backups/deleted рядом с web1x.py ---
 def _trash(project, obj, path):
@@ -1758,10 +2136,171 @@ def yaml_problem(text):
     except yaml.YAMLError as error:
         return {"line": None, "column": None, "message": str(error)}
 
+BACKUP_KEEP_VERSIONS = 30
+_BACKUP_STAMP_RE = re.compile(r"^\.(\d{8}-\d{6}-\d{3})\.bak$")
+
+def _backup_base(project, obj, kind, relative):
+    return os.path.join(BASE_DIR, "backups", safe(project), safe(obj) or "_", kind, *relative.split("/"))
+
+def _backup_versions(base):
+    """Версии файла в backups/: «имя.ГГГГММДД-ЧЧММСС-мс.bak» (и старая одиночная «имя.bak») — от новых к старым."""
+    directory, name = os.path.dirname(base), os.path.basename(base)
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return []
+    versions = []
+    for item in names:
+        if not item.startswith(name) or not os.path.isfile(os.path.join(directory, item)):
+            continue
+        rest = item[len(name):]
+        if rest == ".bak" or _BACKUP_STAMP_RE.match(rest):
+            path = os.path.join(directory, item)
+            stat = os.stat(path)
+            versions.append({"id": item, "path": path, "mtime": stat.st_mtime, "size": stat.st_size,
+                             "time": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")})
+    return sorted(versions, key=lambda item: item["mtime"], reverse=True)
+
 def _backup_file(project, obj, kind, relative, old_text):
-    """Предыдущая версия файла — в backups/ рядом с web1x.py (в папках проекта лишнего не появляется)."""
-    path = os.path.join(BASE_DIR, "backups", safe(project), safe(obj) or "_", kind, *relative.split("/"))
-    write(path + ".bak", old_text)
+    """Предыдущая версия файла — в backups/ рядом с web1x.py (в папках проекта лишнего не появляется).
+    Каждое сохранение — отдельная версия с меткой времени; хранятся последние BACKUP_KEEP_VERSIONS."""
+    base = _backup_base(project, obj, kind, relative)
+    write(f"{base}.{datetime.now().strftime('%Y%m%d-%H%M%S-%f')[:-3]}.bak", old_text)
+    for item in _backup_versions(base)[BACKUP_KEEP_VERSIONS:]:
+        try:
+            os.remove(item["path"])
+        except OSError:
+            pass
+
+def _edited_file(project, obj, kind, relative, scope=None):
+    """Путь к файлу, который правится в редакторе, и его место в backups/ (как в save_text_file)."""
+    if kind == "playbook":
+        path = playbook_path(project, obj, safe(relative), scope)
+        backup_relative = relative
+    elif kind == "role":
+        path = role_path(project, obj, relative, scope)
+        backup_relative = relative.replace("|", "/")
+    elif kind in OBJECT_FILE_KINDS:
+        path = object_file_path(project, obj, kind)
+        backup_relative = os.path.basename(path) if path else ""
+    else:
+        raise ValueError("Неизвестный файл")
+    if not path or not os.path.isfile(path):
+        raise ValueError("Файл не найден")
+    return path, _backup_base(project, scope_key(obj, scope), kind, backup_relative)
+
+def file_history(project, obj, kind, relative, scope=None):
+    """Версии файла из backups/ — от новых к старым."""
+    _, base = _edited_file(project, obj, kind, relative, scope)
+    return [{key: item[key] for key in ("id", "time", "size")} for item in _backup_versions(base)]
+
+def file_history_version(project, obj, kind, relative, version_id, scope=None):
+    """Содержимое версии и построчное сравнение с текущим файлом."""
+    path, base = _edited_file(project, obj, kind, relative, scope)
+    version = next((item for item in _backup_versions(base) if item["id"] == version_id), None)
+    if not version:
+        raise ValueError("Версия не найдена")
+    content = read(version["path"])
+    return {"content": content, "rows": diff_rows(content.splitlines(), read(path).splitlines()), "time": version["time"]}
+
+def diff_rows(left, right):
+    """Построчное сравнение для показа рядом: [тип, слева, справа]; тип — same / change / del / add."""
+    rows = []
+    for tag, a1, a2, b1, b2 in difflib.SequenceMatcher(None, left, right, autojunk=False).get_opcodes():
+        if tag == "equal":
+            rows += [["same", left[a1 + i], right[b1 + i]] for i in range(a2 - a1)]
+        elif tag == "replace":
+            for i in range(max(a2 - a1, b2 - b1)):
+                rows.append(["change", left[a1 + i] if a1 + i < a2 else None, right[b1 + i] if b1 + i < b2 else None])
+        elif tag == "delete":
+            rows += [["del", left[i], None] for i in range(a1, a2)]
+        else:
+            rows += [["add", None, right[i]] for i in range(b1, b2)]
+    return rows
+
+# --- Проверка синтаксиса того, что сейчас в редакторе (в том числе несохранённого) ---
+SYNTAX_CHECK_TIMEOUT_SECONDS = 90
+
+def _syntax_run(command, cwd, cfg, extra_env=None):
+    environment = os.environ.copy()
+    if cfg and os.path.isfile(cfg):
+        environment["ANSIBLE_CONFIG"] = cfg
+    environment.update(extra_env or {})
+    environment["ANSIBLE_NOCOLOR"] = "1"
+    try:
+        done = subprocess.run(command, cwd=cwd, env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=SYNTAX_CHECK_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "output": f"Проверка не уложилась в {SYNTAX_CHECK_TIMEOUT_SECONDS} с"}
+    except OSError as error:
+        return {"ok": False, "output": f"Не удалось запустить проверку: {error}"}
+    output = done.stdout.strip()
+    return {"ok": done.returncode == 0, "output": output[-6000:] if len(output) > 6000 else output}
+
+def syntax_check(project, obj, kind, relative, content, scope=None):
+    """Проверка синтаксиса: плейбук — ansible-playbook --syntax-check; файл роли — то же через временную
+    копию роли с этой правкой; шаблон .j2 — разбор Jinja2; defaults — YAML, ansible.cfg — INI."""
+    if not isinstance(content, str):
+        raise ValueError("Нет текста для проверки")
+    path, _ = _edited_file(project, obj, kind, relative, scope)
+    name = os.path.basename(path).lower()
+    if kind == "cfg":
+        problem = ini_problem(content)
+        return {"ok": not problem, "tool": "INI", "output": problem or "Ошибок нет"}
+    if name.endswith(".j2"):
+        try:
+            import jinja2
+        except ImportError:
+            return {"ok": None, "tool": "Jinja2", "output": "Jinja2 не установлена — шаблон не проверить"}
+        try:
+            jinja2.Environment(extensions=["jinja2.ext.do", "jinja2.ext.loopcontrols"]).parse(content)
+        except jinja2.TemplateSyntaxError as error:
+            return {"ok": False, "tool": "Jinja2", "output": f"Строка {error.lineno}: {error.message}"}
+        return {"ok": True, "tool": "Jinja2", "output": "Шаблон разбирается без ошибок"}
+    if not name.endswith((".yml", ".yaml")):
+        return {"ok": None, "tool": "", "output": "Для этого файла проверка синтаксиса не нужна"}
+    problem = yaml_problem(content)
+    if problem:   # yaml_problem — словарь {line, column, message}: в текст «Строка N, столбец M: …»
+        where = f"Строка {problem['line']}, столбец {problem['column']}: " if problem.get("line") else ""
+        return {"ok": False, "tool": "YAML", "output": where + str(problem.get("message", ""))}
+    if kind in OBJECT_FILE_KINDS:
+        return {"ok": True, "tool": "YAML", "output": "YAML без ошибок"}
+    if not shutil.which("ansible-playbook"):
+        return {"ok": None, "tool": "YAML", "output": "YAML без ошибок; ansible-playbook не найден — полная проверка недоступна"}
+    file_paths = paths(project, obj) or {}
+    inventory = file_paths.get("hosts") if file_paths.get("hosts") and os.path.isfile(file_paths["hosts"]) else "localhost,"
+    cfg = file_paths.get("cfg", "")
+    if kind == "playbook":
+        temp = os.path.join(os.path.dirname(path), f".awc-check-{os.getpid()}-{int(time.time() * 1000) % 100000}.yml")
+        write(temp, content)
+        try:
+            result = _syntax_run(["ansible-playbook", "--syntax-check", "-i", inventory, temp], os.path.dirname(path), cfg)
+        finally:
+            try:
+                os.remove(temp)
+            except OSError:
+                pass
+        result["output"] = result["output"].replace(temp, os.path.basename(path))
+        return dict(result, tool="ansible-playbook --syntax-check")
+    # файл роли: временная копия роли с этой правкой + временный плейбук, который её подключает
+    ref, inner = _split_role_path(relative)
+    role_dir = find_role_dir(project, obj, ref, scope)
+    if not role_dir:
+        raise ValueError("Роль не найдена")
+    work = tempfile.mkdtemp(prefix="awc-check-", dir=os.path.join(BASE_DIR, "cache") if os.path.isdir(os.path.join(BASE_DIR, "cache")) else None)
+    try:
+        copy = os.path.join(work, "roles", *ref.split("/"))
+        shutil.copytree(role_dir, copy, symlinks=True)
+        target = os.path.join(copy, *inner)   # inner — части пути внутри роли
+        if not _inside(work, target):
+            raise ValueError("Путь вне роли")
+        write(target, content)
+        write(os.path.join(work, "check.yml"), f"---\n- hosts: all\n  gather_facts: false\n  roles:\n    - {ref}\n")
+        roles_path = os.pathsep.join([os.path.join(work, "roles")] + role_search_paths(project, obj, scope))
+        result = _syntax_run(["ansible-playbook", "--syntax-check", "-i", inventory, "check.yml"], work, cfg, {"ANSIBLE_ROLES_PATH": roles_path})
+        result["output"] = result["output"].replace(work + os.sep, "")
+        return dict(result, tool=f"ansible-playbook --syntax-check (роль {ref})")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
 def save_text_file(project, obj, kind, relative, content, force=False, scope=None):
     """Сохраняет плейбук (kind="playbook") или файл роли (kind="role"). YAML проверяется до записи;
@@ -3304,17 +3843,111 @@ def netmap_status(project, obj):
                 result[node_id] = up
     return {"status": result}
 
+# --- Журнал запусков: краткий итог каждого выполнения по ролям и задачам ---
+RUN_REPORT_PATH = os.path.join(BASE_DIR, "logs", "playbook_runs.log")
+RUN_REPORT_MAX_BYTES = 2 * 1024 * 1024
+CALLBACK_PLUGIN_DIR = os.path.join(BASE_DIR, "ansible_plugins", "callback")
+_RECAP_RE = re.compile(r"^(\S+)\s*:\s*ok=(\d+)\s+changed=(\d+)\s+unreachable=(\d+)\s+failed=(\d+)(?:\s+skipped=(\d+))?")
+_TASK_RE = re.compile(r"^(?:TASK|RUNNING HANDLER) \[(?:(.+?) : )?(.+?)\]")
+_FAILED_RE = re.compile(r"^(?:fatal|failed): \[([^\]]+)\]")
+
+def _callback_plugin_paths(cfg):
+    """Путь к плагину итогов + пути callback_plugins из ansible.cfg (переменная окружения их бы заменила)."""
+    found = [CALLBACK_PLUGIN_DIR]
+    if cfg and os.path.isfile(cfg):
+        parser = configparser.ConfigParser(interpolation=None, strict=False)
+        try:
+            parser.read(cfg, encoding="utf-8")
+            value = parser.get("defaults", "callback_plugins", fallback="")
+        except (configparser.Error, UnicodeDecodeError):
+            value = ""
+        for part in value.split(os.pathsep):
+            part = os.path.expanduser(part.strip())
+            if part:
+                found.append(part if os.path.isabs(part) else os.path.join(os.path.dirname(cfg), part))
+    if os.environ.get("ANSIBLE_CALLBACK_PLUGINS"):
+        found.append(os.environ["ANSIBLE_CALLBACK_PLUGINS"])
+    return os.pathsep.join(found)
+
+def _report_from_output(lines):
+    """Запасной разбор, если плагин итогов не загрузился: задачи с ошибками и PLAY RECAP из вывода."""
+    tasks, hosts, current = [], {}, None
+    for line in lines:
+        match = _TASK_RE.match(line)
+        if match:
+            current = {"role": match.group(1) or "", "task": match.group(2), "ok": 0, "changed": 0, "failed": 0, "skipped": 0, "unreachable": 0, "ignored": 0, "hosts_failed": []}
+            tasks.append(current)
+            continue
+        if current:
+            if line.startswith("ok: ["): current["ok"] += 1
+            elif line.startswith("changed: ["): current["changed"] += 1
+            elif line.startswith("skipping: ["): current["skipped"] += 1
+            elif _FAILED_RE.match(line):
+                if "...ignoring" in line: current["ignored"] += 1
+                else:
+                    current["failed"] += 1
+                    current["hosts_failed"].append(_FAILED_RE.match(line).group(1))
+            elif line.startswith("fatal: [") and "UNREACHABLE" in line:
+                current["unreachable"] += 1
+        match = _RECAP_RE.match(line)
+        if match:
+            hosts[match.group(1)] = {"ok": int(match.group(2)), "changed": int(match.group(3)), "unreachable": int(match.group(4)), "failures": int(match.group(5)), "skipped": int(match.group(6) or 0)}
+    return {"tasks": tasks, "hosts": hosts}
+
+def _write_run_report(meta, data, code, seconds):
+    """Дописывает в журнал запусков краткий итог: общий результат, по ролям — задачи и ошибки."""
+    hosts = data.get("hosts") or {}
+    total = {key: sum(int(item.get(key, 0)) for item in hosts.values()) for key in ("ok", "changed", "failures", "unreachable", "skipped")}
+    verdict = "ПРЕРВАНО" if code is not None and code < 0 else "УСПЕШНО" if code == 0 and not total["failures"] and not total["unreachable"] else "ОШИБКА"
+    lines = [f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · {meta['where']} · {meta['title']} · узлы: {meta['hosts'] or 'все'} · {int(seconds)} с",
+             f"  ИТОГ: {verdict} (код {code}) — ok {total['ok']}, изменено {total['changed']}, ошибок {total['failures']}, недоступно {total['unreachable']}, пропущено {total['skipped']}"]
+    roles = {}
+    for task in data.get("tasks") or []:
+        roles.setdefault(task.get("role") or "", []).append(task)
+    for role, tasks in roles.items():
+        sums = {key: sum(task.get(key, 0) for task in tasks) for key in ("ok", "changed", "failed", "skipped", "unreachable")}
+        parts = [f"ok {sums['ok']}"] + [f"{label} {sums[key]}" for key, label in (("changed", "изменено"), ("failed", "ошибок"), ("unreachable", "недоступно"), ("skipped", "пропущено")) if sums[key]]
+        mark = "✗" if sums["failed"] or sums["unreachable"] else "✓"
+        lines.append(f"  {mark} {('роль ' + role) if role else 'задачи плейбука'}: {len(tasks)} {_plural(len(tasks), 'задача', 'задачи', 'задач')} — {', '.join(parts)}")
+        for task in tasks:
+            if task.get("failed") or task.get("unreachable"):
+                lines.append(f"      ✗ «{task.get('task')}» — {', '.join(sorted(set(task.get('hosts_failed') or []))) or 'узлы не указаны'}")
+    text = "\n".join(lines) + "\n\n"
+    try:
+        os.makedirs(os.path.dirname(RUN_REPORT_PATH), exist_ok=True)
+        if os.path.isfile(RUN_REPORT_PATH) and os.path.getsize(RUN_REPORT_PATH) > RUN_REPORT_MAX_BYTES:
+            with open(RUN_REPORT_PATH, "rb") as handle:   # оставить последний мегабайт — с начала записи
+                handle.seek(-RUN_REPORT_MAX_BYTES // 2, os.SEEK_END)
+                tail = handle.read().decode("utf-8", "ignore")
+            write(RUN_REPORT_PATH, tail[tail.find("\n\n") + 2:] if "\n\n" in tail else tail)
+        with open(RUN_REPORT_PATH, "a", encoding="utf-8") as handle:
+            handle.write(text)
+    except OSError as error:
+        log(f"Журнал запусков: не удалось записать — {error}")
+
+def _plural(count, one, few, many):
+    count = abs(count) % 100
+    return many if 11 <= count <= 14 else one if count % 10 == 1 else few if 2 <= count % 10 <= 4 else many
+
 def run_playbook(command, project, obj, name, cwd, cfg, label=None):
-    """Запускает ansible-playbook в подпроцессе и стримит его вывод в журнал."""
+    """Запускает ansible-playbook в подпроцессе, стримит вывод в журнал и пишет краткий итог в журнал запусков."""
     title = label or name
     log(f"=== START {title} [{project}{('/' + obj) if obj else ''}] ===")
-    process = None
+    process, code, output, started = None, None, [], time.time()
+    report_file = os.path.join(BASE_DIR, "cache", f"run-report-{os.getpid()}-{int(started * 1000) % 10000000}.json")
     try:
         environment = os.environ.copy()
         if os.path.isfile(cfg): environment["ANSIBLE_CONFIG"] = cfg
+        environment["ANSIBLE_CALLBACK_PLUGINS"] = _callback_plugin_paths(cfg)
+        environment["AWC_REPORT_FILE"] = report_file
+        os.makedirs(os.path.dirname(report_file), exist_ok=True)
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1, cwd=cwd, env=environment)
         with PROC_LOCK: PROCESSES.append(process)
-        for line in process.stdout: log(line.rstrip())
+        for line in process.stdout:
+            line = line.rstrip()
+            log(line)
+            if len(output) < 50000:
+                output.append(line)
         code = process.wait()
         if code != 0: _mark_run_failed()
         log(f"=== DONE {title}: rc={code} ===")
@@ -3325,6 +3958,30 @@ def run_playbook(command, project, obj, name, cwd, cfg, label=None):
         if process:
             with PROC_LOCK:
                 if process in PROCESSES: PROCESSES.remove(process)
+        try:
+            with open(report_file, encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError):
+            data = _report_from_output(output)
+        try:
+            os.remove(report_file)
+        except OSError:
+            pass
+        hosts = command[command.index("-l") + 1] if "-l" in command else ""
+        _write_run_report({"where": f"{project}{' / ' + obj if obj else ''}", "title": title, "hosts": hosts}, data, code, time.time() - started)
+
+def run_report_text():
+    """Журнал запусков — записи от новых к старым."""
+    text = read(RUN_REPORT_PATH) if os.path.isfile(RUN_REPORT_PATH) else ""
+    entries = [entry for entry in text.split("\n\n") if entry.strip()]
+    return {"path": RUN_REPORT_PATH, "entries": list(reversed(entries))}
+
+def run_report_clear():
+    try:
+        os.remove(RUN_REPORT_PATH)
+    except FileNotFoundError:
+        pass
+    log("Журнал запусков очищен")
 
 # --- Идёт ли выполнение (для строки состояния «Выполнение» в интерфейсе) ---
 RUN_LOCK = threading.Lock()
@@ -3390,7 +4047,61 @@ def _partial_playbook(path, selected):
     write(temp, text)
     return temp, keep
 
-def run_command(project, obj, names, hosts, verbosity="", check=False, roles=None):
+# --- Теги плейбука: из самого плейбука и из задач его ролей (с кэшем по времени изменения файлов) ---
+TAGS_CACHE = {}
+
+def _collect_tags(value, found):
+    """Значения tags: в плеях, задачах, блоках и записях roles: (строка «a, b» или список)."""
+    if isinstance(value, dict):
+        tags = value.get("tags")
+        if isinstance(tags, str):
+            found.update(part.strip() for part in tags.split(",") if part.strip())
+        elif isinstance(tags, list):
+            found.update(str(item).strip() for item in tags if isinstance(item, (str, int)) and str(item).strip())
+        for key, child in value.items():
+            if key != "tags":
+                _collect_tags(child, found)
+    elif isinstance(value, list):
+        for child in value:
+            _collect_tags(child, found)
+
+def playbook_tags(project, obj, path, scope=None):
+    """Теги, которые можно выбрать для запуска плейбука (--tags): из плейбука и задач его ролей и их
+    зависимостей. Шаблоны Jinja в тегах пропускаются."""
+    files, queue, seen = [path], list(playbook_role_refs(path)[0]), set()
+    while queue:
+        ref = queue.pop(0)
+        if ref in seen:
+            continue
+        seen.add(ref)
+        directory = find_role_dir(project, obj, ref, scope)
+        if directory:
+            files += _var_files(os.path.join(directory, "tasks")) + _var_files(os.path.join(directory, "handlers"))
+            queue += role_dependencies(directory)
+    try:
+        signature = tuple((item, os.stat(item).st_mtime_ns) for item in files)
+    except OSError:
+        signature = None
+    cached = TAGS_CACHE.get(path)
+    if cached and signature and cached[0] == signature:
+        return cached[1]
+    found = set()
+    for item in files:
+        try:
+            _collect_tags(yaml.load(read(item), Loader=_TolerantLoader), found)
+        except yaml.YAMLError:
+            continue
+    tags = sorted((tag for tag in found if "{{" not in tag and "{%" not in tag), key=str.lower)
+    if signature:
+        TAGS_CACHE[path] = (signature, tags)
+    return tags
+
+def _tags_arg(tags):
+    """Аргументы ansible-playbook для выбранных тегов: ["--tags", "a,b"] или []."""
+    clean = [str(tag).strip() for tag in tags or [] if isinstance(tag, str) and str(tag).strip() and "," not in tag and "\n" not in tag]
+    return ["--tags", ",".join(clean)] if clean else []
+
+def run_command(project, obj, names, hosts, verbosity="", check=False, roles=None, tags=None):
     """Запускает выбранные плейбуки по очереди через ansible-playbook (опционально только на указанных узлах).
     roles — {плейбук: [роли]}: у такого плейбука выполняются только эти роли (через временную копию)."""
     file_paths = paths(project, obj)
@@ -3411,11 +4122,15 @@ def run_command(project, obj, names, hosts, verbosity="", check=False, roles=Non
             target, title = temp, f"{name} (только роли: {', '.join(kept)})"
         command = ["ansible-playbook", "-i", file_paths["hosts"], target]
         if hosts: command += ["-l", ",".join(hosts)]
+        chosen_tags = _tags_arg((tags or {}).get(name)) if isinstance(tags, dict) else []
+        if chosen_tags:
+            command += chosen_tags
+            title += f" [теги: {chosen_tags[1]}]"
         if _verbosity_flag(verbosity): command.append(_verbosity_flag(verbosity))
         # Режим «Проверка»: ansible-playbook --check ничего не меняет на узлах, только показывает, что было бы изменено.
         if check: command.append("--check")
         try:
-            run_playbook(command, project, obj, name, os.path.dirname(available[name]), file_paths["cfg"], f"{title} [--check]" if check else (title if temp else None))
+            run_playbook(command, project, obj, name, os.path.dirname(available[name]), file_paths["cfg"], f"{title} [--check]" if check else (title if title != name else None))
         finally:
             if temp:
                 try:
@@ -3476,6 +4191,7 @@ def rename_role(project, obj, old, new, scope=None):
         raise ValueError(f"Папка «{new_ref}» уже существует")
     os.makedirs(os.path.dirname(new_dir), exist_ok=True)
     os.rename(old_dir, new_dir)
+    _prune_empty_role_parents(project, obj, old_dir, scope)   # «infra/db» → «db»: опустевшая «infra» удаляется
     files = [autodeploy(project)] if scope == AUTODEPLOY_SCOPE else [item["path"] for item in get_playbooks(project, obj)]
     for root in role_search_paths(project, obj, scope):
         for directory, dirs, names in os.walk(root):
@@ -3497,16 +4213,35 @@ def rename_role(project, obj, old, new, scope=None):
     log(f"Роль {old_ref} переименована в {new_ref}; ссылки изменены в: {', '.join(changed) or 'нигде'}")
     return changed
 
-def run_autodeploy(project, obj, hosts, verbosity=""):
-    """Запускает autodeploy.yml на отмеченных узлах — с inventory и ansible.cfg текущего проекта/объекта
-    (раньше в проекте с объектами inventory не передавался, и узлы не находились)."""
+def run_autodeploy(project, obj, hosts, verbosity="", roles=None, tags=None):
+    """Запускает autodeploy.yml на отмеченных узлах — с inventory и ansible.cfg текущего проекта/объекта.
+    roles — выполнить только эти роли (временная копия рядом с autodeploy.yml), tags — --tags."""
     path = autodeploy(project)
     if not path: return
     file_paths = paths(project, obj)
-    command = ["ansible-playbook"] + (["-i", file_paths["hosts"]] if file_paths else []) + [path]
+    target, title, temp = path, AUTODEPLOY_PLAYBOOK_NAME, None
+    if roles:
+        try:
+            temp, kept = _partial_playbook(path, roles)
+        except ValueError as error:
+            _mark_run_failed()
+            log(f"=== {AUTODEPLOY_PLAYBOOK_NAME}: {error} ===")
+            return
+        target, title = temp, f"{AUTODEPLOY_PLAYBOOK_NAME} (только роли: {', '.join(kept)})"
+    command = ["ansible-playbook"] + (["-i", file_paths["hosts"]] if file_paths else []) + [target]
     if hosts: command += ["-l", ",".join(hosts)]
+    if _tags_arg(tags):
+        command += _tags_arg(tags)
+        title += f" [теги: {_tags_arg(tags)[1]}]"
     if _verbosity_flag(verbosity): command.append(_verbosity_flag(verbosity))
-    run_playbook(command, project, obj, AUTODEPLOY_PLAYBOOK_NAME, os.path.dirname(path), file_paths["cfg"] if file_paths else "")
+    try:
+        run_playbook(command, project, obj, AUTODEPLOY_PLAYBOOK_NAME, os.path.dirname(path), file_paths["cfg"] if file_paths else "", title if (temp or tags) else None)
+    finally:
+        if temp:
+            try:
+                os.remove(temp)
+            except OSError:
+                pass
 
 def stop():
     """Останавливает все запущенные подпроцессы ansible."""
@@ -3586,7 +4321,6 @@ class Handler(BaseHTTPRequestHandler):
             filename = STATIC_ROUTES[url.path]
             content_type = "text/html; charset=utf-8" if filename.endswith(".html") else "text/css; charset=utf-8" if filename.endswith(".css") else "application/javascript; charset=utf-8"
             self.file(os.path.join(PUBLIC_DIR, filename), content_type); return
-        if url.path == "/background": self.file(os.path.join(BASE_DIR, BACKGROUND_IMAGE_NAME), "image/png"); return
         if url.path == "/logo_mark": self.file(os.path.join(BASE_DIR, LOGO_MARK_IMAGE_NAME), "image/png"); return
         if url.path == "/data":
             projects = get_projects()
@@ -3604,9 +4338,8 @@ class Handler(BaseHTTPRequestHandler):
             inventory = load_inventory(project, obj)
             hosts = parse_hosts(project, obj, inventory)
             auto = autodeploy(project)
-            self.json({"projects": projects, "objects": objects, "single_object_mode": single_object_mode, "selected_project": project, "selected_object": obj, "hosts": hosts, "status": status(project, obj), "groups": inventory_groups(project, obj, inventory), "template_schemas": template_schemas(project, obj, hosts), "playbooks": [dict(item, roles=playbook_role_entries(item["path"])) for item in get_playbooks(project, obj)], "autodeploy": bool(auto), "autodeploy_playbook": AUTODEPLOY_PLAYBOOK_NAME if auto else None, "hwtype_options": hwtype_options(project, obj), "repo_url": REPO_URL, "version": APP_VERSION}); return
-        if url.path == "/roles":
-            playbook = query.get("playbook", [""])[0]; self.json(playbook_roles(project, obj, playbook) if playbook else []); return
+            self.json({"projects": projects, "objects": objects, "single_object_mode": single_object_mode, "selected_project": project, "selected_object": obj, "hosts": hosts, "status": status(project, obj), "groups": inventory_groups(project, obj, inventory), "template_schemas": template_schemas(project, obj, hosts), "playbooks": [dict(item, roles=playbook_role_entries(item["path"]), tags=playbook_tags(project, obj, item["path"])) for item in get_playbooks(project, obj)], "autodeploy": bool(auto),
+                       "autodeploy_roles": playbook_role_entries(auto) if auto else [], "autodeploy_tags": playbook_tags(project, obj, auto, AUTODEPLOY_SCOPE) if auto else [], "autodeploy_playbook": AUTODEPLOY_PLAYBOOK_NAME if auto else None, "hwtype_options": hwtype_options(project, obj), "repo_url": REPO_URL, "version": APP_VERSION}); return
         if url.path == "/role_file":
             path = role_file(project, obj, query.get("path", [""])[0], scope_of(query.get("scope", [""])[0]))
             if not path: self.send_error(404); return
@@ -3618,9 +4351,18 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/constants": self.json(constants_editor_list()); return
         if url.path == "/netmap_autobuild": self.json(netmap_autobuild_state(project, obj)); return
         if url.path == "/discovered_summary": self.json(discovered_summary()); return
-        if url.path == "/roles_list": self.json({"roles": list_roles(project, obj, scope_of(query.get("scope", [""])[0]))}); return
         if url.path == "/autodeploy_sources": self.json({"sources": autodeploy_sources()}); return
         if url.path == "/subnet_scan": self.json(subnet_scan_get(project)); return
+        if url.path in ("/file_history", "/file_history_version"):
+            args = (project, obj, query.get("kind", [""])[0], query.get("path", [""])[0])
+            scope = scope_of(query.get("scope", [""])[0])
+            if url.path == "/file_history": self.json({"versions": file_history(*args, scope)}); return
+            self.json(file_history_version(*args, query.get("id", [""])[0], scope)); return
+        if url.path == "/cfg_compare": self.json(cfg_compare(query.get("src_project", [""])[0], query.get("src_object", [""])[0] or None)); return
+        if url.path == "/run_report": self.json(run_report_text()); return
+        if url.path == "/import_sources": self.json({"sources": import_sources()}); return
+        if url.path == "/import_catalog":
+            self.json(import_catalog(query.get("src_project", [""])[0], query.get("src_object", [""])[0] or None)); return
         if url.path == "/roles_tree": self.json({"roles": roles_tree(project, obj, scope_of(query.get("scope", [""])[0]))}); return
         if url.path == "/playbook_files":
             try: self.json(playbook_files(project, obj, query.get("name", [""])[0], scope_of(query.get("scope", [""])[0])))
@@ -3663,9 +4405,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if self.path == "/run":
                 _run_in_background(run_command, project, obj, data.get("playbooks", []), data.get("hosts", []), data.get("verbosity", ""), data.get("check") is True,
-                                   data.get("roles") if isinstance(data.get("roles"), dict) else None); self.json({"ok": True}); return
+                                   data.get("roles") if isinstance(data.get("roles"), dict) else None, data.get("tags") if isinstance(data.get("tags"), dict) else None); self.json({"ok": True}); return
             if self.path == "/run_autodeploy":
-                _run_in_background(run_autodeploy, project, obj, data.get("hosts", []), data.get("verbosity", "")); self.json({"ok": True}); return
+                _run_in_background(run_autodeploy, project, obj, data.get("hosts", []), data.get("verbosity", ""),
+                                   data.get("roles") if isinstance(data.get("roles"), list) else None, data.get("tags") if isinstance(data.get("tags"), list) else None); self.json({"ok": True}); return
             if self.path == "/stop": stop(); self.json({"ok": True}); return
             if self.path == "/nmap_start":
                 nmap_start(data.get("mode", ""), data.get("switch_address", ""), data.get("interface", ""), data.get("switch_user", ""), data.get("switch_password", ""))
@@ -3698,8 +4441,6 @@ class Handler(BaseHTTPRequestHandler):
                     groups = [data.get("group")]
                 add_host(project, obj, data.get("hostname", ""), data.get("values", {}), groups)
                 self.json({"ok": True}); return
-            if self.path == "/delete_host":
-                delete_host(project, obj, data.get("hostname", "")); self.json({"ok": True}); return
             if self.path == "/delete_group":
                 delete_group(project, obj, data.get("group", "")); self.json({"ok": True}); return
             if self.path == "/save_playbook":
@@ -3712,20 +4453,29 @@ class Handler(BaseHTTPRequestHandler):
                 self.json({"ok": True, "path": create_role_file(project, obj, data.get("folder", ""), data.get("name", ""), scope_of(data.get("scope")))}); return
             if self.path == "/project_create":
                 created = create_project(data.get("name", ""), data.get("kind", ""), data.get("objects", []), data.get("roles", []),
-                                         data.get("site_playbook") is not False, data.get("role_playbooks") is True, data.get("autodeploy") is True, data.get("autodeploy_source"))
+                                         data.get("site_playbook") is not False, data.get("role_playbooks") is True, data.get("autodeploy") is True, data.get("autodeploy_source"),
+                                         data.get("imports") if isinstance(data.get("imports"), list) else None, data.get("cfg_source") if isinstance(data.get("cfg_source"), dict) else None)
                 self.json({"ok": True, "files": created}); return
             if self.path == "/role_create": add_role(project, obj, data.get("role", ""), scope_of(data.get("scope"))); self.json({"ok": True}); return
             if self.path == "/playbook_delete": delete_playbook(project, obj, data.get("name", ""), scope_of(data.get("scope"))); self.json({"ok": True}); return
-            if self.path == "/playbook_role_add": self.json({"ok": True, "created": playbook_role_add(project, obj, data.get("playbook", ""), data.get("role", ""), scope_of(data.get("scope")))}); return
             if self.path == "/subnet_scan_start": subnet_scan_start(project, data.get("subnet", ""), data.get("mask", "")); self.json({"ok": True}); return
             if self.path == "/subnet_scan_reset": subnet_scan_reset(project); self.json({"ok": True}); return
             if self.path == "/role_rename":
                 self.json({"ok": True, "changed": rename_role(project, obj, data.get("old", ""), data.get("new", ""), scope_of(data.get("scope")))}); return
+            if self.path == "/roles_import":
+                self.json({"ok": True, **import_roles(project, obj, data.get("src_project"), data.get("src_object"), data.get("roles", []), data.get("playbook") or None, scope_of(data.get("scope")))}); return
+            if self.path == "/syntax_check":
+                self.json(syntax_check(project, obj, data.get("kind", ""), data.get("path", ""), data.get("content"), scope_of(data.get("scope")))); return
+            if self.path == "/run_report_clear": run_report_clear(); self.json({"ok": True}); return
+            if self.path == "/hosts_import":
+                self.json({"ok": True, **import_hosts(project, obj, data.get("src_project"), data.get("src_object"), data.get("hosts", []))}); return
+            if self.path == "/playbook_import":
+                self.json({"ok": True, **import_playbook(project, obj, data.get("src_project"), data.get("src_object"), data.get("name", ""), data.get("new_name") or None)}); return
             if self.path == "/playbook_roles_add":
                 self.json({"ok": True, **playbook_roles_add(project, obj, data.get("playbook", ""), data.get("roles", []), scope_of(data.get("scope")),
                                                             data.get("parts") if isinstance(data.get("parts"), list) else None)}); return
             if self.path == "/playbook_role_remove":
-                playbook_role_remove(project, obj, data.get("playbook", ""), data.get("role", ""), data.get("delete_files") is True, scope_of(data.get("scope"))); self.json({"ok": True}); return
+                self.json({"ok": True, "pruned": playbook_role_remove(project, obj, data.get("playbook", ""), data.get("role", ""), data.get("delete_files") is True, scope_of(data.get("scope")))}); return
             if self.path == "/role_file_delete": delete_role_file(project, obj, data.get("path", ""), scope_of(data.get("scope"))); self.json({"ok": True}); return
             if self.path == "/object_file_open": self.json(object_file_open(project, obj, data.get("kind", ""))); return
             if self.path == "/object_file_save":
@@ -3733,7 +4483,7 @@ class Handler(BaseHTTPRequestHandler):
                 problem = save_text_file(project, obj, data.get("kind"), data.get("kind"), data.get("content", ""), data.get("force") is True)
                 self.json({"ok": False, "yaml_error": problem} if problem else {"ok": True}); return
             if self.path == "/playbook_create":
-                self.json({"ok": True, "name": add_playbook(project, obj, data.get("name", ""), data.get("roles", []), data.get("hosts", "all") or "all", data.get("become") is not False, data.get("new_roles", []))}); return
+                self.json({"ok": True, "name": add_playbook(project, obj, data.get("name", ""), data.get("roles", []), data.get("hosts", "all") or "all", data.get("become") is not False, data.get("new_roles", []), data.get("import_roles") if isinstance(data.get("import_roles"), list) else None)}); return
             if self.path == "/delete_hosts":
                 names = data.get("hostnames", [])
                 if not isinstance(names, list):
